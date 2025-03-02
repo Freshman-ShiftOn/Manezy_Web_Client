@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
@@ -121,6 +127,7 @@ const EMPLOYEE_COLORS = [
 const SchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
+  const calendarRef = useRef<any>(null); // Add ref for direct calendar control
 
   const [viewType, setViewType] = useState<"timeGridWeek" | "dayGridMonth">(
     "timeGridWeek"
@@ -401,7 +408,14 @@ const SchedulePage: React.FC = () => {
     _: React.MouseEvent<HTMLElement>,
     newView: "timeGridWeek" | "dayGridMonth" | null
   ) => {
-    if (newView) setViewType(newView);
+    if (newView) {
+      setViewType(newView);
+      // Directly control the calendar API to change view
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.changeView(newView);
+      }
+    }
   };
 
   // 날짜 선택 이벤트 핸들러
@@ -677,13 +691,18 @@ const SchedulePage: React.FC = () => {
         anchor="left"
         open={showSidePanel}
         sx={{
-          width: 280,
+          width: showSidePanel ? 280 : 0,
           flexShrink: 0,
+          transition: theme.transitions.create("width", {
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
           "& .MuiDrawer-paper": {
             width: 280,
-            position: "relative",
+            boxSizing: "border-box",
             height: "100%",
             overflow: "auto",
+            position: "relative",
           },
         }}
       >
@@ -927,7 +946,20 @@ const SchedulePage: React.FC = () => {
       </Drawer>
 
       {/* 메인 콘텐츠 영역 (캘린더) */}
-      <Box sx={{ flexGrow: 1, p: 3, height: "100%", overflow: "auto" }}>
+      <Box
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          height: "100%",
+          overflow: "auto",
+          width: "100%",
+          transition: theme.transitions.create(["margin", "width"], {
+            easing: theme.transitions.easing.easeOut,
+            duration: theme.transitions.duration.enteringScreen,
+          }),
+          marginLeft: showSidePanel ? "280px" : 0,
+        }}
+      >
         {/* 상단 액션 버튼들 */}
         <Box
           sx={{
@@ -973,8 +1005,10 @@ const SchedulePage: React.FC = () => {
           elevation={1}
           sx={{
             height: "calc(100% - 50px)",
+            width: "100%", // Ensure full width
             "& .fc": {
               height: "100%",
+              width: "100%", // Ensure full width
             },
             "& .fc-event": {
               cursor: "pointer",
@@ -990,9 +1024,25 @@ const SchedulePage: React.FC = () => {
               borderLeft: "4px solid red",
               animation: "pulse 1.5s infinite",
             },
+            // Add transitions for smooth view changes
+            "& .fc-view-harness": {
+              transition: "height 0.3s ease",
+            },
+            // Ensure proper height for month view
+            "& .fc .fc-dayGridMonth-view .fc-daygrid-body": {
+              height: "auto !important",
+            },
+            // Improve mobile responsiveness
+            "@media (max-width: 600px)": {
+              "& .fc-toolbar": {
+                flexDirection: "column",
+                gap: "10px",
+              },
+            },
           }}
         >
           <FullCalendar
+            ref={calendarRef} // Add ref for direct control
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView={viewType}
             headerToolbar={{
@@ -1017,6 +1067,21 @@ const SchedulePage: React.FC = () => {
             // 시간 표시 설정
             slotMinTime={store?.openingHour || "09:00:00"}
             slotMaxTime={store?.closingHour || "23:00:00"}
+            // Fixed height for various views to ensure smooth transitions
+            height="100%"
+            // Animation settings
+            firstDay={1}
+            weekNumbers={false}
+            nowIndicator={true}
+            // View-specific settings
+            views={{
+              dayGridMonth: {
+                dayMaxEventRows: 4,
+              },
+              timeGridWeek: {
+                dayHeaderFormat: { weekday: "short" },
+              },
+            }}
             eventClassNames={(arg) => {
               const classes = [];
 
