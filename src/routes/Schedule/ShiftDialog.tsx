@@ -21,12 +21,17 @@ import {
   SelectChangeEvent,
   FormControlLabel,
   Divider,
+  Alert,
+  Switch,
+  Tooltip,
+  Stack,
 } from "@mui/material";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { format, parseISO } from "date-fns";
 import { enUS } from "date-fns/locale";
 import { Employee } from "../../lib/types";
+import { NotificationsActive, AssignmentLate } from "@mui/icons-material";
 
 // 근무 이벤트 데이터 구조
 interface ShiftEvent {
@@ -44,6 +49,9 @@ interface ShiftEvent {
       daysOfWeek?: number[];
       endDate?: string;
     };
+    isSubstituteRequest?: boolean;
+    isHighPriority?: boolean;
+    status?: "unassigned" | "assigned" | "substitute-requested";
   };
 }
 
@@ -53,6 +61,7 @@ interface ShiftDialogProps {
   employees: Employee[];
   onClose: () => void;
   onSave: (event: ShiftEvent) => void;
+  onSubstituteRequest?: (event: ShiftEvent, isHighPriority: boolean) => void;
 }
 
 function ShiftDialog({
@@ -61,6 +70,7 @@ function ShiftDialog({
   employees,
   onClose,
   onSave,
+  onSubstituteRequest,
 }: ShiftDialogProps) {
   const [title, setTitle] = useState(eventData.title);
   const [startTime, setStartTime] = useState<Date | null>(
@@ -72,6 +82,12 @@ function ShiftDialog({
   );
   const [note, setNote] = useState(eventData.extendedProps?.note || "");
   const [isRecurring, setIsRecurring] = useState(false);
+  const [isSubRequest, setIsSubRequest] = useState(
+    eventData.extendedProps?.isSubstituteRequest || false
+  );
+  const [isHighPriority, setIsHighPriority] = useState(
+    eventData.extendedProps?.isHighPriority || false
+  );
   const [errors, setErrors] = useState<{
     title?: string;
     time?: string;
@@ -117,6 +133,13 @@ function ShiftDialog({
               daysOfWeek: [new Date(startTime!).getDay()],
             }
           : undefined,
+        isSubstituteRequest: isSubRequest,
+        isHighPriority: isSubRequest ? isHighPriority : false,
+        status: !selectedEmployeeIds.length
+          ? "unassigned"
+          : isSubRequest
+          ? "substitute-requested"
+          : "assigned",
       },
     };
 
@@ -133,6 +156,16 @@ function ShiftDialog({
   const formatTime = (date: Date | null) => {
     if (!date) return "";
     return format(date, "HH:mm", { locale: enUS });
+  };
+
+  // 대타 요청 처리
+  const handleSubstituteRequestToggle = () => {
+    if (onSubstituteRequest) {
+      onSubstituteRequest(eventData, isHighPriority);
+      onClose();
+    } else {
+      setIsSubRequest(!isSubRequest);
+    }
   };
 
   return (
@@ -249,9 +282,91 @@ function ShiftDialog({
             </FormControl>
           </Grid>
 
-          {/* 반복 옵션 */}
+          {/* 메모 */}
           <Grid item xs={12}>
-            <Divider sx={{ my: 1 }} />
+            <TextField
+              label="메모"
+              placeholder="추가 참고사항"
+              fullWidth
+              multiline
+              rows={2}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              size="small"
+            />
+          </Grid>
+
+          {/* 대타 요청 섹션 (이미 배정된 알바생이 있을 때만 표시) */}
+          {!isNew && selectedEmployeeIds.length > 0 && (
+            <>
+              <Grid item xs={12}>
+                <Divider sx={{ my: 1 }} />
+                <Box sx={{ mb: 1 }}>
+                  <Typography variant="subtitle2" gutterBottom>
+                    대타 요청 관리
+                  </Typography>
+                </Box>
+
+                <Stack direction="row" spacing={2} alignItems="center">
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        checked={isSubRequest}
+                        onChange={handleSubstituteRequestToggle}
+                        color="warning"
+                      />
+                    }
+                    label={
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
+                        <AssignmentLate
+                          fontSize="small"
+                          color="warning"
+                          sx={{ mr: 0.5 }}
+                        />
+                        <Typography variant="body2">대타 요청</Typography>
+                      </Box>
+                    }
+                  />
+
+                  {isSubRequest && (
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={isHighPriority}
+                          onChange={(e) => setIsHighPriority(e.target.checked)}
+                          color="error"
+                        />
+                      }
+                      label={
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <NotificationsActive
+                            fontSize="small"
+                            color="error"
+                            sx={{ mr: 0.5 }}
+                          />
+                          <Typography variant="body2">긴급 요청</Typography>
+                        </Box>
+                      }
+                    />
+                  )}
+                </Stack>
+
+                {isSubRequest && (
+                  <Alert
+                    severity={isHighPriority ? "error" : "warning"}
+                    sx={{ mt: 1 }}
+                  >
+                    {isHighPriority
+                      ? "긴급 대타 요청으로 표시됩니다. 우선적으로 처리가 필요합니다."
+                      : "대타 요청이 있는 근무로 표시됩니다."}
+                  </Alert>
+                )}
+              </Grid>
+            </>
+          )}
+
+          {/* 반복 설정 */}
+          <Grid item xs={12}>
             <FormControlLabel
               control={
                 <Checkbox
@@ -259,30 +374,18 @@ function ShiftDialog({
                   onChange={(e) => setIsRecurring(e.target.checked)}
                 />
               }
-              label="매주 반복"
-            />
-          </Grid>
-
-          {/* 메모 */}
-          <Grid item xs={12}>
-            <TextField
-              label="메모 (선택사항)"
-              placeholder="추가 내용을 입력하세요"
-              fullWidth
-              multiline
-              rows={2}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              variant="outlined"
-              size="small"
+              label="매주 같은 요일에 반복"
             />
           </Grid>
         </Grid>
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose}>취소</Button>
-        <Button variant="contained" onClick={handleSave}>
+        <Button onClick={onClose} color="inherit">
+          취소
+        </Button>
+
+        <Button onClick={handleSave} color="primary" variant="contained">
           저장
         </Button>
       </DialogActions>

@@ -218,3 +218,29 @@ export const deleteShift = async (id: string): Promise<boolean> => {
     return simulateError("근무 일정 삭제에 실패했습니다");
   }
 };
+
+// 지점 정보 업데이트
+export const updateStoreInfo = async (storeData: Store): Promise<Store> => {
+  try {
+    const existingStoreData = localStorage.getItem(LS_KEYS.STORE);
+    let existingStore: Store | null = null;
+
+    if (existingStoreData) {
+      existingStore = JSON.parse(existingStoreData);
+    }
+
+    // 기존 데이터와 병합
+    const updatedStore: Store = {
+      ...(existingStore || {}),
+      ...storeData,
+      id: storeData.id || existingStore?.id || generateId(),
+    };
+
+    // 로컬 스토리지에 저장
+    localStorage.setItem(LS_KEYS.STORE, JSON.stringify(updatedStore));
+
+    return simulateResponse(updatedStore);
+  } catch (error) {
+    return simulateError("Failed to update store info");
+  }
+};

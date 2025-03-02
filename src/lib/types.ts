@@ -42,7 +42,10 @@ export interface Shift {
   start: string; // ISO 문자열 (날짜+시간)
   end: string; // ISO 문자열 (날짜+시간)
   employeeIds: string[]; // 배정된 알바생 ID 배열 (여러 명 가능)
+  employeeId?: string; // 단일 알바생 ID (역호환성 지원)
   isRecurring: boolean; // 반복 여부
+  isSubRequest?: boolean; // 대타 요청 여부
+  isHighPriority?: boolean; // 우선순위 높음 표시
   recurringPattern?: {
     frequency: "weekly"; // 향후 'daily', 'monthly' 등 확장 가능
     daysOfWeek: number[]; // 반복할 요일 (0: 일요일, 1: 월요일, ...)
