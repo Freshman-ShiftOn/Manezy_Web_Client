@@ -118,17 +118,6 @@ function Layout() {
                 color: "primary.main",
               }}
             >
-              <Box
-                component="img"
-                src="/logo-small.png"
-                alt="Manezy"
-                sx={{
-                  height: 32,
-                  width: 32,
-                  mr: 1,
-                  display: { xs: "none", sm: "block" },
-                }}
-              />
               Manezy
             </Typography>
           </Box>

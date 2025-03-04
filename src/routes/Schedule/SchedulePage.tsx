@@ -153,7 +153,19 @@ const SchedulePage: React.FC = () => {
         setLoading(true);
 
         const storeData = await getStoreInfo();
+        console.log("매장 정보 로드:", storeData);
+
+        if (!storeData || !storeData.id) {
+          console.error("매장 정보가 없거나 ID가 없습니다.");
+          setError(
+            "매장 정보를 불러올 수 없습니다. 매장 설정을 먼저 완료해주세요."
+          );
+          setLoading(false);
+          return;
+        }
+
         const employeesData = await getEmployees();
+        console.log("직원 정보 로드:", employeesData);
 
         setStore(storeData);
         setEmployees(employeesData);
@@ -163,6 +175,7 @@ const SchedulePage: React.FC = () => {
 
         // 근무 일정 로드
         const shifts = await getShifts();
+        console.log("근무 일정 로드:", shifts);
 
         // 가상의 가능 시간 데이터 생성 (실제로는 API에서 가져와야 함)
         const availabilityData: Availability[] = employeesData.flatMap((emp) =>
@@ -522,9 +535,18 @@ const SchedulePage: React.FC = () => {
   // API에 근무 일정 저장
   const saveShiftToApi = async (shiftEvent: ShiftEvent) => {
     try {
-      await saveShift({
+      // 매장 ID가 없으면 기본값 's1' 사용 (첫 번째 매장 ID)
+      const storeId = store?.id || "s1";
+
+      console.log("근무 일정 저장 시도:", {
         id: shiftEvent.id,
-        storeId: store?.id || "",
+        storeId: storeId,
+        employeeIds: shiftEvent.extendedProps?.employeeIds || [],
+      });
+
+      const result = await saveShift({
+        id: shiftEvent.id,
+        storeId: storeId,
         title: shiftEvent.title,
         start: shiftEvent.start,
         end: shiftEvent.end,
@@ -538,6 +560,8 @@ const SchedulePage: React.FC = () => {
           : undefined,
         note: shiftEvent.extendedProps?.note,
       });
+
+      console.log("근무 일정 저장 성공:", result);
     } catch (err) {
       console.error("Error saving shift:", err);
     }
