@@ -116,6 +116,11 @@ function ShiftDialog({
     );
     const employeeNames = selectedEmployees.map((emp) => emp.name);
 
+    console.log("선택된 직원:", {
+      직원IDs: selectedEmployeeIds,
+      직원이름: employeeNames,
+    });
+
     // 저장할 이벤트 데이터 구성
     const updatedEvent: ShiftEvent = {
       ...eventData,
@@ -143,13 +148,16 @@ function ShiftDialog({
       },
     };
 
+    console.log("근무 저장 데이터:", updatedEvent);
     onSave(updatedEvent);
   };
 
   // 알바생 선택 처리
   const handleEmployeeChange = (event: SelectChangeEvent<string[]>) => {
     const { value } = event.target;
-    setSelectedEmployeeIds(typeof value === "string" ? [value] : value);
+    const newSelectedIds = typeof value === "string" ? [value] : value;
+    console.log("직원 선택 변경:", newSelectedIds);
+    setSelectedEmployeeIds(newSelectedIds);
   };
 
   // 시간 표시 포맷
