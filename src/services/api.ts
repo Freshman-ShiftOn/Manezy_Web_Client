@@ -183,6 +183,19 @@ export const getShifts = async (): Promise<Shift[]> => {
 // 근무 일정 저장
 export const saveShift = async (shift: Shift): Promise<Shift> => {
   try {
+    console.log("API - 근무 일정 저장 시작:", shift);
+
+    if (!shift.id) {
+      console.error("근무 ID가 없습니다");
+      return simulateError("근무 ID가 없습니다");
+    }
+
+    if (!shift.storeId) {
+      console.error("매장 ID가 없습니다");
+      // ID가 없을 경우 's1' 기본값 사용
+      shift.storeId = "s1";
+    }
+
     const shiftsData = localStorage.getItem(LS_KEYS.SHIFTS) || "[]";
     let shifts: Shift[] = JSON.parse(shiftsData);
 
@@ -191,14 +204,18 @@ export const saveShift = async (shift: Shift): Promise<Shift> => {
 
     if (existingIndex >= 0) {
       shifts[existingIndex] = shift;
+      console.log("기존 근무 업데이트:", shift.id);
     } else {
       shifts.push(shift);
+      console.log("새 근무 추가:", shift.id);
     }
 
     localStorage.setItem(LS_KEYS.SHIFTS, JSON.stringify(shifts));
+    console.log("근무 일정 저장 완료");
 
     return simulateResponse(shift);
   } catch (error) {
+    console.error("근무 일정 저장 오류:", error);
     return simulateError("근무 일정 저장에 실패했습니다");
   }
 };
