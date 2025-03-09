@@ -6,10 +6,13 @@ WORKDIR /app
 
 # 패키지 설치
 COPY package*.json ./
-RUN npm install
+RUN npm install --force
 
 # 코드 복사
 COPY . .
+
+# React 빌드 (배포용)
+RUN npm run build
 
 # 포트 설정
 EXPOSE 3000
