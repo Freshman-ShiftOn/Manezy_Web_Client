@@ -1,4 +1,4 @@
-# Node.js 환경 (예제: React, Express)
+# Node.js 18 이미지 사용
 FROM node:18
 
 # 작업 디렉토리 설정
@@ -8,14 +8,17 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --force
 
-# 코드 복사
+# 프로젝트 코드 복사
 COPY . .
 
-# React 빌드 (배포용)
+# React 빌드 (정적 파일 생성)
 RUN npm run build
 
-# 포트 설정
-EXPOSE 3000
+# `serve` 패키지 설치 및 정적 파일 제공
+RUN npm install -g serve
 
-# 애플리케이션 실행
-CMD ["npm", "start"]
+# 컨테이너 실행 시 정적 파일 제공
+CMD ["serve", "-s", "build"]
+
+# React 앱이 사용할 포트
+EXPOSE 3000
