@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  manezy_web:
+    container_name: manezy_web
+    image: manezy-web:latest
+    build: .
+    restart: always
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/app
+    environment:
+      - NODE_ENV=production
