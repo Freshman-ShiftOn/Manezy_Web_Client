@@ -7,6 +7,7 @@ import SchedulePage from "./routes/Schedule/SchedulePage";
 import EmployeePage from "./routes/Employees/EmployeePage";
 import PayrollPage from "./routes/Payroll/PayrollPage";
 import StoreSettingsPage from "./routes/Settings/StoreSettingsPage";
+import SubscriptionPage from "./components/Subscription/SubscriptionPage";
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route path="/schedule" element={<SchedulePage />} />
         <Route path="/employees" element={<EmployeePage />} />
         <Route path="/payroll" element={<PayrollPage />} />
+        <Route path="/subscription" element={<SubscriptionPage />} />
         <Route path="/settings" element={<StoreSettingsPage />} />
         <Route path="*" element={<DashboardPage />} />
       </Route>

@@ -43,6 +43,7 @@ import {
   Store as StoreIcon,
   AccessTime as AccessTimeIcon,
   Close as CloseIcon,
+  CreditCard as CreditCardIcon,
 } from "@mui/icons-material";
 import { getStoreInfo, getEmployees } from "../services/api";
 import { useEffect } from "react";
@@ -223,6 +224,15 @@ function Layout() {
     handleStoreMenuClose();
     navigate("/setup");
   };
+
+  // 메뉴 아이템 부분을 찾아 구독 메뉴 추가
+  const menuItems = [
+    { text: "대시보드", icon: <DashboardIcon />, path: "/" },
+    { text: "스케줄 관리", icon: <CalendarIcon />, path: "/schedule" },
+    { text: "알바생 관리", icon: <GroupIcon />, path: "/employees" },
+    { text: "급여 관리", icon: <PaymentIcon />, path: "/payroll" },
+    { text: "결제 및 구독", icon: <CreditCardIcon />, path: "/subscription" },
+  ];
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
@@ -512,126 +522,35 @@ function Layout() {
 
           {/* 메인 메뉴 */}
           <List sx={{ flexGrow: 1 }}>
-            <ListItem disablePadding>
-              <ListItemButton
-                onClick={() => handleNavigation("/dashboard")}
-                selected={isActive("/dashboard")}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  "&.Mui-selected": {
-                    backgroundColor: "primary.light",
-                    "&:hover": {
+            {menuItems.map((item) => (
+              <ListItem disablePadding key={item.path}>
+                <ListItemButton
+                  onClick={() => handleNavigation(item.path)}
+                  selected={isActive(item.path)}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 0.5,
+                    "&.Mui-selected": {
                       backgroundColor: "primary.light",
+                      "&:hover": {
+                        backgroundColor: "primary.light",
+                      },
                     },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  <DashboardIcon
-                    color={isActive("/dashboard") ? "primary" : "inherit"}
-                  />
-                </ListItemIcon>
-                <ListItemText
-                  primary="대시보드"
-                  primaryTypographyProps={{
-                    fontWeight: isActive("/dashboard") ? "bold" : "normal",
-                    color: isActive("/dashboard") ? "primary.main" : "inherit",
                   }}
-                />
-              </ListItemButton>
-            </ListItem>
-
-            <ListItem disablePadding>
-              <ListItemButton
-                onClick={() => handleNavigation("/schedule")}
-                selected={isActive("/schedule")}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  "&.Mui-selected": {
-                    backgroundColor: "primary.light",
-                    "&:hover": {
-                      backgroundColor: "primary.light",
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  <CalendarIcon
-                    color={isActive("/schedule") ? "primary" : "inherit"}
+                >
+                  <ListItemIcon>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={item.text}
+                    primaryTypographyProps={{
+                      fontWeight: isActive(item.path) ? "bold" : "normal",
+                      color: isActive(item.path) ? "primary.main" : "inherit",
+                    }}
                   />
-                </ListItemIcon>
-                <ListItemText
-                  primary="스케줄 관리"
-                  primaryTypographyProps={{
-                    fontWeight: isActive("/schedule") ? "bold" : "normal",
-                    color: isActive("/schedule") ? "primary.main" : "inherit",
-                  }}
-                />
-              </ListItemButton>
-            </ListItem>
-
-            <ListItem disablePadding>
-              <ListItemButton
-                onClick={() => handleNavigation("/employees")}
-                selected={isActive("/employees")}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  "&.Mui-selected": {
-                    backgroundColor: "primary.light",
-                    "&:hover": {
-                      backgroundColor: "primary.light",
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  <GroupIcon
-                    color={isActive("/employees") ? "primary" : "inherit"}
-                  />
-                </ListItemIcon>
-                <ListItemText
-                  primary="알바생 관리"
-                  primaryTypographyProps={{
-                    fontWeight: isActive("/employees") ? "bold" : "normal",
-                    color: isActive("/employees") ? "primary.main" : "inherit",
-                  }}
-                />
-                <Badge badgeContent={2} color="primary" sx={{ mr: 1 }} />
-              </ListItemButton>
-            </ListItem>
-
-            <ListItem disablePadding>
-              <ListItemButton
-                onClick={() => handleNavigation("/payroll")}
-                selected={isActive("/payroll")}
-                sx={{
-                  borderRadius: 2,
-                  mb: 0.5,
-                  "&.Mui-selected": {
-                    backgroundColor: "primary.light",
-                    "&:hover": {
-                      backgroundColor: "primary.light",
-                    },
-                  },
-                }}
-              >
-                <ListItemIcon>
-                  <PaymentIcon
-                    color={isActive("/payroll") ? "primary" : "inherit"}
-                  />
-                </ListItemIcon>
-                <ListItemText
-                  primary="급여 관리"
-                  primaryTypographyProps={{
-                    fontWeight: isActive("/payroll") ? "bold" : "normal",
-                    color: isActive("/payroll") ? "primary.main" : "inherit",
-                  }}
-                />
-              </ListItemButton>
-            </ListItem>
+                </ListItemButton>
+              </ListItem>
+            ))}
           </List>
 
           {/* 하단 메뉴 */}
