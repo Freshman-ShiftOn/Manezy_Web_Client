@@ -185,15 +185,26 @@ export const saveShift = async (shift: Shift): Promise<Shift> => {
   try {
     console.log("API - 근무 일정 저장 시작:", shift);
 
+    // 데이터 유효성 검증
     if (!shift.id) {
       console.error("근무 ID가 없습니다");
       return simulateError("근무 ID가 없습니다");
     }
 
+    // 지점 정보 확인
     if (!shift.storeId) {
       console.error("매장 ID가 없습니다");
-      // ID가 없을 경우 's1' 기본값 사용
-      shift.storeId = "s1";
+
+      // 지점 정보 확인
+      const storeInfo = await getStoreInfo();
+      if (storeInfo && storeInfo.id) {
+        console.log("지점 정보에서 ID 가져옴:", storeInfo.id);
+        shift.storeId = storeInfo.id;
+      } else {
+        // 테스트용으로 's1' 기본값 사용하지만 실제로는 오류 처리 필요
+        console.warn("지점 정보가 없어 기본값 's1' 사용 (테스트용)");
+        shift.storeId = "s1";
+      }
     }
 
     const shiftsData = localStorage.getItem(LS_KEYS.SHIFTS) || "[]";
