@@ -53,6 +53,33 @@ export interface Shift {
   };
   color?: string; // 블록 색상
   note?: string; // 추가 메모
+  // 추가 확장 속성
+  extendedProps?: {
+    employeeIds?: string[];
+    employeeNames?: string[];
+    note?: string;
+    isSubstituteRequest?: boolean;
+    isHighPriority?: boolean;
+    status?: "unassigned" | "assigned" | "substitute-requested";
+    shiftType?: "open" | "middle" | "close";
+    requiredStaff?: number;
+    minStaff?: number; // 최소 필요 인원
+    maxStaff?: number; // 최대 필요 인원
+    employeeShiftTimes?: {
+      [employeeId: string]: {
+        start: string; // ISO string
+        end: string; // ISO string
+      };
+    };
+    isUnassigned?: boolean;
+    isUnderStaffed?: boolean;
+    isOverStaffed?: boolean;
+    recurring?: {
+      frequency: "weekly";
+      daysOfWeek?: number[];
+      endDate?: string;
+    };
+  };
 }
 
 // 대타 요청 타입

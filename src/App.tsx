@@ -22,7 +22,6 @@ import {
 import { ThemeProvider } from "@mui/material/styles";
 import { CalendarMonth, Group, Payment } from "@mui/icons-material";
 import { appTheme, colors } from "./theme";
-import SimpleSchedulePage from "./routes/Schedule/SimpleSchedulePage";
 
 // 로그인 상태 관리를 위한 간단한 컨텍스트(실제 앱에선 별도 파일로 분리)
 export const AuthContext = React.createContext<{
@@ -448,7 +447,7 @@ function App() {
             }
           >
             <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/schedule" element={<SimpleSchedulePage />} />
+            <Route path="/schedule" element={<SchedulePage />} />
             <Route path="/employees" element={<EmployeePage />} />
             <Route path="/payroll" element={<PayrollPage />} />
             <Route path="/settings" element={<StoreSettingsPage />} />
