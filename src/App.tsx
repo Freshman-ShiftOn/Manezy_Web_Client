@@ -7,7 +7,11 @@ import SchedulePage from "./routes/Schedule/SchedulePage";
 import EmployeePage from "./routes/Employees/EmployeePage";
 import PayrollPage from "./routes/Payroll/PayrollPage";
 import StoreSettingsPage from "./routes/Settings/StoreSettingsPage";
-import { hasInitialSetup, getStoreInfo } from "./services/api";
+import {
+  hasInitialSetup,
+  getStoreInfo,
+  generateDummyData,
+} from "./services/api";
 import {
   CircularProgress,
   Box,
@@ -359,8 +363,9 @@ const SetupCheck = () => {
             navigate("/setup");
           }
         } else {
-          console.log("초기 설정 필요");
-          navigate("/setup");
+          console.log("초기 설정 필요, 더미 데이터 생성");
+          generateDummyData(); // 메가커피 서울대점 더미 데이터 자동 생성
+          navigate("/dashboard");
         }
       } catch (error) {
         console.error("설정 확인 오류:", error);

@@ -22,6 +22,7 @@ export interface Employee {
   bankAccount?: string; // 계좌 정보
   birthDate?: string; // 생년월일
   // 추가 정보는 필요에 따라 확장
+  availableTimes?: EmployeeAvailability[]; // 근무 가능한 시간대
 }
 
 // 알바생 가능 근무시간 타입
@@ -31,6 +32,17 @@ export interface Availability {
   startTime: string; // '09:00'
   endTime: string; // '15:00'
   isRecurring: boolean; // 매주 반복
+  exceptionDates?: string[]; // 예외 날짜들 (휴가 등)
+}
+
+// 알바생 가능 근무시간 타입 확장
+export interface EmployeeAvailability {
+  employeeId: string;
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6; // 0: 일요일, 1: 월요일, ...
+  startTime: string; // '09:00'
+  endTime: string; // '15:00'
+  isRecurring: boolean; // 매주 반복
+  preference: "preferred" | "available" | "unavailable"; // 선호도
   exceptionDates?: string[]; // 예외 날짜들 (휴가 등)
 }
 
@@ -92,6 +104,52 @@ export interface SubstituteRequest {
   reason?: string; // 대타 요청 사유
   createdAt: string;
   updatedAt: string;
+  responseMessage?: string; // 응답 메시지
+}
+
+// 스케줄 변경 요청 타입
+export interface ScheduleChangeRequest {
+  id: string;
+  employeeId: string;
+  shiftId: string;
+  requestType: "timeChange" | "dateChange" | "cancellation";
+  status: "pending" | "approved" | "rejected";
+  currentStart: string; // ISO 문자열
+  currentEnd: string; // ISO 문자열
+  requestedStart?: string; // ISO 문자열
+  requestedEnd?: string; // ISO 문자열
+  reason?: string;
+  response?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 근무 승인 요청 타입
+export interface ShiftApprovalRequest {
+  id: string;
+  employeeId: string;
+  shiftId: string;
+  status: "pending" | "approved" | "rejected";
+  submittedTime: string; // ISO 문자열
+  approvedTime?: string; // ISO 문자열
+  managerId?: string; // 승인한 관리자 ID
+  note?: string;
+  actualStart?: string; // 실제 출근 시간
+  actualEnd?: string; // 실제 퇴근 시간
+  createdAt: string;
+  updatedAt: string;
+}
+
+// 알바생앱 알림 타입
+export interface EmployeeNotification {
+  id: string;
+  employeeId: string;
+  type: "scheduleChange" | "substituteRequest" | "approval" | "announcement";
+  title: string;
+  message: string;
+  read: boolean;
+  relatedEntityId?: string; // 관련 요청 ID
+  createdAt: string;
 }
 
 // 급여 항목 타입

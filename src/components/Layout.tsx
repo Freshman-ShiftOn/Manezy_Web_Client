@@ -46,11 +46,13 @@ import {
   Close as CloseIcon,
   Person as PersonIcon,
   ChevronRight as ChevronRightIcon,
+  Refresh as RefreshIcon,
 } from "@mui/icons-material";
-import { getStoreInfo, getEmployees } from "../services/api";
+import { getStoreInfo, getEmployees, generateDummyData } from "../services/api";
 import { useEffect } from "react";
 import { Store } from "../lib/types";
 import { colors } from "../theme";
+import { LS_KEYS } from "../services/api";
 
 const drawerWidth = 260;
 
@@ -242,6 +244,31 @@ function Layout() {
   const handleAddNewStore = () => {
     handleStoreMenuClose();
     navigate("/setup");
+  };
+
+  // 데이터 초기화 및 메가커피 서울대점 데이터 로드
+  const handleResetAndLoadDummyData = () => {
+    try {
+      // 로컬 스토리지 초기화
+      localStorage.removeItem(LS_KEYS.STORE);
+      localStorage.removeItem(LS_KEYS.EMPLOYEES);
+      localStorage.removeItem(LS_KEYS.SHIFTS);
+      localStorage.removeItem(LS_KEYS.SETUP_COMPLETE);
+      localStorage.removeItem(LS_KEYS.SUBSTITUTE_REQUESTS);
+      localStorage.removeItem(LS_KEYS.SCHEDULE_CHANGE_REQUESTS);
+      localStorage.removeItem(LS_KEYS.SHIFT_APPROVAL_REQUESTS);
+      localStorage.removeItem(LS_KEYS.EMPLOYEE_NOTIFICATIONS);
+      localStorage.removeItem(LS_KEYS.EMPLOYEE_AVAILABILITIES);
+
+      // 더미 데이터 생성
+      generateDummyData();
+
+      // 페이지 새로고침
+      window.location.reload();
+    } catch (error) {
+      console.error("데이터 초기화 중 오류 발생:", error);
+    }
+    handleStoreMenuClose();
   };
 
   // 로그아웃 처리
@@ -751,6 +778,16 @@ function Layout() {
             <AddIcon fontSize="small" sx={{ color: colors.primary }} />
           </ListItemIcon>
           <ListItemText primary="새 매장 추가" />
+        </MenuItem>
+
+        <MenuItem
+          onClick={handleResetAndLoadDummyData}
+          sx={{ color: colors.secondary, borderRadius: 1, mx: 1, mt: 0.5 }}
+        >
+          <ListItemIcon>
+            <RefreshIcon fontSize="small" sx={{ color: colors.secondary }} />
+          </ListItemIcon>
+          <ListItemText primary="메가커피 서울대점 데이터 리셋" />
         </MenuItem>
       </Menu>
 
