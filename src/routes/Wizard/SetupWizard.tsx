@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import {
+  Navigate,
+  useNavigate,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
 import { Box, CircularProgress, Container, Typography } from "@mui/material";
 import Wizard from "./Wizard";
 import { hasInitialSetup, getStoreInfo } from "../../services/api";
@@ -10,11 +15,20 @@ import { hasInitialSetup, getStoreInfo } from "../../services/api";
  */
 function SetupWizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isNewStoreMode = searchParams.get("mode") === "new-store";
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
   // 초기 설정 상태 재확인
   useEffect(() => {
+    // 새 매장 추가 모드인 경우 초기 설정 확인을 건너뜁니다
+    if (isNewStoreMode) {
+      setLoading(false);
+      setInitialized(false);
+      return;
+    }
+
     const checkSetup = async () => {
       try {
         setLoading(true);
@@ -42,7 +56,7 @@ function SetupWizard() {
     };
 
     checkSetup();
-  }, [navigate]);
+  }, [navigate, isNewStoreMode]);
 
   // 로딩 중 표시
   if (loading) {

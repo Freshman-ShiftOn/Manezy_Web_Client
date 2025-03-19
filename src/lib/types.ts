@@ -58,6 +58,8 @@ export interface Shift {
   isRecurring: boolean; // 반복 여부
   isSubRequest?: boolean; // 대타 요청 여부
   isHighPriority?: boolean; // 우선순위 높음 표시
+  requiredStaff?: number; // 필요 인원 수
+  shiftType?: "open" | "middle" | "close"; // 시프트 타입
   recurringPattern?: {
     frequency: "weekly"; // 향후 'daily', 'monthly' 등 확장 가능
     daysOfWeek: number[]; // 반복할 요일 (0: 일요일, 1: 월요일, ...)

@@ -844,6 +844,7 @@ export const generateDummyData = (): void => {
     for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
       const shiftDate = new Date(thisMonday);
       shiftDate.setDate(thisMonday.getDate() + dayOffset);
+      const isWeekend = dayOffset % 7 === 0 || dayOffset % 7 === 6;
 
       // 오픈 시프트 (08:00 - 14:00)
       const morningDate = new Date(shiftDate);
@@ -857,35 +858,84 @@ export const generateDummyData = (): void => {
         title: "오픈 시프트",
         start: morningDate.toISOString(),
         end: morningEndDate.toISOString(),
-        // 평일에는 주간알바 + 오픈알바, 주말에는 주말알바 + 오픈알바
-        employeeIds:
-          dayOffset % 7 === 0 || dayOffset % 7 === 6
-            ? ["emp-3", "emp-6"]
-            : ["emp-4", "emp-6"],
+        // 오픈은 1-2명 (주말: 2명, 평일: 1명)
+        employeeIds: isWeekend ? ["emp-6", "emp-2"] : ["emp-6"], // 주말에는 두 명 배치
         note: "오픈 준비 및 아침 피크타임 담당",
         isRecurring: false,
+        requiredStaff: isWeekend ? 2 : 1,
+        shiftType: "open",
       });
 
-      // 미들 시프트 (13:00 - 18:00)
-      const middleDate = new Date(shiftDate);
-      middleDate.setHours(13, 0, 0, 0);
-      const middleEndDate = new Date(shiftDate);
-      middleEndDate.setHours(18, 0, 0, 0);
+      // 미들 시프트 1 (10:00 - 15:00)
+      const middle1Date = new Date(shiftDate);
+      middle1Date.setHours(10, 0, 0, 0);
+      const middle1EndDate = new Date(shiftDate);
+      middle1EndDate.setHours(15, 0, 0, 0);
 
       dummyShifts.push({
-        id: `shift-middle-${dayOffset}`,
+        id: `shift-middle1-${dayOffset}`,
         storeId: "s1",
-        title: "미들 시프트",
-        start: middleDate.toISOString(),
-        end: middleEndDate.toISOString(),
-        // 평일에는 매니저 + 바리스타, 주말에는 주말알바 + 바리스타
-        employeeIds:
-          dayOffset % 7 === 0 || dayOffset % 7 === 6
-            ? ["emp-5", "emp-8"]
-            : ["emp-1", "emp-8"],
-        note: "점심 피크타임 및 재고 관리",
+        title: "미들 시프트 (오전-오후)",
+        start: middle1Date.toISOString(),
+        end: middle1EndDate.toISOString(),
+        employeeIds: isWeekend ? ["emp-3", "emp-9"] : ["emp-2", "emp-9"], // 미들1은 항상 2명
+        note: "점심 피크타임 담당",
         isRecurring: false,
+        requiredStaff: 2,
+        shiftType: "middle",
       });
+
+      // 미들 시프트 2 (12:00 - 17:00)
+      const middle2Date = new Date(shiftDate);
+      middle2Date.setHours(12, 0, 0, 0);
+      const middle2EndDate = new Date(shiftDate);
+      middle2EndDate.setHours(17, 0, 0, 0);
+
+      // 바쁜 요일(월/수/금/주말)에는 더 많은 인원 배치
+      const isBusyDay =
+        isWeekend ||
+        dayOffset % 7 === 1 ||
+        dayOffset % 7 === 3 ||
+        dayOffset % 7 === 5;
+
+      dummyShifts.push({
+        id: `shift-middle2-${dayOffset}`,
+        storeId: "s1",
+        title: "미들 시프트 (점심-저녁)",
+        start: middle2Date.toISOString(),
+        end: middle2EndDate.toISOString(),
+        employeeIds: isWeekend
+          ? ["emp-5", "emp-8", "emp-1"] // 주말: 정도윤, 김지은, 박민우(매니저)
+          : isBusyDay
+          ? ["emp-1", "emp-4", "emp-8"] // 바쁜 평일: 박민우(매니저), 한수정, 김지은
+          : ["emp-4", "emp-8"], // 일반 평일: 한수정, 김지은
+        note: "점심 및 오후 피크타임",
+        isRecurring: false,
+        requiredStaff: isWeekend || isBusyDay ? 3 : 2,
+        shiftType: "middle",
+      });
+
+      // 일부 요일에만 추가 단시간 직원 (15:00 - 17:00)
+      if (dayOffset % 7 === 2 || dayOffset % 7 === 4) {
+        // 화요일, 목요일
+        const shortShiftDate = new Date(shiftDate);
+        shortShiftDate.setHours(15, 0, 0, 0);
+        const shortShiftEndDate = new Date(shiftDate);
+        shortShiftEndDate.setHours(17, 0, 0, 0);
+
+        dummyShifts.push({
+          id: `shift-short-${dayOffset}`,
+          storeId: "s1",
+          title: "단시간 시프트",
+          start: shortShiftDate.toISOString(),
+          end: shortShiftEndDate.toISOString(),
+          employeeIds: ["emp-9"], // 송민석
+          note: "단시간 근무 (오후 보조)",
+          isRecurring: false,
+          requiredStaff: 1,
+          shiftType: "middle",
+        });
+      }
 
       // 클로징 시프트 (17:00 - 22:00)
       const eveningDate = new Date(shiftDate);
@@ -899,13 +949,16 @@ export const generateDummyData = (): void => {
         title: "마감 시프트",
         start: eveningDate.toISOString(),
         end: eveningEndDate.toISOString(),
-        // 평일에는 주간알바 + 마감알바, 주말에는 주말알바 + 마감알바
-        employeeIds:
-          dayOffset % 7 === 0 || dayOffset % 7 === 6
-            ? ["emp-9", "emp-7"]
-            : ["emp-2", "emp-7"],
+        // 마감은 2명 (주말: 주말알바 + 마감알바, 평일: 주간알바/바리스타 + 마감알바)
+        employeeIds: isWeekend
+          ? ["emp-5", "emp-7", "emp-1"] // 주말: 정도윤, 윤준호, 박민우(매니저)
+          : dayOffset % 2 === 0
+          ? ["emp-8", "emp-7"] // 짝수일: 김지은(바리스타), 윤준호(마감)
+          : ["emp-2", "emp-7"], // 홀수일: 이서연(주간), 윤준호(마감)
         note: "저녁 피크타임 및 마감 담당",
         isRecurring: false,
+        requiredStaff: isWeekend ? 3 : 2,
+        shiftType: "close",
       });
     }
 

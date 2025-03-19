@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   Box,
   Stepper,
@@ -9,6 +9,8 @@ import {
   Paper,
   Alert,
   Snackbar,
+  IconButton,
+  Button,
 } from "@mui/material";
 import { Store, Employee, SetupWizardState } from "../../lib/types";
 import WizardStepStoreInfo from "./WizardStepStoreInfo";
@@ -16,12 +18,16 @@ import WizardStepWorkingHours from "./WizardStepWorkingHours";
 import WizardStepAddEmployees from "./WizardStepAddEmployees";
 import WizardStepReview from "./WizardStepReview";
 import { saveStoreSetup } from "../../services/api"; // 모킹 API 서비스
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import CloseIcon from "@mui/icons-material/Close";
 
 // 스텝 이름
 const steps = ["지점 정보", "영업 시간", "알바생 등록", "설정 검토"];
 
 function Wizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isNewStoreMode = searchParams.get("mode") === "new-store";
   const [activeStep, setActiveStep] = useState(0);
   const [snackbar, setSnackbar] = useState<{
     open: boolean;
@@ -96,7 +102,9 @@ function Wizard() {
       // 성공 메시지 표시
       setSnackbar({
         open: true,
-        message: "지점 설정이 완료되었습니다!",
+        message: isNewStoreMode
+          ? "새 매장이 성공적으로 추가되었습니다!"
+          : "지점 설정이 완료되었습니다!",
         severity: "success",
       });
 
@@ -166,21 +174,48 @@ function Wizard() {
   return (
     <Box sx={{ my: 4 }}>
       <Paper elevation={0} sx={{ p: 3, mb: 4 }}>
-        <Typography
-          variant="h4"
-          gutterBottom
-          align="center"
-          sx={{ fontWeight: "medium" }}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            mb: 2,
+          }}
         >
-          지점 설정 마법사
-        </Typography>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <IconButton
+              onClick={() => navigate("/dashboard")}
+              sx={{ mr: 1 }}
+              aria-label="뒤로 가기"
+            >
+              <ArrowBackIcon />
+            </IconButton>
+            <Typography
+              variant="h4"
+              gutterBottom
+              sx={{ fontWeight: "medium", mb: 0 }}
+            >
+              {isNewStoreMode ? "새 매장 추가" : "지점 설정 마법사"}
+            </Typography>
+          </Box>
+          <Button
+            variant="outlined"
+            color="inherit"
+            onClick={() => navigate("/dashboard")}
+            startIcon={<CloseIcon />}
+          >
+            취소
+          </Button>
+        </Box>
         <Typography
           variant="body1"
           align="center"
           color="text.secondary"
           sx={{ mb: 4 }}
         >
-          마네지 시작을 위한 지점 설정을 완료해주세요.
+          {isNewStoreMode
+            ? "새로운 매장 정보를 입력하여 추가해주세요."
+            : "마네지 시작을 위한 지점 설정을 완료해주세요."}
         </Typography>
 
         <Stepper activeStep={activeStep} alternativeLabel sx={{ mb: 4 }}>

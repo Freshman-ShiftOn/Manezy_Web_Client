@@ -114,19 +114,21 @@ const SHIFT_TYPES = [
 // 빠른 시간 템플릿 (각 시간대별 시작-종료 시간)
 const TIME_TEMPLATES = {
   open: [
-    { label: "오픈 (9:00-13:00)", start: "09:00", end: "13:00" },
-    { label: "오픈 (8:30-12:30)", start: "08:30", end: "12:30" },
+    { label: "오픈 (8:00-13:00)", start: "08:00", end: "13:00" },
     { label: "오픈 (9:00-14:00)", start: "09:00", end: "14:00" },
+    { label: "일찍 출근 (7:30-12:30)", start: "07:30", end: "12:30" },
   ],
   middle: [
     { label: "미들 (12:00-17:00)", start: "12:00", end: "17:00" },
     { label: "미들 (13:00-18:00)", start: "13:00", end: "18:00" },
-    { label: "미들 (11:30-16:30)", start: "11:30", end: "16:30" },
+    { label: "짧은 미들 (14:00-17:00)", start: "14:00", end: "17:00" },
+    { label: "긴 미들 (11:00-18:00)", start: "11:00", end: "18:00" },
   ],
   close: [
     { label: "마감 (17:00-22:00)", start: "17:00", end: "22:00" },
-    { label: "마감 (16:00-21:00)", start: "16:00", end: "21:00" },
-    { label: "마감 (18:00-22:00)", start: "18:00", end: "22:00" },
+    { label: "마감 시작 (16:00-21:00)", start: "16:00", end: "21:00" },
+    { label: "늦은 마감 (18:00-23:00)", start: "18:00", end: "23:00" },
+    { label: "마감 보조 (18:00-22:00)", start: "18:00", end: "22:00" },
   ],
 };
 
@@ -662,7 +664,16 @@ function ShiftDialog({
                 </IconButton>
                 <Typography
                   variant="body2"
-                  sx={{ mx: 1, minWidth: "24px", textAlign: "center" }}
+                  sx={{
+                    mx: 1,
+                    minWidth: "24px",
+                    textAlign: "center",
+                    fontWeight: "bold",
+                    color: (theme) =>
+                      requiredStaff > 1
+                        ? theme.palette.primary.main
+                        : "inherit",
+                  }}
                 >
                   {requiredStaff}
                 </Typography>
@@ -678,7 +689,11 @@ function ShiftDialog({
                 mb: 1,
                 p: 1,
                 borderRadius: 1,
-                bgcolor: isSufficientStaff ? "success.light" : "warning.light",
+                bgcolor: isSufficientStaff
+                  ? "success.light"
+                  : requiredStaff > assignedEmployeesCount + 1
+                  ? "error.light"
+                  : "warning.light",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -688,7 +703,11 @@ function ShiftDialog({
                 현재 배정: {assignedEmployeesCount}/{requiredStaff}명
               </Typography>
               <Typography variant="caption" fontWeight="bold">
-                {isSufficientStaff ? "충분한 인원" : "인원 부족"}
+                {isSufficientStaff
+                  ? "충분한 인원"
+                  : requiredStaff > assignedEmployeesCount + 1
+                  ? "인원이 많이 부족합니다"
+                  : "인원 부족"}
               </Typography>
             </Box>
 
@@ -736,6 +755,137 @@ function ShiftDialog({
               )}
             </FormControl>
           </Grid>
+
+          {/* 직원별 개별 근무 시간 설정 */}
+          {selectedEmployeeIds.length > 0 && (
+            <Grid item xs={12}>
+              <Paper variant="outlined" sx={{ p: 1.5, mt: 1 }}>
+                <Typography variant="subtitle2" gutterBottom>
+                  직원별 근무 시간 설정
+                  <Typography
+                    variant="caption"
+                    sx={{ ml: 1, color: "text.secondary" }}
+                  >
+                    (각 직원의 근무 시간을 개별적으로 조정할 수 있습니다)
+                  </Typography>
+                </Typography>
+
+                <TableContainer>
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>직원</TableCell>
+                        <TableCell>시작 시간</TableCell>
+                        <TableCell>종료 시간</TableCell>
+                        <TableCell align="center">근무 시간</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {selectedEmployeeIds.map((empId) => {
+                        const employee = employees.find((e) => e.id === empId);
+                        const empShiftTime = employeeShiftTimes[empId] || {
+                          start: startTime || new Date(),
+                          end: endTime || new Date(),
+                        };
+
+                        // 근무 시간 계산 (시간 단위)
+                        const hours = differenceInHours(
+                          empShiftTime.end,
+                          empShiftTime.start
+                        );
+
+                        return (
+                          <TableRow key={empId}>
+                            <TableCell>{employee?.name || "Unknown"}</TableCell>
+                            <TableCell>
+                              <TextField
+                                size="small"
+                                fullWidth
+                                variant="outlined"
+                                type="time"
+                                value={format(empShiftTime.start, "HH:mm")}
+                                onChange={(e) => {
+                                  const [hours, minutes] = e.target.value
+                                    .split(":")
+                                    .map(Number);
+                                  const newDate = new Date(empShiftTime.start);
+                                  newDate.setHours(hours, minutes, 0, 0);
+
+                                  setEmployeeShiftTimes((prev) => ({
+                                    ...prev,
+                                    [empId]: {
+                                      ...prev[empId],
+                                      start: newDate,
+                                    },
+                                  }));
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell>
+                              <TextField
+                                size="small"
+                                fullWidth
+                                variant="outlined"
+                                type="time"
+                                value={format(empShiftTime.end, "HH:mm")}
+                                onChange={(e) => {
+                                  const [hours, minutes] = e.target.value
+                                    .split(":")
+                                    .map(Number);
+                                  const newDate = new Date(empShiftTime.end);
+                                  newDate.setHours(hours, minutes, 0, 0);
+
+                                  setEmployeeShiftTimes((prev) => ({
+                                    ...prev,
+                                    [empId]: {
+                                      ...prev[empId],
+                                      end: newDate,
+                                    },
+                                  }));
+                                }}
+                              />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Typography
+                                variant="body2"
+                                fontWeight="medium"
+                                color={
+                                  hours < 2 ? "error.main" : "text.primary"
+                                }
+                              >
+                                {hours}시간
+                              </Typography>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+
+                <Box
+                  sx={{ mt: 1, display: "flex", justifyContent: "flex-end" }}
+                >
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      // 모든 직원의 시간을 기본 시간으로 일괄 설정
+                      const updatedTimes = {};
+                      selectedEmployeeIds.forEach((empId) => {
+                        updatedTimes[empId] = {
+                          start: startTime || new Date(),
+                          end: endTime || new Date(),
+                        };
+                      });
+                      setEmployeeShiftTimes(updatedTimes);
+                    }}
+                  >
+                    모든 직원 시간 일괄 적용
+                  </Button>
+                </Box>
+              </Paper>
+            </Grid>
+          )}
 
           {/* 메모 */}
           <Grid item xs={12}>

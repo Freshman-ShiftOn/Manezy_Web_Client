@@ -243,7 +243,7 @@ function Layout() {
   // 새 스토어 등록
   const handleAddNewStore = () => {
     handleStoreMenuClose();
-    navigate("/setup");
+    navigate("/setup?mode=new-store");
   };
 
   // 데이터 초기화 및 메가커피 서울대점 데이터 로드
