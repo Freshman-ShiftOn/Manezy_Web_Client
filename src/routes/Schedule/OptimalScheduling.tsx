@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Button,
@@ -28,6 +28,7 @@ import {
   FormControlLabel,
   Tab,
   Tabs,
+  Container,
 } from "@mui/material";
 import {
   Refresh as RefreshIcon,
@@ -39,8 +40,9 @@ import {
   Cancel as CancelIcon,
   Warning as WarningIcon,
   ArrowForward as ArrowForwardIcon,
+  CalendarViewWeek as CalendarViewWeekIcon,
 } from "@mui/icons-material";
-import { format, getDay } from "date-fns";
+import { format, getDay, addDays, isSameDay } from "date-fns";
 import {
   getEmployees,
   getEmployeeAvailabilities,
@@ -50,6 +52,17 @@ import {
   generateDummyData,
 } from "../../services/api";
 import { Employee, EmployeeAvailability, Shift } from "../../lib/types";
+
+// 컴포넌트 가져오기
+import AvailabilityHeatmap from "./components/AvailabilityHeatmap";
+import StaffingSummary from "./components/StaffingSummary";
+import OptimizationControls, {
+  OptimizationSettings,
+} from "./components/OptimizationControls";
+import ScheduleComparison, {
+  ScheduleChange,
+} from "./components/ScheduleComparison";
+import WeeklyScheduleOptimizer from "./components/WeeklyScheduleOptimizer";
 
 // 요일 이름 (한글)
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
@@ -75,6 +88,19 @@ interface OptimalSchedulingProps {
   selectedShiftId?: string;
 }
 
+interface EmployeeAvailabilityData {
+  id: string;
+  name: string;
+  availability: {
+    [day: number]: {
+      slots: number[];
+    };
+  };
+}
+
+// 탭 타입 정의
+type TabValue = "weekly" | "availability" | "optimization";
+
 const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
   onAssignEmployee,
   selectedShiftId,
@@ -91,12 +117,31 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showAvailabilityDialog, setShowAvailabilityDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState<"recommendation" | "availability">(
-    "recommendation"
-  );
+  const [activeTab, setActiveTab] = useState<TabValue>("weekly"); // 기본값을 주간 스케줄로 변경
   const [showUnavailable, setShowUnavailable] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  const [optimizationLoading, setOptimizationLoading] = useState(false);
+  const [showComparison, setShowComparison] = useState(false);
+
+  // 최적화 설정
+  const [optimizationSettings, setOptimizationSettings] =
+    useState<OptimizationSettings>({
+      equalDistribution: 7,
+      preferenceWeight: 8,
+      minimumStaffing: 9,
+      minimizeCost: 5,
+      considerEmployeeRequests: true,
+      respectWorkingHourLimits: true,
+      maxShiftsPerDay: 2,
+      minHoursBetweenShifts: 10,
+    });
+
+  // 최적화 결과
+  const [optimizationResults, setOptimizationResults] = useState<
+    ScheduleChange[]
+  >([]);
+  const [hasOptimizationResults, setHasOptimizationResults] = useState(false);
 
   // 초기 데이터 로딩
   useEffect(() => {
@@ -200,10 +245,7 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
   };
 
   // 탭 변경 핸들러
-  const handleTabChange = (
-    _: React.SyntheticEvent,
-    newValue: "recommendation" | "availability"
-  ) => {
+  const handleTabChange = (_: React.SyntheticEvent, newValue: TabValue) => {
     setActiveTab(newValue);
   };
 
@@ -218,6 +260,182 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
     if (selectedShiftId) {
       onAssignEmployee(selectedShiftId, employeeId);
     }
+  };
+
+  // 주간 스케줄 적용 핸들러
+  const handleWeeklyScheduleApply = (schedule: any[]) => {
+    // 실제 구현에서는 API 호출을 통해 주간 스케줄을 저장
+    console.log("주간 스케줄 적용:", schedule);
+    // TODO: 주간 스케줄을 저장하는 API 호출 구현
+  };
+
+  // 가용성 데이터 변환
+  const availabilityData = useMemo((): EmployeeAvailabilityData[] => {
+    return employees.map((employee) => {
+      const employeeAvailabilities = availabilities.filter(
+        (a) => a.employeeId === employee.id
+      );
+
+      // 변환된 가용성 데이터
+      const availability: { [day: number]: { slots: number[] } } = {};
+
+      employeeAvailabilities.forEach((a) => {
+        // 30분 단위로 슬롯 생성 (48개 슬롯, 0~47)
+        const slots = Array(48).fill(0);
+
+        if (a.startTime && a.endTime) {
+          const [startHour, startMinute] = a.startTime.split(":").map(Number);
+          const [endHour, endMinute] = a.endTime.split(":").map(Number);
+
+          const startSlot = startHour * 2 + (startMinute >= 30 ? 1 : 0);
+          const endSlot = endHour * 2 + (endMinute >= 30 ? 1 : 0);
+
+          // 해당 시간대에 가용 상태 저장
+          for (let i = startSlot; i < endSlot; i++) {
+            if (a.preference === "preferred") {
+              slots[i] = 3; // 선호
+            } else if (a.preference === "available") {
+              slots[i] = 2; // 가능
+            } else if (a.preference === "unavailable") {
+              slots[i] = 1; // 불가능
+            }
+          }
+        }
+
+        availability[a.dayOfWeek] = { slots };
+      });
+
+      return {
+        id: employee.id,
+        name: employee.name,
+        availability,
+      };
+    });
+  }, [employees, availabilities]);
+
+  // 최적화 실행 핸들러
+  const handleRunOptimization = () => {
+    setOptimizationLoading(true);
+
+    // 실제로는 API 호출이 필요하지만, 여기서는 예시로 더미 데이터 생성
+    setTimeout(() => {
+      // 현재 스케줄에서 변경사항 생성 (예시)
+      const sampleChanges: ScheduleChange[] = [];
+      const startDate = new Date();
+
+      // 10개의 샘플 변경사항 생성
+      for (let i = 0; i < 10; i++) {
+        const employee =
+          employees[Math.floor(Math.random() * employees.length)];
+        const changeType = ["added", "removed", "modified"][
+          Math.floor(Math.random() * 3)
+        ] as "added" | "removed" | "modified";
+        const impact = ["positive", "negative", "neutral"][
+          Math.floor(Math.random() * 3)
+        ] as "positive" | "negative" | "neutral";
+
+        const shiftDate = addDays(startDate, Math.floor(Math.random() * 7));
+        const startHour = 9 + Math.floor(Math.random() * 8); // 9AM - 4PM
+        const endHour = startHour + 2 + Math.floor(Math.random() * 4); // 2-6 hours shift
+
+        const originalStart =
+          changeType === "added" ? null : new Date(shiftDate);
+        const originalEnd = changeType === "added" ? null : new Date(shiftDate);
+        const optimizedStart =
+          changeType === "removed" ? null : new Date(shiftDate);
+        const optimizedEnd =
+          changeType === "removed" ? null : new Date(shiftDate);
+
+        if (originalStart && originalEnd) {
+          originalStart.setHours(startHour, 0, 0);
+          originalEnd.setHours(endHour, 0, 0);
+        }
+
+        if (optimizedStart && optimizedEnd) {
+          optimizedStart.setHours(
+            changeType === "modified" ? startHour + 1 : startHour,
+            0,
+            0
+          );
+          optimizedEnd.setHours(
+            changeType === "modified" ? endHour + 1 : endHour,
+            0,
+            0
+          );
+        }
+
+        sampleChanges.push({
+          id: `change-${i}`,
+          employeeId: employee.id,
+          employeeName: employee.name,
+          original: {
+            start: originalStart,
+            end: originalEnd,
+            position: "매장 직원",
+          },
+          optimized: {
+            start: optimizedStart,
+            end: optimizedEnd,
+            position: "매장 직원",
+          },
+          changeType,
+          impact,
+          conflictReason:
+            Math.random() > 0.8 ? "다른 근무와 시간 중복" : undefined,
+        });
+      }
+
+      setOptimizationResults(sampleChanges);
+      setHasOptimizationResults(true);
+      setOptimizationLoading(false);
+
+      // 자동으로 결과 비교 화면 표시
+      setShowComparison(true);
+    }, 2000);
+  };
+
+  // 최적화 설정 변경 핸들러
+  const handleOptimizationSettingsChange = (settings: OptimizationSettings) => {
+    setOptimizationSettings(settings);
+  };
+
+  // 결과 비교 핸들러
+  const handleCompareResults = () => {
+    setShowComparison(true);
+  };
+
+  // 설정 초기화 핸들러
+  const handleResetSettings = () => {
+    setOptimizationSettings({
+      equalDistribution: 7,
+      preferenceWeight: 8,
+      minimumStaffing: 9,
+      minimizeCost: 5,
+      considerEmployeeRequests: true,
+      respectWorkingHourLimits: true,
+      maxShiftsPerDay: 2,
+      minHoursBetweenShifts: 10,
+    });
+  };
+
+  // 변경사항 적용 핸들러
+  const handleApplyChanges = (selectedChanges: string[]) => {
+    // 실제로는 API 호출하여 변경사항 적용
+    console.log("적용할 변경사항:", selectedChanges);
+    setShowComparison(false);
+
+    // 적용 성공 메시지 표시 (실제로는 구현 필요)
+    alert(`선택한 ${selectedChanges.length}개 변경사항이 적용되었습니다.`);
+  };
+
+  // 모든 변경사항 적용 핸들러
+  const handleApplyAllChanges = () => {
+    // 실제로는 API 호출하여 모든 변경사항 적용
+    console.log("모든 변경사항 적용:", optimizationResults.length);
+    setShowComparison(false);
+
+    // 적용 성공 메시지 표시 (실제로는 구현 필요)
+    alert(`${optimizationResults.length}개 모든 변경사항이 적용되었습니다.`);
   };
 
   // 가용시간 미니맵 렌더링
@@ -416,48 +634,81 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
     }
 
     return (
-      <List>
-        {employees.map((employee) => (
-          <Card key={employee.id} variant="outlined" sx={{ mb: 1 }}>
-            <CardHeader
-              avatar={<Avatar>{employee.name.charAt(0)}</Avatar>}
-              title={employee.name}
-              subheader={employee.role || "일반 근무자"}
-            />
-            <CardContent sx={{ pt: 0, pb: 1 }}>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                가용시간 요약
+      <>
+        <StaffingSummary data={availabilityData} />
+
+        <AvailabilityHeatmap data={availabilityData} />
+      </>
+    );
+  };
+
+  // 최적화 기능 렌더링
+  const renderOptimization = () => {
+    return (
+      <>
+        <OptimizationControls
+          settings={optimizationSettings}
+          onSettingsChange={handleOptimizationSettingsChange}
+          onRunOptimization={handleRunOptimization}
+          onCompareResults={handleCompareResults}
+          onReset={handleResetSettings}
+          isLoading={optimizationLoading}
+          hasResults={hasOptimizationResults}
+        />
+
+        <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
+          <Typography variant="subtitle1" gutterBottom>
+            최적화 설명
+          </Typography>
+          <Typography variant="body2" paragraph>
+            최적화 기능은 직원들의 선호도와 가용 시간, 매장의 필요 인력 등을
+            고려하여 최적의 스케줄을 자동으로 생성합니다. 다양한 제약 조건과
+            우선순위를 설정하여 효율적인 근무표를 만들 수 있습니다.
+          </Typography>
+          <Typography variant="body2">
+            스케줄 최적화 과정에서 고려되는 요소:
+          </Typography>
+          <ul>
+            <li>
+              <Typography variant="body2">
+                직원의 선호 시간대 및 가용 시간
               </Typography>
-              {renderAvailabilityMinimap(employee.id)}
-            </CardContent>
-            <CardActions>
-              <Button
-                size="small"
-                onClick={() => handleViewAvailability(employee.id)}
-              >
-                상세 보기
-              </Button>
-              {selectedShift && (
-                <Button
-                  size="small"
-                  color="primary"
-                  variant="contained"
-                  onClick={() => handleAssignEmployee(employee.id)}
-                  disabled={
-                    !isEmployeeAvailable(
-                      employee.id,
-                      getShiftDay(selectedShift)
-                    )
-                  }
-                  sx={{ ml: "auto" }}
-                >
-                  배정하기
-                </Button>
-              )}
-            </CardActions>
-          </Card>
-        ))}
-      </List>
+            </li>
+            <li>
+              <Typography variant="body2">근무 시간 분배의 균등성</Typography>
+            </li>
+            <li>
+              <Typography variant="body2">
+                직원별 주당 최대 근무 시간
+              </Typography>
+            </li>
+            <li>
+              <Typography variant="body2">휴가 및 요청 사항</Typography>
+            </li>
+            <li>
+              <Typography variant="body2">시간대별 필요 인력</Typography>
+            </li>
+          </ul>
+        </Paper>
+      </>
+    );
+  };
+
+  // 주간 스케줄 최적화 렌더링
+  const renderWeeklySchedule = () => {
+    if (employees.length === 0) {
+      return (
+        <Alert severity="info" sx={{ m: 2 }}>
+          등록된 알바생이 없습니다.
+        </Alert>
+      );
+    }
+
+    return (
+      <WeeklyScheduleOptimizer
+        employees={employees}
+        onApplySchedule={handleWeeklyScheduleApply}
+      />
     );
   };
 
@@ -699,15 +950,19 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
       >
         <Tabs value={activeTab} onChange={handleTabChange}>
           <Tab
-            icon={<AutoAwesomeIcon />}
-            label="추천 알바생"
-            value="recommendation"
-            disabled={!selectedShift}
+            icon={<CalendarViewWeekIcon />}
+            label="주간 스케줄 짜기"
+            value="weekly"
           />
           <Tab
             icon={<PersonIcon />}
             label="전체 가용시간"
             value="availability"
+          />
+          <Tab
+            icon={<EventIcon />}
+            label="스케줄 적합도 분석"
+            value="optimization"
           />
         </Tabs>
 
@@ -730,41 +985,38 @@ const OptimalScheduling: React.FC<OptimalSchedulingProps> = ({
         </IconButton>
       </Box>
 
-      {selectedShift && (
-        <Paper
-          elevation={0}
-          sx={{
-            mx: 2,
-            mt: 2,
-            p: 1,
-            bgcolor: "primary.light",
-            color: "primary.contrastText",
-            borderRadius: 1,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <EventIcon sx={{ mr: 1 }} />
-            <Typography variant="subtitle2">
-              {format(new Date(selectedShift.start), "yyyy년 MM월 dd일 (eee)")}
-            </Typography>
-            <TimeIcon sx={{ ml: 2, mr: 1 }} />
-            <Typography variant="subtitle2">
-              {format(new Date(selectedShift.start), "HH:mm")} -{" "}
-              {format(new Date(selectedShift.end), "HH:mm")}
-            </Typography>
-          </Box>
-        </Paper>
-      )}
-
       <Box sx={{ p: 0, height: "calc(100% - 48px)", overflow: "auto" }}>
-        <Box sx={{ p: 2 }}>
-          {activeTab === "recommendation" && renderRecommendations()}
-          {activeTab === "availability" && renderAvailabilityOverview()}
-        </Box>
+        {activeTab === "weekly" && (
+          <Box
+            sx={{ height: "100%", display: "flex", flexDirection: "column" }}
+          >
+            <WeeklyScheduleOptimizer
+              employees={employees}
+              onApplySchedule={handleWeeklyScheduleApply}
+            />
+          </Box>
+        )}
+        {activeTab === "availability" && (
+          <Box sx={{ p: 2 }}>{renderAvailabilityOverview()}</Box>
+        )}
+        {activeTab === "optimization" && (
+          <Box sx={{ p: 2 }}>{renderOptimization()}</Box>
+        )}
       </Box>
 
       {/* 가용시간 상세 대화상자 */}
       {renderAvailabilityDialog()}
+
+      {/* 변경사항 비교 대화상자 */}
+      {showComparison && (
+        <ScheduleComparison
+          changes={optimizationResults}
+          onApply={handleApplyChanges}
+          onApplyAll={handleApplyAllChanges}
+          onCancel={() => setShowComparison(false)}
+          isLoading={false}
+        />
+      )}
     </Paper>
   );
 };

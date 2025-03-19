@@ -29,6 +29,8 @@ import {
   Person as PersonIcon,
   Schedule as ScheduleIcon,
   Comment as CommentIcon,
+  SwapHorizontalCircle as SwapIcon,
+  Event as EventIcon,
 } from "@mui/icons-material";
 import { format } from "date-fns";
 import {
@@ -41,16 +43,21 @@ import {
   generateDummyData,
   getEmployees,
   createNotification,
+  getShifts,
 } from "../../services/api";
 import {
   SubstituteRequest,
   ScheduleChangeRequest,
   ShiftApprovalRequest,
   Employee,
+  Shift,
 } from "../../lib/types";
 
+// 컴포넌트 가져오기
+import SubstituteAssigner from "./components/SubstituteAssigner";
+
 // 요청 유형 타입
-type RequestTab = "substitute" | "change" | "approval";
+type RequestTab = "substitute" | "change" | "approval" | "substituteAssign";
 
 const RequestManagement: React.FC = () => {
   // 상태 관리
@@ -74,6 +81,10 @@ const RequestManagement: React.FC = () => {
   const [selectedRequest, setSelectedRequest] = useState<any>(null);
   const [responseMessage, setResponseMessage] = useState("");
 
+  // 대타 배정 관련 상태
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+
   // 데이터 로딩
   useEffect(() => {
     // 더미 데이터 생성 (실제 앱에서는 제거)
@@ -89,15 +100,18 @@ const RequestManagement: React.FC = () => {
         setEmployees(employeesData);
 
         // 모든 요청 데이터 로드
-        const [subReqs, changeReqs, approvalReqs] = await Promise.all([
-          getSubstituteRequests(),
-          getScheduleChangeRequests(),
-          getShiftApprovalRequests(),
-        ]);
+        const [subReqs, changeReqs, approvalReqs, shiftsData] =
+          await Promise.all([
+            getSubstituteRequests(),
+            getScheduleChangeRequests(),
+            getShiftApprovalRequests(),
+            getShifts(),
+          ]);
 
         setSubstituteRequests(subReqs);
         setChangeRequests(changeReqs);
         setApprovalRequests(approvalReqs);
+        setShifts(shiftsData);
       } catch (err) {
         console.error("요청 데이터 로딩 오류:", err);
         setError("요청 데이터를 불러오는 중 오류가 발생했습니다.");
@@ -114,15 +128,19 @@ const RequestManagement: React.FC = () => {
     setLoading(true);
 
     try {
-      const [subReqs, changeReqs, approvalReqs] = await Promise.all([
-        getSubstituteRequests(),
-        getScheduleChangeRequests(),
-        getShiftApprovalRequests(),
-      ]);
+      const [subReqs, changeReqs, approvalReqs, shiftsData] = await Promise.all(
+        [
+          getSubstituteRequests(),
+          getScheduleChangeRequests(),
+          getShiftApprovalRequests(),
+          getShifts(),
+        ]
+      );
 
       setSubstituteRequests(subReqs);
       setChangeRequests(changeReqs);
       setApprovalRequests(approvalReqs);
+      setShifts(shiftsData);
       setError(null);
     } catch (err) {
       console.error("새로고침 오류:", err);
@@ -135,6 +153,13 @@ const RequestManagement: React.FC = () => {
   // 탭 변경 핸들러
   const handleTabChange = (_: React.SyntheticEvent, newValue: RequestTab) => {
     setActiveTab(newValue);
+
+    // 대타 배정하기 탭으로 변경 시 선택된 근무가 없으면 안내 메시지 표시
+    if (newValue === "substituteAssign" && !selectedShift) {
+      setError("먼저 근무를 선택해야 대타 배정을 진행할 수 있습니다.");
+    } else {
+      setError(null);
+    }
   };
 
   // 요청 상세 보기
@@ -290,6 +315,22 @@ const RequestManagement: React.FC = () => {
     }
   };
 
+  // 대타 배정을 위한 근무 선택
+  const handleSelectShift = (shift: Shift) => {
+    setSelectedShift(shift);
+    setActiveTab("substituteAssign");
+    setError(null);
+  };
+
+  // 대타 배정 완료 핸들러
+  const handleSubstituteAssigned = () => {
+    // 대타 배정 후 데이터 갱신
+    alert(
+      "대타 요청이 성공적으로 전송되었습니다. 대타 알바생의 수락을 기다립니다."
+    );
+    handleRefresh();
+  };
+
   // 직원 이름 가져오기
   const getEmployeeName = (employeeId?: string) => {
     if (!employeeId) return "알 수 없음";
@@ -325,7 +366,7 @@ const RequestManagement: React.FC = () => {
     }
 
     return (
-      <List>
+      <div>
         {substituteRequests.map((request) => {
           const { color, text } = getStatusInfo(request.status);
 
@@ -335,10 +376,53 @@ const RequestManagement: React.FC = () => {
               elevation={1}
               sx={{ mb: 1, borderRadius: 1 }}
             >
-              <ListItem
-                sx={{ borderLeft: 3, borderColor: `${color}.main` }}
-                secondaryAction={
-                  request.status === "pending" ? (
+              <Box
+                sx={{
+                  p: 2,
+                  borderLeft: 3,
+                  borderColor: `${color}.main`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Box
+                  onClick={() => handleViewDetail(request)}
+                  sx={{ cursor: "pointer", flexGrow: 1 }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <PersonIcon fontSize="small" sx={{ mr: 1 }} />
+                    <Typography variant="subtitle2">
+                      {getEmployeeName(request.requesterId)}의 대타 요청
+                    </Typography>
+                    {request.substituteId && (
+                      <Typography variant="body2" sx={{ ml: 1 }}>
+                        → {getEmployeeName(request.substituteId)}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
+                      요청일:{" "}
+                      {format(new Date(request.createdAt), "yyyy/MM/dd HH:mm")}
+                    </Typography>
+                    {request.reason && (
+                      <Typography
+                        variant="caption"
+                        display="block"
+                        color="text.secondary"
+                      >
+                        사유: {request.reason}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+                <Box>
+                  {request.status === "pending" ? (
                     <Box>
                       <Button
                         color="success"
@@ -363,55 +447,13 @@ const RequestManagement: React.FC = () => {
                       size="small"
                       variant="outlined"
                     />
-                  )
-                }
-              >
-                <ListItemText
-                  primary={
-                    <Box sx={{ display: "flex", alignItems: "center" }}>
-                      <PersonIcon fontSize="small" sx={{ mr: 1 }} />
-                      <Typography variant="subtitle2">
-                        {getEmployeeName(request.requesterId)}의 대타 요청
-                      </Typography>
-                      {request.substituteId && (
-                        <Typography variant="body2" sx={{ ml: 1 }}>
-                          → {getEmployeeName(request.substituteId)}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                  secondary={
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        display="block"
-                        sx={{ mt: 0.5 }}
-                      >
-                        요청일:{" "}
-                        {format(
-                          new Date(request.createdAt),
-                          "yyyy/MM/dd HH:mm"
-                        )}
-                      </Typography>
-                      {request.reason && (
-                        <Typography
-                          variant="caption"
-                          display="block"
-                          color="text.secondary"
-                        >
-                          사유: {request.reason}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                  onClick={() => handleViewDetail(request)}
-                  sx={{ cursor: "pointer" }}
-                />
-              </ListItem>
+                  )}
+                </Box>
+              </Box>
             </Paper>
           );
         })}
-      </List>
+      </div>
     );
   };
 
@@ -426,7 +468,7 @@ const RequestManagement: React.FC = () => {
     }
 
     return (
-      <List>
+      <div>
         {changeRequests.map((request) => {
           const { color, text } = getStatusInfo(request.status);
 
@@ -436,10 +478,65 @@ const RequestManagement: React.FC = () => {
               elevation={1}
               sx={{ mb: 1, borderRadius: 1 }}
             >
-              <ListItem
-                sx={{ borderLeft: 3, borderColor: `${color}.main` }}
-                secondaryAction={
-                  request.status === "pending" ? (
+              <Box
+                sx={{
+                  p: 2,
+                  borderLeft: 3,
+                  borderColor: `${color}.main`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Box
+                  onClick={() => handleViewDetail(request)}
+                  sx={{ cursor: "pointer", flexGrow: 1 }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <ScheduleIcon fontSize="small" sx={{ mr: 1 }} />
+                    <Typography variant="subtitle2">
+                      {getEmployeeName(request.employeeId)}의{" "}
+                      {request.requestType === "timeChange"
+                        ? "시간 변경"
+                        : request.requestType === "dateChange"
+                        ? "날짜 변경"
+                        : "취소"}{" "}
+                      요청
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
+                      현재:{" "}
+                      {format(new Date(request.currentStart), "MM/dd HH:mm")} ~{" "}
+                      {format(new Date(request.currentEnd), "HH:mm")}
+                    </Typography>
+                    {request.requestedStart && request.requestedEnd && (
+                      <Typography variant="caption" display="block">
+                        변경:{" "}
+                        {format(
+                          new Date(request.requestedStart),
+                          "MM/dd HH:mm"
+                        )}{" "}
+                        ~ {format(new Date(request.requestedEnd), "HH:mm")}
+                      </Typography>
+                    )}
+                    {request.reason && (
+                      <Typography
+                        variant="caption"
+                        display="block"
+                        color="text.secondary"
+                      >
+                        사유: {request.reason}
+                      </Typography>
+                    )}
+                  </Box>
+                </Box>
+                <Box>
+                  {request.status === "pending" ? (
                     <Box>
                       <Button
                         color="success"
@@ -464,64 +561,13 @@ const RequestManagement: React.FC = () => {
                       size="small"
                       variant="outlined"
                     />
-                  )
-                }
-              >
-                <ListItemText
-                  primary={
-                    <Box sx={{ display: "flex", alignItems: "center" }}>
-                      <ScheduleIcon fontSize="small" sx={{ mr: 1 }} />
-                      <Typography variant="subtitle2">
-                        {getEmployeeName(request.employeeId)}의{" "}
-                        {request.requestType === "timeChange"
-                          ? "시간 변경"
-                          : request.requestType === "dateChange"
-                          ? "날짜 변경"
-                          : "취소"}{" "}
-                        요청
-                      </Typography>
-                    </Box>
-                  }
-                  secondary={
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        display="block"
-                        sx={{ mt: 0.5 }}
-                      >
-                        현재:{" "}
-                        {format(new Date(request.currentStart), "MM/dd HH:mm")}{" "}
-                        ~ {format(new Date(request.currentEnd), "HH:mm")}
-                      </Typography>
-                      {request.requestedStart && request.requestedEnd && (
-                        <Typography variant="caption" display="block">
-                          변경:{" "}
-                          {format(
-                            new Date(request.requestedStart),
-                            "MM/dd HH:mm"
-                          )}{" "}
-                          ~ {format(new Date(request.requestedEnd), "HH:mm")}
-                        </Typography>
-                      )}
-                      {request.reason && (
-                        <Typography
-                          variant="caption"
-                          display="block"
-                          color="text.secondary"
-                        >
-                          사유: {request.reason}
-                        </Typography>
-                      )}
-                    </Box>
-                  }
-                  onClick={() => handleViewDetail(request)}
-                  sx={{ cursor: "pointer" }}
-                />
-              </ListItem>
+                  )}
+                </Box>
+              </Box>
             </Paper>
           );
         })}
-      </List>
+      </div>
     );
   };
 
@@ -536,7 +582,7 @@ const RequestManagement: React.FC = () => {
     }
 
     return (
-      <List>
+      <div>
         {approvalRequests.map((request) => {
           const { color, text } = getStatusInfo(request.status);
 
@@ -546,10 +592,53 @@ const RequestManagement: React.FC = () => {
               elevation={1}
               sx={{ mb: 1, borderRadius: 1 }}
             >
-              <ListItem
-                sx={{ borderLeft: 3, borderColor: `${color}.main` }}
-                secondaryAction={
-                  request.status === "pending" ? (
+              <Box
+                sx={{
+                  p: 2,
+                  borderLeft: 3,
+                  borderColor: `${color}.main`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Box
+                  onClick={() => handleViewDetail(request)}
+                  sx={{ cursor: "pointer", flexGrow: 1 }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center" }}>
+                    <TimeIcon fontSize="small" sx={{ mr: 1 }} />
+                    <Typography variant="subtitle2">
+                      {getEmployeeName(request.employeeId)}의 근무 승인 요청
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography
+                      variant="caption"
+                      display="block"
+                      sx={{ mt: 0.5 }}
+                    >
+                      근무 시간:{" "}
+                      {format(
+                        new Date(request.actualStart || request.submittedTime),
+                        "MM/dd HH:mm"
+                      )}{" "}
+                      ~
+                      {request.actualEnd
+                        ? format(new Date(request.actualEnd), " HH:mm")
+                        : " (진행 중)"}
+                    </Typography>
+                    <Typography variant="caption" display="block">
+                      요청일:{" "}
+                      {format(
+                        new Date(request.submittedTime),
+                        "yyyy/MM/dd HH:mm"
+                      )}
+                    </Typography>
+                  </Box>
+                </Box>
+                <Box>
+                  {request.status === "pending" ? (
                     <Box>
                       <Button
                         color="success"
@@ -574,74 +663,105 @@ const RequestManagement: React.FC = () => {
                       size="small"
                       variant="outlined"
                     />
-                  )
-                }
-              >
-                <ListItemText
-                  primary={
-                    <Box sx={{ display: "flex", alignItems: "center" }}>
-                      <TimeIcon fontSize="small" sx={{ mr: 1 }} />
-                      <Typography variant="subtitle2">
-                        {getEmployeeName(request.employeeId)}의 근무 승인 요청
-                      </Typography>
-                    </Box>
-                  }
-                  secondary={
-                    <Box>
-                      <Typography
-                        variant="caption"
-                        display="block"
-                        sx={{ mt: 0.5 }}
-                      >
-                        근무 시간:{" "}
-                        {format(
-                          new Date(
-                            request.actualStart || request.submittedTime
-                          ),
-                          "MM/dd HH:mm"
-                        )}{" "}
-                        ~
-                        {request.actualEnd
-                          ? format(new Date(request.actualEnd), " HH:mm")
-                          : " (진행 중)"}
-                      </Typography>
-                      <Typography variant="caption" display="block">
-                        요청일:{" "}
-                        {format(
-                          new Date(request.submittedTime),
-                          "yyyy/MM/dd HH:mm"
-                        )}
-                      </Typography>
-                    </Box>
-                  }
-                  onClick={() => handleViewDetail(request)}
-                  sx={{ cursor: "pointer" }}
-                />
-              </ListItem>
+                  )}
+                </Box>
+              </Box>
             </Paper>
           );
         })}
-      </List>
+      </div>
+    );
+  };
+
+  // 대타 배정 기능 렌더링
+  const renderSubstituteAssigner = () => {
+    return (
+      <>
+        <Paper sx={{ p: 2, mb: 3 }} variant="outlined">
+          <Typography variant="subtitle1" gutterBottom>
+            대타 배정할 근무 선택
+          </Typography>
+          <Box sx={{ mt: 2, maxHeight: "300px", overflow: "auto" }}>
+            {shifts.length === 0 ? (
+              <Alert severity="info">배정 가능한 근무가 없습니다.</Alert>
+            ) : (
+              <Box>
+                {shifts.map((shift) => {
+                  const isSelected = selectedShift?.id === shift.id;
+                  return (
+                    <Paper
+                      key={shift.id}
+                      elevation={isSelected ? 3 : 1}
+                      sx={{
+                        mb: 1,
+                        borderLeft: 4,
+                        borderColor: isSelected ? "primary.main" : "grey.300",
+                        transition: "all 0.2s",
+                        "&:hover": {
+                          bgcolor: "action.hover",
+                        },
+                        bgcolor: isSelected
+                          ? "action.selected"
+                          : "background.paper",
+                        p: 2,
+                        cursor: "pointer",
+                      }}
+                      onClick={() => handleSelectShift(shift)}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
+                        <EventIcon fontSize="small" sx={{ mr: 1 }} />
+                        <Typography variant="subtitle2">
+                          {format(
+                            new Date(shift.start),
+                            "yyyy년 MM월 dd일 (eee)"
+                          )}
+                        </Typography>
+                        <TimeIcon sx={{ ml: 2, mr: 1 }} />
+                        <Typography variant="subtitle2">
+                          {format(new Date(shift.start), "HH:mm")} -{" "}
+                          {format(new Date(shift.end), "HH:mm")}
+                        </Typography>
+                      </Box>
+                      <Box
+                        sx={{ display: "flex", alignItems: "center", mt: 1 }}
+                      >
+                        <PersonIcon fontSize="small" sx={{ mr: 1 }} />
+                        <Typography variant="body2">
+                          담당: {getEmployeeName(shift.employeeId) || "미배정"}
+                        </Typography>
+                      </Box>
+                    </Paper>
+                  );
+                })}
+              </Box>
+            )}
+          </Box>
+        </Paper>
+
+        {selectedShift ? (
+          <SubstituteAssigner
+            shiftId={selectedShift.id}
+            shift={selectedShift}
+            originalEmployeeId={selectedShift.employeeId}
+            onAssigned={handleSubstituteAssigned}
+          />
+        ) : (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            위에서 대타를 배정할 근무를 선택하세요.
+          </Alert>
+        )}
+      </>
     );
   };
 
   // 로딩 상태 표시
-  if (
-    loading &&
-    !substituteRequests.length &&
-    !changeRequests.length &&
-    !approvalRequests.length
-  ) {
+  if (loading && (employees.length === 0 || shifts.length === 0)) {
     return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "300px",
-        }}
-      >
+      <Box sx={{ display: "flex", justifyContent: "center", my: 4 }}>
         <CircularProgress />
+        <Typography variant="body2" sx={{ ml: 2 }}>
+          데이터 불러오는 중...
+        </Typography>
       </Box>
     );
   }
@@ -676,50 +796,28 @@ const RequestManagement: React.FC = () => {
         <Tabs
           value={activeTab}
           onChange={handleTabChange}
-          aria-label="요청 관리 탭"
+          variant="scrollable"
+          scrollButtons="auto"
         >
           <Tab
-            label={
-              <Badge
-                badgeContent={
-                  substituteRequests.filter((r) => r.status === "pending")
-                    .length
-                }
-                color="error"
-                max={99}
-              >
-                <Typography variant="body2">대타 요청</Typography>
-              </Badge>
-            }
+            icon={<CommentIcon />}
+            label={`대타 요청 (${substituteRequests.length})`}
             value="substitute"
           />
           <Tab
-            label={
-              <Badge
-                badgeContent={
-                  changeRequests.filter((r) => r.status === "pending").length
-                }
-                color="error"
-                max={99}
-              >
-                <Typography variant="body2">스케줄 변경</Typography>
-              </Badge>
-            }
+            icon={<ScheduleIcon />}
+            label={`스케줄 변경 (${changeRequests.length})`}
             value="change"
           />
           <Tab
-            label={
-              <Badge
-                badgeContent={
-                  approvalRequests.filter((r) => r.status === "pending").length
-                }
-                color="error"
-                max={99}
-              >
-                <Typography variant="body2">근무 승인</Typography>
-              </Badge>
-            }
+            icon={<DoneIcon />}
+            label={`근무 승인 (${approvalRequests.length})`}
             value="approval"
+          />
+          <Tab
+            icon={<SwapIcon />}
+            label="대타 배정하기"
+            value="substituteAssign"
           />
         </Tabs>
 
@@ -734,6 +832,9 @@ const RequestManagement: React.FC = () => {
         {activeTab === "substitute" && renderSubstituteRequests()}
         {activeTab === "change" && renderChangeRequests()}
         {activeTab === "approval" && renderApprovalRequests()}
+        {activeTab === "substituteAssign" && (
+          <Box sx={{ p: 2 }}>{renderSubstituteAssigner()}</Box>
+        )}
       </Box>
 
       {/* 상세 보기 대화상자 */}
