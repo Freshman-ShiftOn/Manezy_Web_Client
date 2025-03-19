@@ -61,6 +61,7 @@ import {
   getStoreInfo,
   getShifts,
   saveShift,
+  deleteShift, // 삭제 API 추가
 } from "../../services/api";
 import { Employee, Store, Shift } from "../../lib/types";
 import { useNavigate } from "react-router-dom";
@@ -860,6 +861,32 @@ const SchedulePage: React.FC = () => {
       });
     } catch (err) {
       console.error("Error saving shift:", err);
+    }
+  };
+
+  // 근무 일정 삭제 핸들러 추가
+  const handleDeleteShift = async (shiftId: string) => {
+    try {
+      // API 호출하여 근무 삭제
+      await deleteShift(shiftId);
+
+      // UI에서 이벤트 제거
+      setEvents((prev) => prev.filter((ev) => ev.id !== shiftId));
+
+      // shifts 상태에서도 제거
+      setShifts((prev) => prev.filter((s) => s.id !== shiftId));
+
+      // 대화상자 닫기
+      setIsDialogOpen(false);
+
+      // 선택된 이벤트 초기화
+      setSelectedEvent(null);
+
+      console.log("근무 일정 삭제 성공:", shiftId);
+    } catch (err) {
+      console.error("Error deleting shift:", err);
+      // 오류 발생 시 알림 표시 (선택적)
+      alert("근무 일정 삭제 중 오류가 발생했습니다.");
     }
   };
 
@@ -2324,6 +2351,9 @@ const SchedulePage: React.FC = () => {
             handleSubstituteRequest(toSimpleShiftEvent(event), isHighPriority)
           }
           onOpenTemplateManager={() => setIsTemplateManagerOpen(true)}
+          onDelete={
+            isNewEvent ? undefined : () => handleDeleteShift(selectedEvent.id)
+          } // 삭제 핸들러 추가
         />
       )}
 

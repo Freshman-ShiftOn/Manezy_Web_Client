@@ -102,6 +102,7 @@ interface ShiftDialogProps {
   onSave: (event: ShiftEvent) => void;
   onSubstituteRequest?: (event: ShiftEvent, isHighPriority: boolean) => void;
   onOpenTemplateManager?: () => void;
+  onDelete?: () => void;
 }
 
 // 시간대별 색상과 레이블
@@ -140,6 +141,7 @@ function ShiftDialog({
   onSave,
   onSubstituteRequest,
   onOpenTemplateManager,
+  onDelete,
 }: ShiftDialogProps) {
   const [title, setTitle] = useState<string>(eventData.title || "");
   const [startTime, setStartTime] = useState<Date | null>(
@@ -1008,6 +1010,16 @@ function ShiftDialog({
         <Button onClick={onClose} color="inherit">
           취소
         </Button>
+        {!isNew && onDelete && (
+          <Button
+            onClick={onDelete}
+            color="error"
+            startIcon={<RemoveIcon />}
+            sx={{ marginRight: "auto" }}
+          >
+            삭제
+          </Button>
+        )}
         <Button
           onClick={handleSave}
           variant="contained"
