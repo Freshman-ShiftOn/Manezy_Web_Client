@@ -31,6 +31,9 @@ import {
   InputLabel,
   Select,
   MenuItem,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -41,18 +44,38 @@ import {
   AccessTime as AccessTimeIcon,
   Save as SaveIcon,
   Person as PersonIcon,
+  ExpandMore as ExpandMoreIcon,
+  Today as TodayIcon,
+  Help as HelpIcon,
 } from "@mui/icons-material";
-import * as ReactColor from "react-color";
+import { TwitterPicker } from "react-color";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { MuiColorInput } from "mui-color-input";
+import dayjs from "dayjs";
 
-// 시간대 템플릿 타입 정의 (SchedulePage.tsx의 정의와 동일)
+// 시간대 템플릿 타입 정의
 interface ShiftTemplate {
   id: string;
   name: string;
-  type: "open" | "middle" | "close";
+  type: string; // "open" | "middle" | "close" | 커스텀 타입
   startTime: string; // 'HH:MM' 포맷
   endTime: string; // 'HH:MM' 포맷
   requiredStaff: number;
   color: string;
+  requiredPositions?: {
+    [position: string]: number; // 포지션별 필요 인원수
+  };
+  dayVariations?: {
+    [day: number]: {
+      // 0-6 (일-토)
+      requiredStaff?: number;
+      requiredPositions?: {
+        [position: string]: number;
+      };
+    };
+  };
 }
 
 interface TemplateManagerDialogProps {
@@ -61,6 +84,12 @@ interface TemplateManagerDialogProps {
   templates: ShiftTemplate[];
   onSaveTemplates: (templates: ShiftTemplate[]) => void;
 }
+
+// 기본 포지션 목록
+const DEFAULT_POSITIONS = ["매니저", "바리스타", "서빙", "주방", "캐셔"];
+
+// 요일 목록
+const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
 // 새 템플릿의 기본값
 const DEFAULT_NEW_TEMPLATE: ShiftTemplate = {
@@ -71,6 +100,9 @@ const DEFAULT_NEW_TEMPLATE: ShiftTemplate = {
   endTime: "17:00",
   requiredStaff: 1,
   color: "#2196F3",
+  requiredPositions: {
+    바리스타: 1,
+  },
 };
 
 // 시간대별 기본 색상
@@ -78,6 +110,7 @@ const TYPE_COLORS = {
   open: "#4CAF50",
   middle: "#2196F3",
   close: "#9C27B0",
+  custom: "#FF9800",
 };
 
 // 탭 패널 컴포넌트
@@ -97,9 +130,8 @@ function TabPanel(props: TabPanelProps) {
       id={`shift-tabpanel-${index}`}
       aria-labelledby={`shift-tab-${index}`}
       {...other}
-      style={{ paddingTop: 16 }}
     >
-      {value === index && <Box>{children}</Box>}
+      {value === index && <Box sx={{ p: 2 }}>{children}</Box>}
     </div>
   );
 }
@@ -121,14 +153,13 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   const [tabValue, setTabValue] = useState(0);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [isAddMode, setIsAddMode] = useState(false);
-  const [settingsExpanded, setSettingsExpanded] = useState(false);
-  const [operatingHours, setOperatingHours] = useState({
-    open: "09:00",
-    close: "22:00",
-  });
+  const [showDayVariations, setShowDayVariations] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<number>(0); // 일요일
+  const [expandedDays, setExpandedDays] = useState<{ [key: number]: boolean }>(
+    {}
+  );
 
   useEffect(() => {
-    // 템플릿 초기화
     setLocalTemplates([...templates]);
     setIsAddMode(false);
     setEditingTemplate(null);
@@ -142,13 +173,16 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   // 템플릿 수정 시작
   const handleEditTemplate = (template: ShiftTemplate) => {
     setEditingTemplate({ ...template });
-    setNewTemplate({ ...template });
+    setNewTemplate({
+      ...template,
+      requiredPositions: template.requiredPositions || { 바리스타: 1 },
+    });
     setIsAddMode(false);
+    setExpandedDays({});
   };
 
   // 템플릿 삭제
   const handleDeleteTemplate = (templateId: string) => {
-    // 삭제 전 확인 메시지 추가
     if (
       window.confirm(
         "이 템플릿을 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다."
@@ -167,24 +201,62 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   };
 
   // 새 템플릿 추가 모드 시작
-  const handleAddNewTemplate = (type: "open" | "middle" | "close") => {
+  const handleAddNewTemplate = (type: string) => {
     const newId = `template-${Date.now()}`;
 
     // 시간대별 기본값 설정
-    const defaultTimes = {
-      open: { startTime: "09:00", endTime: "13:00" },
-      middle: { startTime: "12:00", endTime: "17:00" },
-      close: { startTime: "16:00", endTime: "22:00" },
+    const defaultTimes: Record<
+      string,
+      { startTime: string; endTime: string; positions?: Record<string, number> }
+    > = {
+      open: {
+        startTime: "09:00",
+        endTime: "13:00",
+        positions: { 매니저: 1, 바리스타: 1 },
+      },
+      middle: {
+        startTime: "12:00",
+        endTime: "17:00",
+        positions: { 바리스타: 1, 서빙: 1, 캐셔: 1 },
+      },
+      close: {
+        startTime: "16:00",
+        endTime: "22:00",
+        positions: { 매니저: 1, 주방: 1 },
+      },
+      custom: {
+        startTime: "10:00",
+        endTime: "15:00",
+        positions: { 바리스타: 1 },
+      },
     };
+
+    const isDefaultType = ["open", "middle", "close"].includes(type);
+    const defaultTime = isDefaultType
+      ? defaultTimes[type]
+      : defaultTimes.custom;
+
+    const defaultName = isDefaultType
+      ? type === "open"
+        ? "오픈"
+        : type === "middle"
+        ? "미들"
+        : "마감"
+      : "커스텀 근무";
+
+    const defaultColor = isDefaultType
+      ? TYPE_COLORS[type as keyof typeof TYPE_COLORS]
+      : TYPE_COLORS.custom;
 
     const newTemplateData = {
       ...DEFAULT_NEW_TEMPLATE,
       id: newId,
       type: type,
-      name: type === "open" ? "오픈" : type === "middle" ? "미들" : "마감",
-      startTime: defaultTimes[type].startTime,
-      endTime: defaultTimes[type].endTime,
-      color: TYPE_COLORS[type],
+      name: defaultName,
+      startTime: defaultTime.startTime,
+      endTime: defaultTime.endTime,
+      color: defaultColor,
+      requiredPositions: defaultTime.positions || { 바리스타: 1 },
     };
 
     setNewTemplate(newTemplateData);
@@ -192,9 +264,16 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     setEditingTemplate(null);
   };
 
+  // 새 커스텀 템플릿 추가
+  const handleAddCustomTemplate = () => {
+    const customType = prompt("새 근무 유형 이름을 입력하세요:", "");
+    if (customType && customType.trim()) {
+      handleAddNewTemplate(customType.trim());
+    }
+  };
+
   // 템플릿 저장 (추가 또는 수정)
   const handleSaveTemplate = () => {
-    // 입력 유효성 검사
     if (!newTemplate.name.trim()) {
       alert("템플릿 이름을 입력해주세요.");
       return;
@@ -217,18 +296,59 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   };
 
   // 입력 필드 변경 핸들러
-  const handleInputChange = (field: keyof ShiftTemplate, value: any) => {
-    setNewTemplate({
-      ...newTemplate,
-      [field]: value,
-    });
+  const updateEditingTemplate = (field: keyof ShiftTemplate, value: any) => {
+    if (!editingTemplate) return;
+    setEditingTemplate({ ...editingTemplate, [field]: value });
   };
 
   // 색상 변경 핸들러
-  const handleColorChange = (color: any) => {
+  const handleColorChange = (color: string) => {
+    updateEditingTemplate("color", color);
+  };
+
+  // 요일별 필요 인원 변경 핸들러
+  const handleDayStaffChange = (day: number, value: number) => {
+    const updatedDayVariations = {
+      ...newTemplate.dayVariations,
+      [day]: {
+        ...(newTemplate.dayVariations?.[day] || {}),
+        requiredStaff: value,
+      },
+    };
+
     setNewTemplate({
       ...newTemplate,
-      color: color.hex,
+      dayVariations: updatedDayVariations,
+    });
+  };
+
+  // 요일별 포지션 인원 변경 핸들러
+  const handleDayPositionChange = (
+    day: number,
+    position: string,
+    value: number
+  ) => {
+    const dayPositions = {
+      ...(newTemplate.dayVariations?.[day]?.requiredPositions || {}),
+    };
+
+    if (value <= 0) {
+      delete dayPositions[position];
+    } else {
+      dayPositions[position] = value;
+    }
+
+    const updatedDayVariations = {
+      ...newTemplate.dayVariations,
+      [day]: {
+        ...(newTemplate.dayVariations?.[day] || {}),
+        requiredPositions: dayPositions,
+      },
+    };
+
+    setNewTemplate({
+      ...newTemplate,
+      dayVariations: updatedDayVariations,
     });
   };
 
@@ -249,8 +369,603 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     onClose();
   };
 
+  // 요일별 필요 인원수 렌더링
+  const renderDayVariations = () => {
+    const template = newTemplate;
+    return (
+      <Grid item xs={12} mt={2}>
+        <Typography variant="subtitle1" gutterBottom>
+          요일별 설정
+        </Typography>
+        <Box mb={1}>
+          <FormControlLabel
+            control={
+              <Switch
+                checked={showDayVariations}
+                onChange={() => setShowDayVariations(!showDayVariations)}
+              />
+            }
+            label="요일별로 다른 설정 적용하기"
+          />
+        </Box>
+
+        {showDayVariations && (
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Box mb={2}>
+              <Tabs
+                value={selectedDay}
+                onChange={(e, newValue) => setSelectedDay(newValue)}
+                variant="scrollable"
+                scrollButtons="auto"
+              >
+                {DAYS_OF_WEEK.map((day, idx) => (
+                  <Tab
+                    key={day}
+                    label={day}
+                    sx={{
+                      color:
+                        idx === 0
+                          ? "error.main"
+                          : idx === 6
+                          ? "primary.main"
+                          : "text.primary",
+                    }}
+                  />
+                ))}
+              </Tabs>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" gutterBottom>
+                {DAYS_OF_WEEK[selectedDay]}요일 설정
+              </Typography>
+
+              <Grid container spacing={2} mt={1}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label={`${DAYS_OF_WEEK[selectedDay]}요일 필요 인원수`}
+                    type="number"
+                    size="small"
+                    value={
+                      newTemplate.dayVariations?.[selectedDay]?.requiredStaff ||
+                      newTemplate.requiredStaff
+                    }
+                    onChange={(e) =>
+                      handleDayStaffChange(
+                        selectedDay,
+                        parseInt(e.target.value) || 1
+                      )
+                    }
+                    InputProps={{
+                      inputProps: { min: 1 },
+                      startAdornment: (
+                        <InputAdornment position="start">
+                          <PersonIcon fontSize="small" />
+                        </InputAdornment>
+                      ),
+                    }}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  <Typography variant="body2" sx={{ mb: 1 }}>
+                    {DAYS_OF_WEEK[selectedDay]}요일 필요 포지션
+                  </Typography>
+
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow>
+                          <TableCell>포지션</TableCell>
+                          <TableCell align="right">필요 인원수</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {Object.entries(
+                          newTemplate.requiredPositions || {}
+                        ).map(([position]) => (
+                          <TableRow key={`${selectedDay}-${position}`}>
+                            <TableCell>{position}</TableCell>
+                            <TableCell align="right">
+                              <TextField
+                                type="number"
+                                size="small"
+                                value={
+                                  newTemplate.dayVariations?.[selectedDay]
+                                    ?.requiredPositions?.[position] ||
+                                  newTemplate.requiredPositions?.[position] ||
+                                  0
+                                }
+                                onChange={(e) =>
+                                  handleDayPositionChange(
+                                    selectedDay,
+                                    position,
+                                    parseInt(e.target.value) || 0
+                                  )
+                                }
+                                InputProps={{ inputProps: { min: 0 } }}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </Grid>
+              </Grid>
+            </Box>
+          </Paper>
+        )}
+      </Grid>
+    );
+  };
+
+  // 포지션별 필요 인원수 UI
+  const renderPositionRequirements = () => {
+    const template = newTemplate;
+    return (
+      <Grid item xs={12} mt={2}>
+        <Typography variant="subtitle1" gutterBottom>
+          포지션별 필요 인원
+        </Typography>
+        <TableContainer component={Paper} variant="outlined">
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell>포지션</TableCell>
+                <TableCell>필요 인원수</TableCell>
+                <TableCell align="right">작업</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {template.requiredPositions &&
+                Object.entries(template.requiredPositions).map(
+                  ([position, count]) => (
+                    <TableRow key={position}>
+                      <TableCell>{position}</TableCell>
+                      <TableCell>
+                        <TextField
+                          type="number"
+                          size="small"
+                          value={count}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value) || 0;
+                            const updatedPositions = {
+                              ...template.requiredPositions,
+                            };
+
+                            if (value <= 0) {
+                              if (
+                                window.confirm(
+                                  `${position} 포지션을 제거하시겠습니까?`
+                                )
+                              ) {
+                                delete updatedPositions[position];
+                              } else {
+                                return;
+                              }
+                            } else {
+                              updatedPositions[position] = value;
+                            }
+
+                            updateEditingTemplate(
+                              "requiredPositions",
+                              updatedPositions
+                            );
+                          }}
+                          InputProps={{ inputProps: { min: 0 } }}
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          color="error"
+                          onClick={() => {
+                            const updatedPositions = {
+                              ...template.requiredPositions,
+                            };
+                            delete updatedPositions[position];
+                            updateEditingTemplate(
+                              "requiredPositions",
+                              updatedPositions
+                            );
+                          }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  )
+                )}
+              <TableRow>
+                <TableCell colSpan={3}>
+                  <Box display="flex" mt={1}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>새 포지션 추가</InputLabel>
+                      <Select
+                        value=""
+                        label="새 포지션 추가"
+                        onChange={(e) => {
+                          const position = e.target.value;
+                          if (!position) return;
+
+                          if (position === "custom") {
+                            const customPosition =
+                              window.prompt("추가할 포지션 이름을 입력하세요:");
+                            if (customPosition && customPosition.trim()) {
+                              const updatedPositions = {
+                                ...template.requiredPositions,
+                              };
+
+                              if (!updatedPositions[customPosition]) {
+                                updatedPositions[customPosition] = 1;
+                                updateEditingTemplate(
+                                  "requiredPositions",
+                                  updatedPositions
+                                );
+                              } else {
+                                alert(
+                                  `${customPosition} 포지션은 이미 추가되어 있습니다.`
+                                );
+                              }
+                            }
+                            return;
+                          }
+
+                          const updatedPositions = {
+                            ...template.requiredPositions,
+                          };
+
+                          if (!updatedPositions[position]) {
+                            updatedPositions[position] = 1;
+                            updateEditingTemplate(
+                              "requiredPositions",
+                              updatedPositions
+                            );
+                          } else {
+                            alert(
+                              `${position} 포지션은 이미 추가되어 있습니다.`
+                            );
+                          }
+                        }}
+                      >
+                        {DEFAULT_POSITIONS.map((pos) => (
+                          <MenuItem
+                            key={pos}
+                            value={pos}
+                            disabled={
+                              template.requiredPositions &&
+                              template.requiredPositions[pos] !== undefined
+                            }
+                          >
+                            {pos}
+                          </MenuItem>
+                        ))}
+                        <MenuItem value="custom">
+                          <em>커스텀 포지션 추가...</em>
+                        </MenuItem>
+                      </Select>
+                    </FormControl>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </Grid>
+    );
+  };
+
+  // 템플릿 편집 폼
+  const renderEditForm = () => {
+    if (!editingTemplate) return null;
+
+    return (
+      <Box sx={{ mt: 2 }}>
+        <Typography variant="h6" gutterBottom>
+          {newTemplate ? "새 템플릿 추가" : "템플릿 편집"}
+        </Typography>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="템플릿 이름"
+              value={editingTemplate.name}
+              onChange={(e) => updateEditingTemplate("name", e.target.value)}
+              margin="normal"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              label="근무 유형"
+              value={editingTemplate.type}
+              onChange={(e) => updateEditingTemplate("type", e.target.value)}
+              margin="normal"
+              disabled={newTemplate !== null} // 새 템플릿인 경우에만 비활성화
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <TimePicker
+                label="시작 시간"
+                value={new Date(`2022-01-01T${editingTemplate.startTime}`)}
+                onChange={(date) => {
+                  if (date) {
+                    const hours = date.getHours().toString().padStart(2, "0");
+                    const minutes = date
+                      .getMinutes()
+                      .toString()
+                      .padStart(2, "0");
+                    updateEditingTemplate("startTime", `${hours}:${minutes}`);
+                  }
+                }}
+                slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <TimePicker
+                label="종료 시간"
+                value={new Date(`2022-01-01T${editingTemplate.endTime}`)}
+                onChange={(date) => {
+                  if (date) {
+                    const hours = date.getHours().toString().padStart(2, "0");
+                    const minutes = date
+                      .getMinutes()
+                      .toString()
+                      .padStart(2, "0");
+                    updateEditingTemplate("endTime", `${hours}:${minutes}`);
+                  }
+                }}
+                slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
+              type="number"
+              label="기본 필요 인원"
+              value={editingTemplate.requiredStaff}
+              onChange={(e) =>
+                updateEditingTemplate(
+                  "requiredStaff",
+                  parseInt(e.target.value) || 1
+                )
+              }
+              margin="normal"
+              InputProps={{ inputProps: { min: 1 } }}
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <MuiColorInput
+              format="hex"
+              value={editingTemplate.color}
+              onChange={(color) => updateEditingTemplate("color", color)}
+              label="색상"
+              fullWidth
+              margin="normal"
+            />
+          </Grid>
+        </Grid>
+
+        {/* 포지션별 필요 인원수 설정 UI */}
+        {renderPositionRequirements()}
+
+        {/* 요일별 설정 UI */}
+        {renderDayVariations()}
+
+        <Grid item xs={12} mt={2}>
+          <Box display="flex" justifyContent="flex-end">
+            <Button
+              variant="outlined"
+              color="inherit"
+              onClick={() => {
+                setEditingTemplate(null);
+                setIsAddMode(false);
+              }}
+              sx={{ mr: 1 }}
+            >
+              취소
+            </Button>
+            <Button
+              variant="contained"
+              color="primary"
+              startIcon={<SaveIcon />}
+              onClick={handleSaveTemplate}
+            >
+              저장
+            </Button>
+          </Box>
+        </Grid>
+      </Box>
+    );
+  };
+
+  // 템플릿 목록 컴포넌트
+  const TemplateList = ({ templates }: { templates: ShiftTemplate[] }) => {
+    if (templates.length === 0) {
+      return (
+        <Box sx={{ textAlign: "center", py: 4 }}>
+          <Typography color="textSecondary">
+            템플릿이 없습니다. 새로운 템플릿을 추가해주세요.
+          </Typography>
+        </Box>
+      );
+    }
+
+    return (
+      <TableContainer component={Paper} elevation={0} variant="outlined">
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
+              <TableCell width="30%">템플릿 이름</TableCell>
+              <TableCell width="20%">시간</TableCell>
+              <TableCell align="center" width="15%">
+                기본 인원
+              </TableCell>
+              <TableCell align="center" width="20%">
+                포지션
+              </TableCell>
+              <TableCell align="right" width="15%">
+                관리
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {templates.map((template) => (
+              <TableRow key={template.id} hover>
+                <TableCell>
+                  <Box display="flex" alignItems="center">
+                    <Box
+                      sx={{
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        bgcolor: template.color,
+                        mr: 1,
+                      }}
+                    />
+                    <Typography variant="body2" sx={{ fontWeight: "medium" }}>
+                      {template.name}
+                    </Typography>
+                  </Box>
+                </TableCell>
+                <TableCell>
+                  <Typography variant="body2">
+                    {template.startTime} ~ {template.endTime}
+                  </Typography>
+                </TableCell>
+                <TableCell align="center">
+                  <Chip
+                    label={template.requiredStaff + "명"}
+                    size="small"
+                    variant="outlined"
+                  />
+                </TableCell>
+                <TableCell>
+                  <Box display="flex" flexWrap="wrap" gap={0.5}>
+                    {template.requiredPositions &&
+                      Object.entries(template.requiredPositions).map(
+                        ([position, count]) => (
+                          <Chip
+                            key={position}
+                            label={`${position} ${count}명`}
+                            size="small"
+                            variant="outlined"
+                            sx={{ fontSize: "0.7rem" }}
+                          />
+                        )
+                      )}
+                  </Box>
+                </TableCell>
+                <TableCell align="right">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleEditTemplate(template)}
+                    color="primary"
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={() => handleDeleteTemplate(template.id)}
+                    color="error"
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    );
+  };
+
+  // 특정 탭 렌더링
+  const renderTabContent = (tabType: string) => {
+    const tabTemplates = localTemplates.filter((t) =>
+      tabType === "custom"
+        ? !["open", "middle", "close"].includes(t.type)
+        : t.type === tabType
+    );
+
+    if (isAddMode && newTemplate.type === tabType) {
+      return renderEditForm();
+    }
+
+    if (
+      editingTemplate &&
+      (tabType === "custom"
+        ? !["open", "middle", "close"].includes(editingTemplate.type)
+        : editingTemplate.type === tabType)
+    ) {
+      return renderEditForm();
+    }
+
+    return (
+      <>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            mb: 2,
+          }}
+        >
+          <Typography variant="subtitle1">
+            {tabType === "open"
+              ? "오픈 근무 템플릿 목록"
+              : tabType === "middle"
+              ? "미들 근무 템플릿 목록"
+              : tabType === "close"
+              ? "마감 근무 템플릿 목록"
+              : "커스텀 근무 템플릿 목록"}
+          </Typography>
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() =>
+              tabType === "custom"
+                ? handleAddCustomTemplate()
+                : handleAddNewTemplate(tabType)
+            }
+            size="small"
+          >
+            {tabType === "custom"
+              ? "새 커스텀 템플릿"
+              : `새 ${
+                  tabType === "open"
+                    ? "오픈"
+                    : tabType === "middle"
+                    ? "미들"
+                    : "마감"
+                } 템플릿`}
+          </Button>
+        </Box>
+        <TemplateList templates={tabTemplates} />
+      </>
+    );
+  };
+
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth="md"
+      fullWidth
+      sx={{
+        "& .MuiDialog-paper": {
+          height: "80vh",
+          display: "flex",
+          flexDirection: "column",
+        },
+      }}
+    >
       <DialogTitle
         sx={{
           display: "flex",
@@ -261,71 +976,21 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
         }}
       >
         <Typography variant="h6">근무 템플릿 관리</Typography>
-        <Box>
-          <Tooltip title="매장 운영 시간 설정">
-            <IconButton
-              size="small"
-              onClick={() => setSettingsExpanded(!settingsExpanded)}
-              color={settingsExpanded ? "primary" : "default"}
-            >
-              <SettingsIcon />
-            </IconButton>
-          </Tooltip>
-        </Box>
+        <Tooltip title="여기서 근무 템플릿을 생성하고 관리할 수 있습니다. 오픈/미들/마감 외에도 커스텀 근무 유형을 만들 수 있으며, 각 템플릿별로 요일마다 다른 포지션 및 필요 인원을 설정할 수 있습니다.">
+          <IconButton size="small" sx={{ ml: 1 }}>
+            <HelpIcon />
+          </IconButton>
+        </Tooltip>
       </DialogTitle>
 
-      <DialogContent sx={{ p: 0 }}>
-        {/* 운영 시간 설정 패널 */}
-        {settingsExpanded && (
-          <Paper
-            elevation={0}
-            sx={{
-              p: 2,
-              mb: 2,
-              backgroundColor: alpha(theme.palette.primary.main, 0.05),
-              borderBottom: `1px solid ${theme.palette.divider}`,
-            }}
-          >
-            <Typography variant="subtitle1" gutterBottom>
-              매장 운영 시간 설정
-            </Typography>
-            <Grid container spacing={2} sx={{ mt: 1 }}>
-              <Grid item xs={6}>
-                <TextField
-                  label="매장 오픈 시간"
-                  type="time"
-                  value={operatingHours.open}
-                  onChange={(e) =>
-                    setOperatingHours({
-                      ...operatingHours,
-                      open: e.target.value,
-                    })
-                  }
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                  size="small"
-                />
-              </Grid>
-              <Grid item xs={6}>
-                <TextField
-                  label="매장 마감 시간"
-                  type="time"
-                  value={operatingHours.close}
-                  onChange={(e) =>
-                    setOperatingHours({
-                      ...operatingHours,
-                      close: e.target.value,
-                    })
-                  }
-                  InputLabelProps={{ shrink: true }}
-                  fullWidth
-                  size="small"
-                />
-              </Grid>
-            </Grid>
-          </Paper>
-        )}
-
+      <DialogContent
+        sx={{
+          p: 0,
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+        }}
+      >
         {/* 근무 타입 탭 */}
         <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
           <Tabs
@@ -367,191 +1032,38 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                   tabValue === 2 ? `3px solid ${TYPE_COLORS.close}` : "none",
               }}
             />
+            <Tab
+              label="커스텀 근무"
+              sx={{
+                color: TYPE_COLORS.custom,
+                borderBottom:
+                  tabValue === 3 ? `3px solid ${TYPE_COLORS.custom}` : "none",
+              }}
+            />
           </Tabs>
         </Box>
 
-        {/* 오픈 템플릿 */}
-        <TabPanel value={tabValue} index={0}>
-          <Box sx={{ p: 2 }}>
-            {isAddMode && newTemplate.type === "open" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setIsAddMode(false);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : editingTemplate && editingTemplate.type === "open" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setEditingTemplate(null);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : (
-              <>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    mb: 2,
-                  }}
-                >
-                  <Typography variant="subtitle1">
-                    오픈 근무 템플릿 목록
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleAddNewTemplate("open")}
-                    size="small"
-                  >
-                    새 오픈 템플릿
-                  </Button>
-                </Box>
-                <TemplateList
-                  templates={localTemplates.filter((t) => t.type === "open")}
-                  onEdit={handleEditTemplate}
-                  onDelete={handleDeleteTemplate}
-                />
-              </>
-            )}
-          </Box>
-        </TabPanel>
+        <Box sx={{ flexGrow: 1, overflow: "auto" }}>
+          {/* 오픈 템플릿 */}
+          <TabPanel value={tabValue} index={0}>
+            {renderTabContent("open")}
+          </TabPanel>
 
-        {/* 미들 템플릿 */}
-        <TabPanel value={tabValue} index={1}>
-          <Box sx={{ p: 2 }}>
-            {isAddMode && newTemplate.type === "middle" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setIsAddMode(false);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : editingTemplate && editingTemplate.type === "middle" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setEditingTemplate(null);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : (
-              <>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    mb: 2,
-                  }}
-                >
-                  <Typography variant="subtitle1">
-                    미들 근무 템플릿 목록
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleAddNewTemplate("middle")}
-                    size="small"
-                  >
-                    새 미들 템플릿
-                  </Button>
-                </Box>
-                <TemplateList
-                  templates={localTemplates.filter((t) => t.type === "middle")}
-                  onEdit={handleEditTemplate}
-                  onDelete={handleDeleteTemplate}
-                />
-              </>
-            )}
-          </Box>
-        </TabPanel>
+          {/* 미들 템플릿 */}
+          <TabPanel value={tabValue} index={1}>
+            {renderTabContent("middle")}
+          </TabPanel>
 
-        {/* 마감 템플릿 */}
-        <TabPanel value={tabValue} index={2}>
-          <Box sx={{ p: 2 }}>
-            {isAddMode && newTemplate.type === "close" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setIsAddMode(false);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : editingTemplate && editingTemplate.type === "close" ? (
-              <TemplateEditor
-                template={newTemplate}
-                onInputChange={handleInputChange}
-                onColorChange={handleColorChange}
-                onCancel={() => {
-                  setEditingTemplate(null);
-                  setNewTemplate({ ...DEFAULT_NEW_TEMPLATE });
-                }}
-                onSave={handleSaveTemplate}
-                showColorPicker={showColorPicker}
-                onToggleColorPicker={() => setShowColorPicker(!showColorPicker)}
-              />
-            ) : (
-              <>
-                <Box
-                  sx={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    mb: 2,
-                  }}
-                >
-                  <Typography variant="subtitle1">
-                    마감 근무 템플릿 목록
-                  </Typography>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    startIcon={<AddIcon />}
-                    onClick={() => handleAddNewTemplate("close")}
-                    size="small"
-                  >
-                    새 마감 템플릿
-                  </Button>
-                </Box>
-                <TemplateList
-                  templates={localTemplates.filter((t) => t.type === "close")}
-                  onEdit={handleEditTemplate}
-                  onDelete={handleDeleteTemplate}
-                />
-              </>
-            )}
-          </Box>
-        </TabPanel>
+          {/* 마감 템플릿 */}
+          <TabPanel value={tabValue} index={2}>
+            {renderTabContent("close")}
+          </TabPanel>
+
+          {/* 커스텀 템플릿 */}
+          <TabPanel value={tabValue} index={3}>
+            {renderTabContent("custom")}
+          </TabPanel>
+        </Box>
       </DialogContent>
 
       <DialogActions
@@ -574,279 +1086,6 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
         </Button>
       </DialogActions>
     </Dialog>
-  );
-};
-
-// 템플릿 목록 컴포넌트
-interface TemplateListProps {
-  templates: ShiftTemplate[];
-  onEdit: (template: ShiftTemplate) => void;
-  onDelete: (templateId: string) => void;
-}
-
-const TemplateList: React.FC<TemplateListProps> = ({
-  templates,
-  onEdit,
-  onDelete,
-}) => {
-  const theme = useTheme();
-
-  if (templates.length === 0) {
-    return (
-      <Box sx={{ textAlign: "center", py: 4 }}>
-        <Typography color="textSecondary">
-          템플릿이 없습니다. 새로운 템플릿을 추가해주세요.
-        </Typography>
-      </Box>
-    );
-  }
-
-  return (
-    <TableContainer component={Paper} elevation={0} variant="outlined">
-      <Table size="small">
-        <TableHead>
-          <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
-            <TableCell width="35%">템플릿 이름</TableCell>
-            <TableCell width="20%">시간</TableCell>
-            <TableCell align="center" width="15%">
-              필요 인원
-            </TableCell>
-            <TableCell align="center" width="15%">
-              색상
-            </TableCell>
-            <TableCell align="right" width="15%">
-              관리
-            </TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {templates.map((template) => (
-            <TableRow key={template.id} hover>
-              <TableCell>
-                <Typography variant="body2" sx={{ fontWeight: "medium" }}>
-                  {template.name}
-                </Typography>
-              </TableCell>
-              <TableCell>
-                <Typography variant="body2">
-                  {template.startTime} ~ {template.endTime}
-                </Typography>
-              </TableCell>
-              <TableCell align="center">
-                <Chip
-                  label={template.requiredStaff + "명"}
-                  size="small"
-                  variant="outlined"
-                />
-              </TableCell>
-              <TableCell align="center">
-                <Box
-                  sx={{
-                    width: 24,
-                    height: 24,
-                    bgcolor: template.color,
-                    borderRadius: "4px",
-                    border: "1px solid rgba(0,0,0,0.1)",
-                    display: "inline-block",
-                  }}
-                />
-              </TableCell>
-              <TableCell align="right">
-                <IconButton
-                  size="small"
-                  onClick={() => onEdit(template)}
-                  color="primary"
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-                <IconButton
-                  size="small"
-                  onClick={() => onDelete(template.id)}
-                  color="error"
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
-  );
-};
-
-// 템플릿 편집기 컴포넌트
-interface TemplateEditorProps {
-  template: ShiftTemplate;
-  onInputChange: (field: keyof ShiftTemplate, value: any) => void;
-  onColorChange: (color: any) => void;
-  onSave: () => void;
-  onCancel: () => void;
-  showColorPicker: boolean;
-  onToggleColorPicker: () => void;
-}
-
-const TemplateEditor: React.FC<TemplateEditorProps> = ({
-  template,
-  onInputChange,
-  onColorChange,
-  onSave,
-  onCancel,
-  showColorPicker,
-  onToggleColorPicker,
-}) => {
-  const theme = useTheme();
-
-  return (
-    <Paper
-      elevation={0}
-      sx={{ p: 2, border: `1px solid ${theme.palette.divider}` }}
-    >
-      <Typography variant="subtitle1" gutterBottom>
-        {template.id.includes("template-") ? "새 템플릿 만들기" : "템플릿 수정"}
-      </Typography>
-
-      <Grid container spacing={2}>
-        <Grid item xs={12} sm={6}>
-          <TextField
-            label="템플릿 이름"
-            value={template.name}
-            onChange={(e) => onInputChange("name", e.target.value)}
-            fullWidth
-            size="small"
-            margin="normal"
-            placeholder="예: 오픈(토요일)"
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <FormControl fullWidth size="small" margin="normal">
-            <InputLabel shrink>근무 유형</InputLabel>
-            <Select
-              value={template.type}
-              onChange={(e) =>
-                onInputChange(
-                  "type",
-                  e.target.value as "open" | "middle" | "close"
-                )
-              }
-              label="근무 유형"
-            >
-              <MenuItem value="open">오픈</MenuItem>
-              <MenuItem value="middle">미들</MenuItem>
-              <MenuItem value="close">마감</MenuItem>
-            </Select>
-          </FormControl>
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <TextField
-            label="시작 시간"
-            type="time"
-            value={template.startTime}
-            onChange={(e) => onInputChange("startTime", e.target.value)}
-            fullWidth
-            size="small"
-            margin="normal"
-            InputLabelProps={{ shrink: true }}
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <TextField
-            label="종료 시간"
-            type="time"
-            value={template.endTime}
-            onChange={(e) => onInputChange("endTime", e.target.value)}
-            fullWidth
-            size="small"
-            margin="normal"
-            InputLabelProps={{ shrink: true }}
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <TextField
-            label="필요 인원 수"
-            type="number"
-            value={template.requiredStaff}
-            onChange={(e) =>
-              onInputChange("requiredStaff", parseInt(e.target.value, 10))
-            }
-            fullWidth
-            size="small"
-            margin="normal"
-            InputProps={{
-              inputProps: { min: 1 },
-              startAdornment: (
-                <InputAdornment position="start">
-                  <PersonIcon fontSize="small" />
-                </InputAdornment>
-              ),
-            }}
-          />
-        </Grid>
-
-        <Grid item xs={12} sm={6}>
-          <FormControl fullWidth margin="normal" size="small">
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Box sx={{ flexGrow: 1 }}>
-                <InputLabel shrink>색상</InputLabel>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    border: `1px solid ${theme.palette.divider}`,
-                    borderRadius: 1,
-                    p: 1,
-                    mt: 0.5,
-                    cursor: "pointer",
-                  }}
-                  onClick={onToggleColorPicker}
-                >
-                  <Box
-                    sx={{
-                      width: 24,
-                      height: 24,
-                      bgcolor: template.color,
-                      borderRadius: 1,
-                      mr: 1,
-                      border: "1px solid rgba(0,0,0,0.1)",
-                    }}
-                  />
-                  <Typography variant="body2">{template.color}</Typography>
-                </Box>
-              </Box>
-            </Box>
-            {showColorPicker && (
-              <Box sx={{ mt: 1, position: "relative", zIndex: 10 }}>
-                <Paper elevation={3} sx={{ p: 1, position: "absolute" }}>
-                  <ReactColor.SketchPicker
-                    color={template.color}
-                    onChange={onColorChange}
-                    disableAlpha
-                  />
-                </Paper>
-              </Box>
-            )}
-          </FormControl>
-        </Grid>
-      </Grid>
-
-      <Box sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}>
-        <Button onClick={onCancel} color="inherit" sx={{ mr: 1 }}>
-          취소
-        </Button>
-        <Button
-          onClick={onSave}
-          variant="contained"
-          color="primary"
-          startIcon={<SaveIcon />}
-        >
-          저장
-        </Button>
-      </Box>
-    </Paper>
   );
 };
 

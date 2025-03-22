@@ -86,7 +86,8 @@ import {
 } from "@mui/icons-material";
 import ShiftDialog from "./ShiftDialog";
 import RequestManagement from "./RequestManagement";
-import OptimalScheduling from "./OptimalScheduling";
+import TemplateManagerDialog from "./TemplateManagerDialog";
+import Schedule from "./Schedule";
 import { v4 as uuidv4 } from "uuid";
 
 // 사용자 정의 CSS 스타일
@@ -395,7 +396,7 @@ const SchedulePage: React.FC = () => {
             setLoading(false);
             return;
           }
-          setStore(storeData);
+        setStore(storeData);
         } catch (err) {
           console.error("Store data error:", err);
           if (!isMounted) return;
@@ -414,7 +415,7 @@ const SchedulePage: React.FC = () => {
 
           setEmployees(employeesData || []);
           if (employeesData && employeesData.length > 0) {
-            setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
+        setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
           }
         } catch (err) {
           console.error("Employee data error:", err);
@@ -514,26 +515,26 @@ const SchedulePage: React.FC = () => {
         else if (shift.shiftType === "close") defaultRequiredStaff = 2;
 
         return {
-          id: shift.id,
+            id: shift.id,
           title: displayTitle,
-          start: shift.start,
-          end: shift.end,
+            start: shift.start,
+            end: shift.end,
           backgroundColor: getEmployeeColor(shift.employeeIds?.[0]),
           borderColor: getEmployeeColor(shift.employeeIds?.[0]),
           textColor: "#FFFFFF",
-          extendedProps: {
+            extendedProps: {
             employeeIds: shift.employeeIds || [],
             employeeNames: employeeNames,
-            note: shift.note,
+              note: shift.note,
             requiredStaff: shift.requiredStaff || defaultRequiredStaff,
             shiftType: shift.shiftType || "middle",
-            recurring: shift.isRecurring
-              ? {
+              recurring: shift.isRecurring
+                ? {
                   frequency: "weekly" as const,
-                  daysOfWeek: [new Date(shift.start).getDay()],
-                }
-              : undefined,
-          },
+                    daysOfWeek: [new Date(shift.start).getDay()],
+                  }
+                : undefined,
+            },
         };
       });
 
@@ -940,7 +941,7 @@ const SchedulePage: React.FC = () => {
 
     // 주간 뷰에서 이벤트 렌더링
     if (view === "timeGridWeek") {
-      return (
+    return (
         <>
           <div
             className="fc-event-main-wrapper"
@@ -1469,15 +1470,15 @@ const SchedulePage: React.FC = () => {
                     </Box>
                   </Box>
 
-                  <Button
-                    variant="contained"
-                    color="primary"
+        <Button
+          variant="contained"
+          color="primary"
                     sx={{ mt: 3 }}
                     onClick={handleUpdateTemplate}
-                  >
+        >
                     적용
-                  </Button>
-                </Box>
+        </Button>
+      </Box>
               ) : (
                 <Box
                   sx={{
@@ -1578,14 +1579,14 @@ const SchedulePage: React.FC = () => {
         <Typography variant="h6">스케줄 정보를 불러오는 중입니다...</Typography>
         <Typography variant="body2" color="text.secondary">
           잠시만 기다려주세요. 첫 로딩은 시간이 조금 더 걸릴 수 있습니다.
-        </Typography>
-      </Box>
+                </Typography>
+          </Box>
     );
   }
 
   // 에러 상태 표시
   if (error) {
-    return (
+              return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -1593,7 +1594,7 @@ const SchedulePage: React.FC = () => {
         <Typography variant="body1" sx={{ mb: 2 }}>
           스케줄 페이지 로딩 중 오류가 발생했습니다. 다음 중 하나를
           시도해보세요:
-        </Typography>
+                  </Typography>
         <List>
           <ListItem>
             <ListItemText
@@ -1625,8 +1626,8 @@ const SchedulePage: React.FC = () => {
             </ListItem>
           )}
         </List>
-      </Box>
-    );
+                </Box>
+              );
   }
 
   // 알림창 닫기 핸들러 (정보 아이콘 표시)
@@ -1670,23 +1671,23 @@ const SchedulePage: React.FC = () => {
           <Tab
             icon={<CalendarIcon />}
             iconPosition="start"
-            label="근무 일정"
+            label="근무 캘린더"
             value="calendar"
           />
           <Tab
             icon={<InboxIcon />}
             iconPosition="start"
-            label="요청 관리"
+            label="대타 요청 관리"
             value="requests"
           />
           <Tab
             icon={<AutoAwesomeIcon />}
             iconPosition="start"
-            label="최적 스케줄링"
+            label="주간 스케줄 계획"
             value="optimal"
           />
         </Tabs>
-      </Paper>
+        </Paper>
 
       {/* 탭 콘텐츠 */}
       {activeTab === "calendar" && (
@@ -1701,7 +1702,7 @@ const SchedulePage: React.FC = () => {
             px: 0.15, // 0.25에서 0.15로 줄이기
           }}
         >
-          {/* 사이드 패널 */}
+      {/* 사이드 패널 */}
           {showSidePanel && (
             <Paper
               sx={{
@@ -1718,7 +1719,7 @@ const SchedulePage: React.FC = () => {
               }}
             >
               <Box
-                sx={{
+        sx={{
                   p: 2,
                   borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
                   bgcolor: "rgba(0, 0, 0, 0.02)",
@@ -1726,33 +1727,33 @@ const SchedulePage: React.FC = () => {
               >
                 <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
                   알바생 필터
-                </Typography>
+          </Typography>
                 <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                  <Button
-                    size="small"
+              <Button
+                size="small"
                     variant="outlined"
-                    onClick={() =>
-                      setFilteredEmployeeIds(employees.map((e) => e.id))
-                    }
+                onClick={() =>
+                  setFilteredEmployeeIds(employees.map((e) => e.id))
+                }
                     sx={{ fontSize: "0.75rem" }}
-                  >
-                    전체 선택
-                  </Button>
-                  <Button
-                    size="small"
+              >
+                전체 선택
+              </Button>
+              <Button
+                size="small"
                     variant="outlined"
-                    onClick={() => setFilteredEmployeeIds([])}
+                onClick={() => setFilteredEmployeeIds([])}
                     sx={{ fontSize: "0.75rem" }}
-                  >
-                    전체 해제
-                  </Button>
+              >
+                전체 해제
+              </Button>
                 </Box>
                 <FormControlLabel
                   control={
                     <Checkbox
                       checked={showUnassignedOnly}
                       onChange={(e) => setShowUnassignedOnly(e.target.checked)}
-                      size="small"
+                size="small"
                     />
                   }
                   label={
@@ -1766,7 +1767,7 @@ const SchedulePage: React.FC = () => {
                 >
                   * 알바생을 클릭하면 해당 알바생의 근무만 표시됩니다
                 </Typography>
-              </Box>
+            </Box>
 
               <List
                 sx={{
@@ -1778,19 +1779,19 @@ const SchedulePage: React.FC = () => {
               >
                 {employees.map((employee) => (
                   <ListItem key={employee.id} disablePadding sx={{ mb: 0.5 }}>
-                    <ListItemButton
-                      dense
+                  <ListItemButton
+                    dense
                       draggable
                       onDragStart={(e) =>
                         handleEmployeeDragStart(e, employee.id)
                       }
-                      onClick={() => handleEmployeeFilter(employee.id)}
-                      sx={{
-                        borderRadius: 1,
+                    onClick={() => handleEmployeeFilter(employee.id)}
+                    sx={{
+                      borderRadius: 1,
                         py: 1,
                         bgcolor: filteredEmployeeIds.includes(employee.id)
                           ? `${getEmployeeColor(employee.id)}22`
-                          : "transparent",
+                        : "transparent",
                         cursor: "pointer",
                         "&:hover": {
                           boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
@@ -1813,9 +1814,9 @@ const SchedulePage: React.FC = () => {
                             height: 18,
                             bgcolor: getEmployeeColor(employee.id),
                             borderRadius: "50%",
-                          }}
-                        />
-                      </ListItemIcon>
+                        }}
+                      />
+                    </ListItemIcon>
                       <ListItemText
                         primary={employee.name}
                         secondary={
@@ -1927,8 +1928,8 @@ const SchedulePage: React.FC = () => {
                             borderLeft: "3px solid #AAAAAA",
                           }}
                         >
-                          <ListItemText
-                            primary={
+                    <ListItemText
+                      primary={
                               <Box
                                 sx={{
                                   display: "flex",
@@ -1938,7 +1939,7 @@ const SchedulePage: React.FC = () => {
                               >
                                 <Typography variant="body2" fontWeight={500}>
                                   {formattedDate}
-                                </Typography>
+                        </Typography>
                                 <Typography
                                   variant="caption"
                                   sx={{
@@ -1950,19 +1951,19 @@ const SchedulePage: React.FC = () => {
                                   {shiftTypeText}
                                 </Typography>
                               </Box>
-                            }
-                            secondary={
+                      }
+                      secondary={
                               <Typography variant="caption" display="block">
                                 {formattedTime}
-                              </Typography>
-                            }
-                          />
-                        </ListItemButton>
+                        </Typography>
+                      }
+                    />
+                  </ListItemButton>
                       </ListItem>
                     );
                   })
-                )}
-              </List>
+              )}
+            </List>
             </Paper>
           )}
 
@@ -2017,7 +2018,7 @@ const SchedulePage: React.FC = () => {
                 >
                   월간
                 </Button>
-              </Box>
+        </Box>
 
               <Box sx={{ display: "flex", gap: 1 }}>
                 {/* 정보 아이콘 - 알림창이 닫혔을 때만 표시 */}
@@ -2035,16 +2036,6 @@ const SchedulePage: React.FC = () => {
                   size="small"
                   variant="outlined"
                   color="primary"
-                  onClick={() => setIsTemplateManagerOpen(true)}
-                  startIcon={<SettingsIcon />}
-                  sx={{ fontWeight: 600 }}
-                >
-                  근무 템플릿 관리
-                </Button>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="primary"
                   onClick={() => setShowSidePanel(!showSidePanel)}
                   sx={{ fontWeight: 600 }}
                   startIcon={showSidePanel ? <ChevronLeft /> : <ChevronRight />}
@@ -2057,12 +2048,12 @@ const SchedulePage: React.FC = () => {
             <Alert
               severity="info"
               sx={{
-                mb: 0.5, // 2에서 0.5로 마진 줄이기
+                mb: 0.5,
                 display: showInfoAlert ? "flex" : "none",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                py: 0.5, // 알림창 패딩 줄이기
+                py: 0.5,
                 "& .MuiAlert-message": {
-                  py: 0.5, // 알림 메시지 패딩 줄이기
+                  py: 0.5,
                 },
               }}
               action={
@@ -2076,21 +2067,19 @@ const SchedulePage: React.FC = () => {
                 </IconButton>
               }
             >
-              <AlertTitle>알바 스케줄 관리 안내</AlertTitle>
+              <AlertTitle>근무 캘린더 안내</AlertTitle>
               <Typography variant="body2">
                 • <strong>알바생 필터:</strong> 알바생을 클릭하여 특정 알바생의
                 근무만 표시하거나 숨길 수 있습니다.
                 <br />• <strong>드래그 앤 드롭:</strong> 알바생을 달력의 근무
                 시간에 끌어다 놓아 쉽게 배정할 수 있습니다.
-                <br />• <strong>근무 템플릿 관리:</strong> 버튼을 클릭하여
-                반복되는 근무 패턴을 설정하세요.
                 <br />• <strong>미배정 근무(회색):</strong> 아직 알바생이
                 배정되지 않은 근무 시간입니다.
                 <br />• <strong>인력 부족 근무(주황색):</strong> 필요 인원보다
                 적게 배정된 근무 시간입니다.
                 <br />• <strong>배정 완료 근무(초록색):</strong> 필요 인원이
                 모두 채워진 근무 시간입니다.
-              </Typography>
+          </Typography>
             </Alert>
 
             <Paper
@@ -2195,7 +2184,7 @@ const SchedulePage: React.FC = () => {
                   >
                     <CloseIcon fontSize="small" />
                   </IconButton>
-                </Box>
+        </Box>
               )}
 
               <FullCalendar
@@ -2318,7 +2307,7 @@ const SchedulePage: React.FC = () => {
                 }}
               />
             </Paper>
-          </Box>
+      </Box>
         </Box>
       )}
 
@@ -2329,10 +2318,10 @@ const SchedulePage: React.FC = () => {
         </Box>
       )}
 
-      {/* 최적 스케줄링 탭 */}
+      {/* 주간 스케줄 탭 */}
       {activeTab === "optimal" && (
         <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
-          <OptimalScheduling
+          <Schedule
             onAssignEmployee={handleAssignEmployee}
             selectedShiftId={selectedShiftId}
           />

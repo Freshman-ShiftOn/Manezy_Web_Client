@@ -20,6 +20,7 @@ import {
   Divider,
   Alert,
   CircularProgress,
+  Avatar,
 } from "@mui/material";
 import {
   Refresh as RefreshIcon,
@@ -84,6 +85,12 @@ const RequestManagement: React.FC = () => {
   // 대타 배정 관련 상태
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
+  // 확인 대화상자 상태
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmSuccessOpen, setConfirmSuccessOpen] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
+    null
+  );
 
   // 데이터 로딩
   useEffect(() => {
@@ -315,11 +322,9 @@ const RequestManagement: React.FC = () => {
     }
   };
 
-  // 대타 배정을 위한 근무 선택
+  // 근무 선택 처리
   const handleSelectShift = (shift: Shift) => {
     setSelectedShift(shift);
-    setActiveTab("substituteAssign");
-    setError(null);
   };
 
   // 대타 배정 완료 핸들러
@@ -739,19 +744,128 @@ const RequestManagement: React.FC = () => {
         </Paper>
 
         {selectedShift ? (
-          <SubstituteAssigner
-            shiftId={selectedShift.id}
-            shift={selectedShift}
-            originalEmployeeId={selectedShift.employeeId}
-            onAssigned={handleSubstituteAssigned}
-          />
+          <Paper sx={{ p: 2 }} variant="outlined">
+            <Typography variant="subtitle1" gutterBottom>
+              선택된 근무 정보
+            </Typography>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2">
+                <strong>날짜:</strong>{" "}
+                {format(
+                  new Date(selectedShift.start),
+                  "yyyy년 MM월 dd일 (eee)"
+                )}
+              </Typography>
+              <Typography variant="body2">
+                <strong>시간:</strong>{" "}
+                {format(new Date(selectedShift.start), "HH:mm")} -{" "}
+                {format(new Date(selectedShift.end), "HH:mm")}
+              </Typography>
+              <Typography variant="body2">
+                <strong>담당자:</strong>{" "}
+                {getEmployeeName(selectedShift.employeeId) || "미배정"}
+              </Typography>
+            </Box>
+
+            <Typography variant="subtitle2" gutterBottom>
+              가용 직원 목록
+            </Typography>
+
+            {employees.length === 0 ? (
+              <Alert severity="info">등록된 직원이 없습니다.</Alert>
+            ) : (
+              <List>
+                {employees
+                  .filter((emp) => emp.id !== selectedShift.employeeId)
+                  .map((employee) => (
+                    <Paper
+                      key={employee.id}
+                      sx={{
+                        mb: 1,
+                        p: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                      }}
+                    >
+                      <Box sx={{ display: "flex", alignItems: "center" }}>
+                        <Avatar sx={{ mr: 1, width: 32, height: 32 }}>
+                          {employee.name.charAt(0)}
+                        </Avatar>
+                        <Typography variant="body2">{employee.name}</Typography>
+                      </Box>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        color="primary"
+                        onClick={() => {
+                          setSelectedEmployee(employee);
+                          setConfirmDialogOpen(true);
+                        }}
+                      >
+                        대타 요청
+                      </Button>
+                    </Paper>
+                  ))}
+              </List>
+            )}
+          </Paper>
         ) : (
           <Alert severity="info" sx={{ mt: 2 }}>
             위에서 대타를 배정할 근무를 선택하세요.
           </Alert>
         )}
+
+        {/* 확인 대화상자 */}
+        <Dialog open={confirmDialogOpen} onClose={handleCloseConfirmDialog}>
+          <DialogTitle>대타 요청 확인</DialogTitle>
+          <DialogContent>
+            <Typography>
+              {selectedEmployee?.name}님을 대타로 요청하시겠습니까?
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseConfirmDialog}>취소</Button>
+            <Button onClick={handleConfirmSubstitute} color="primary">
+              요청
+            </Button>
+          </DialogActions>
+        </Dialog>
+
+        {/* 성공 대화상자 */}
+        <Dialog open={confirmSuccessOpen} onClose={handleCloseSuccessDialog}>
+          <DialogTitle>대타 요청 완료</DialogTitle>
+          <DialogContent>
+            <Typography>
+              {selectedEmployee?.name}님에게 대타 요청이 전송되었습니다.
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={handleCloseSuccessDialog} color="primary">
+              확인
+            </Button>
+          </DialogActions>
+        </Dialog>
       </>
     );
+  };
+
+  // 대화상자 닫기 및 상태 초기화
+  const handleCloseConfirmDialog = () => {
+    setConfirmDialogOpen(false);
+  };
+
+  // 대타 요청 완료 처리
+  const handleConfirmSubstitute = () => {
+    setConfirmDialogOpen(false);
+    setConfirmSuccessOpen(true);
+    // 대타 배정 완료 처리
+    handleSubstituteAssigned();
+  };
+
+  // 성공 대화상자 닫기
+  const handleCloseSuccessDialog = () => {
+    setConfirmSuccessOpen(false);
   };
 
   // 로딩 상태 표시

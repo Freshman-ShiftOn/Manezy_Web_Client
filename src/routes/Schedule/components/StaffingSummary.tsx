@@ -36,7 +36,7 @@ type DayTab = "average" | 0 | 1 | 2 | 3 | 4 | 5 | 6;
 const StaffingSummary: React.FC<StaffingSummaryProps> = ({ data }) => {
   const [selectedDay, setSelectedDay] = useState<DayTab>("average");
 
-  // 각 요일/시간대별 가용 인력 계산
+  // 각 요일/시간대별 가용 인력 계산 (간소화 버전)
   const availabilityStats = useMemo(() => {
     const stats = Array(7)
       .fill(0)
@@ -74,7 +74,7 @@ const StaffingSummary: React.FC<StaffingSummaryProps> = ({ data }) => {
     return stats;
   }, [data]);
 
-  // 시간대별 통계 계산 - 모든 요일 합산
+  // 시간대별 통계 계산 - 모든 요일 합산 (간소화 버전)
   const timeSlotTotals = useMemo(() => {
     const result = Array(TIME_SLOTS.length)
       .fill(0)
@@ -248,14 +248,16 @@ const StaffingSummary: React.FC<StaffingSummaryProps> = ({ data }) => {
                   top: 0,
                   bottom: 0,
                   width: 1,
-                  bgcolor: "rgba(0,0,0,0.06)",
+                  bgcolor: "rgba(0,0,0,0.05)",
                   zIndex: 0,
                 }}
               />
             );
           })}
 
-          {TIME_SLOTS.slice(DISPLAY_START_INDEX, DISPLAY_END_INDEX).map(
+          {/* 시간대별 가용성 바 */}
+          {Array.from(
+            { length: DISPLAY_END_INDEX - DISPLAY_START_INDEX },
             (_, index) => {
               const actualIndex = index + DISPLAY_START_INDEX;
               const stats = currentGraphData[actualIndex];
@@ -355,24 +357,6 @@ const StaffingSummary: React.FC<StaffingSummaryProps> = ({ data }) => {
                         boxShadow: "0 1px 3px rgba(0,0,0,0.1) inset",
                       }}
                     />
-
-                    {/* 매우 적은 인원일 경우 상단에 라벨 표시 */}
-                    {availablePercentage < 25 && stats?.total > 0 && (
-                      <Typography
-                        variant="caption"
-                        sx={{
-                          position: "absolute",
-                          top: 2,
-                          left: "50%",
-                          transform: "translateX(-50%)",
-                          fontSize: "0.6rem",
-                          color: "error.main",
-                          fontWeight: "bold",
-                        }}
-                      >
-                        !
-                      </Typography>
-                    )}
                   </Box>
                 </Tooltip>
               );
@@ -381,100 +365,32 @@ const StaffingSummary: React.FC<StaffingSummaryProps> = ({ data }) => {
         </Box>
       </Box>
 
-      {/* X축 (시간) */}
-      <Box sx={{ display: "flex", mt: 1, borderTop: "1px solid #eee", pt: 1 }}>
-        <Box sx={{ width: 30 }} />
-        <Box sx={{ flex: 1, display: "flex", position: "relative" }}>
-          {[8, 10, 12, 14, 16, 18, 20, 22].map((hour) => {
-            const position = ((hour - 8) / (22 - 8)) * 100;
-
-            return (
-              <Typography
-                key={hour}
-                variant="caption"
-                sx={{
-                  position: "absolute",
-                  left: `${position}%`,
-                  transform: "translateX(-50%)",
-                  color: "text.secondary",
-                  fontWeight: hour % 2 === 0 ? "bold" : "normal",
-                }}
-              >
-                {`${hour}:00`}
-              </Typography>
-            );
-          })}
-        </Box>
+      {/* X축 (시간대) */}
+      <Box sx={{ ml: 4, mt: 1, display: "flex" }}>
+        {[8, 10, 12, 14, 16, 18, 20, 22].map((hour, index) => (
+          <Typography
+            key={hour}
+            variant="caption"
+            sx={{
+              flex: index === 0 || index === 7 ? 0.5 : 1,
+              textAlign: "center",
+              color: "text.secondary",
+            }}
+          >
+            {hour}:00
+          </Typography>
+        ))}
       </Box>
 
-      <Box
-        sx={{
-          mt: 3,
-          display: "flex",
-          justifyContent: "center",
-          flexDirection: "column",
-          alignItems: "center",
-        }}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ display: "block", textAlign: "center", mt: 1 }}
       >
-        <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>
-          {selectedDay === "average"
-            ? "모든 요일 평균 가용 인력"
-            : `${DAYS_OF_WEEK[selectedDay as number]}요일 가용 인력`}
-        </Typography>
-
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            gap: 2,
-          }}
-        >
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Box
-              sx={{
-                width: 12,
-                height: 12,
-                bgcolor: alpha("#2196F3", 0.7),
-                mr: 0.5,
-                borderRadius: 1,
-              }}
-            />
-            <Typography variant="caption">가능 인원</Typography>
-          </Box>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Box
-              sx={{
-                width: 12,
-                height: 12,
-                bgcolor: alpha("#4CAF50", 0.8),
-                mr: 0.5,
-                borderRadius: 1,
-              }}
-            />
-            <Typography variant="caption">선호 인원</Typography>
-          </Box>
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            <Box
-              sx={{
-                width: 12,
-                height: 12,
-                bgcolor: "error.main",
-                mr: 0.5,
-                borderRadius: 1,
-                fontSize: "0.7rem",
-                color: "white",
-                textAlign: "center",
-                lineHeight: "12px",
-              }}
-            >
-              !
-            </Box>
-            <Typography variant="caption">인원 부족</Typography>
-          </Box>
-        </Box>
-      </Box>
+        {selectedDay === "average"
+          ? "모든 요일 평균 가용 인력"
+          : `${DAYS_OF_WEEK[selectedDay as number]}요일 가용 인력`}
+      </Typography>
     </Paper>
   );
 };
