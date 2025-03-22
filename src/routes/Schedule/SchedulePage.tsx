@@ -1,100 +1,226 @@
-import React, {
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
+/**
+ * 스케줄 페이지 컴포넌트
+ *
+ * 이 파일은 원래 SimpleSchedulePage.tsx에서 리팩토링된 파일입니다.
+ * 렌더링 성능 개선 및 템플릿 관리 기능이 추가되었습니다.
+ *
+ * 주요 기능:
+ * - 주간/월간 근무 일정 표시
+ * - 근무 템플릿 관리 (오픈/미들/마감)
+ * - 알바생 필터링
+ * - 미배정 근무 표시
+ * - 드래그 앤 드롭으로 일정 조정
+ * - 요청 관리 시스템
+ * - 최적 스케줄링 추천
+ */
+
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
-import { EventClickArg, DateSelectArg } from "@fullcalendar/core";
 
 import {
   Box,
   Button,
   Typography,
+  CircularProgress,
+  Alert,
+  AlertTitle,
+  useTheme,
   Paper,
-  Grid,
-  Chip,
-  ToggleButtonGroup,
-  ToggleButton,
+  Drawer,
   List,
   ListItem,
-  ListItemText,
-  ListItemAvatar,
-  Avatar,
-  Divider,
-  Badge,
-  Card,
-  CardContent,
-  Tooltip,
-  Checkbox,
-  FormControlLabel,
-  CircularProgress,
-  Drawer,
-  FormGroup,
   ListItemButton,
   ListItemIcon,
-  Alert,
-  useTheme,
-  TextField,
+  ListItemText,
+  Divider,
+  useMediaQuery,
   IconButton,
-  Stack,
-  MenuItem,
-  Select,
-  FormControl,
-  InputLabel,
-  SelectChangeEvent,
+  FormControlLabel,
+  Checkbox,
+  Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  TableContainer,
+  Table,
+  TableHead,
+  TableBody,
+  TableRow,
+  TableCell,
+  Tabs,
+  Tab,
 } from "@mui/material";
-import {
-  CalendarMonth,
-  ViewWeek,
-  AccessTime,
-  MoreVert,
-  CalendarViewMonth,
-  CalendarViewWeek,
-  PersonAdd,
-  PersonRemove,
-  AssignmentLate,
-  Assignment,
-  NotificationsActive,
-  FilterAlt,
-  AssignmentInd,
-} from "@mui/icons-material";
-import ShiftDialog from "./ShiftDialog";
+
 import {
   getEmployees,
   getStoreInfo,
   getShifts,
   saveShift,
+  deleteShift, // 삭제 API 추가
 } from "../../services/api";
-import { Employee, Store, Shift, Availability } from "../../lib/types";
+import { Employee, Store, Shift } from "../../lib/types";
 import { useNavigate } from "react-router-dom";
-import { v4 as uuidv4 } from "uuid";
+import { format, differenceInHours } from "date-fns";
 import {
-  addDays,
-  format,
-  parseISO,
-  set,
-  startOfDay,
-  addHours,
-  differenceInHours,
-  getHours,
-  addMinutes,
-  parse,
-  isWithinInterval,
-  isSameDay,
-} from "date-fns";
+  FilterAlt,
+  PersonAdd,
+  Assignment,
+  AssignmentInd,
+  MoreVert,
+  Settings as SettingsIcon,
+  Add as AddIcon,
+  ContentCopy as ContentCopyIcon,
+  Close as CloseIcon,
+  CalendarMonth as CalendarIcon,
+  InboxRounded as InboxIcon,
+  AutoAwesome as AutoAwesomeIcon,
+  Work,
+  ChevronLeft,
+  ChevronRight,
+  Info as InfoIcon,
+} from "@mui/icons-material";
+import ShiftDialog from "./ShiftDialog";
+import RequestManagement from "./RequestManagement";
+import TemplateManagerDialog from "./TemplateManagerDialog";
+import Schedule from "./Schedule";
+import { v4 as uuidv4 } from "uuid";
 
-// 근무 이벤트 데이터 구조
-interface ShiftEvent {
+// 사용자 정의 CSS 스타일
+const schedulerStyles = {
+  // 이벤트 기본 스타일
+  ".fc-event": {
+    borderWidth: "1px",
+    boxShadow: "0 1px 2px rgba(0,0,0,0.1)",
+    margin: "1px 0",
+    overflow: "hidden",
+    minHeight: "42px", // 최소 높이 설정
+  },
+  // 미배정 근무 스타일
+  ".unassigned-shift": {
+    opacity: 0.85,
+    backgroundColor: "#AAAAAA !important",
+    color: "#FFFFFF !important",
+    borderLeft: "3px solid #888888 !important",
+  },
+  // 인원 부족 근무 스타일
+  ".understaffed-shift": {
+    borderLeft: "3px solid #FB8C00 !important",
+  },
+  // 인원 충족 근무 스타일
+  ".fully-staffed-shift": {
+    borderLeft: "3px solid #4CAF50 !important",
+  },
+  // 주간 뷰 이벤트 스타일
+  ".week-view-event": {
+    borderRadius: "4px !important",
+    zIndex: 1,
+  },
+  // 월간 뷰 이벤트 스타일
+  ".month-view-event": {
+    borderRadius: "3px !important",
+    margin: "1px 0",
+  },
+  // 주간 뷰 셀 스타일 개선
+  ".fc-timegrid-slot": {
+    height: "3.4em", // 슬롯 높이 약간 더 증가
+  },
+  // 오늘 날짜 강조
+  ".fc-day-today": {
+    backgroundColor: "rgba(66, 133, 244, 0.08) !important",
+  },
+  // 시간 라벨 스타일
+  ".fc-timegrid-slot-label": {
+    fontSize: "0.85rem",
+    color: "#555",
+    fontWeight: "500",
+  },
+  // 이벤트 간격 조정 및 겹침 개선
+  ".fc-timegrid-event-harness": {
+    margin: "0 !important", // 마진 제거하여 일관된 배치
+  },
+  // 이벤트 겹침 시 표시 개선
+  ".fc-timegrid-col-events": {
+    margin: "0 0.5%", // 마진 늘려서 배경이 더 보이게 조정
+    width: "99% !important", // 너비 조정
+  },
+  // 이벤트 겹칠 때 그림자 효과로 구분감 주기
+  ".fc-timegrid-event": {
+    padding: "1px", // 패딩 약간 추가
+    minWidth: "auto !important", // 최소 너비 자동 조정으로 변경
+    boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+    border: "1px solid rgba(0,0,0,0.08)",
+  },
+  // 개별 이벤트 위치 조정 - 세 개 이벤트가 각각 왼쪽, 중앙, 오른쪽에 위치하도록
+  ".fc-timegrid-event-harness:nth-child(3n+1)": {
+    left: "0% !important", // 첫 번째 이벤트는 왼쪽에 배치
+    right: "auto !important",
+    width: "80% !important", // 90%에서 80%로 너비 줄이기
+  },
+  ".fc-timegrid-event-harness:nth-child(3n+2)": {
+    left: "6% !important", // 4%에서 6%로 증가 - 더 오른쪽으로 이동
+    right: "auto !important",
+    width: "80% !important", // 90%에서 80%로 너비 줄이기
+  },
+  ".fc-timegrid-event-harness:nth-child(3n)": {
+    left: "12% !important", // 8%에서 12%로 증가 - 더 오른쪽으로 이동
+    right: "auto !important",
+    width: "80% !important", // 90%에서 80%로 너비 줄이기
+  },
+  // 두 개만 겹칠 때는 왼쪽/오른쪽으로 나누어 배치
+  ".fc-timegrid-event-harness-inset.fc-timegrid-event-harness": {
+    zIndex: 2, // 겹치는 이벤트가 잘 보이도록 z-index 설정
+  },
+  // 단일 이벤트일 때는 중앙에 배치
+  ".fc-timegrid-event-harness:only-child": {
+    left: "10% !important", // 중앙 정렬하여 배경이 더 보이게 함
+    right: "auto !important",
+    width: "80% !important", // 100%에서 80%로 너비 줄이기
+  },
+  // 열 헤더 강조
+  ".fc-col-header-cell": {
+    backgroundColor: "#f8f9fa",
+    fontWeight: "600",
+  },
+  // 일요일 색상 조정
+  ".fc-day-sun .fc-col-header-cell-cushion": {
+    color: "#e53935",
+  },
+  // 토요일 색상 조정
+  ".fc-day-sat .fc-col-header-cell-cushion": {
+    color: "#1e88e5",
+  },
+  // 캘린더 넓게 표시
+  ".fc-view-harness": {
+    width: "100%",
+  },
+  // 컬럼 너비 최적화
+  ".fc-timegrid-col-frame": {
+    minWidth: "120px", // 최소 너비 설정
+  },
+  // 요일 헤더 고정을 위한 스타일
+  ".fc-col-header": {
+    position: "sticky", // 헤더를 고정
+    top: 0, // 상단에 고정
+    zIndex: 5, // 다른 요소 위에 표시되도록 z-index 설정
+    backgroundColor: "#fff", // 배경색 설정
+    boxShadow: "0 1px 3px rgba(0,0,0,0.1)", // 그림자 효과 추가
+  },
+};
+
+// 간소화된 이벤트 타입
+interface SimpleShiftEvent {
   id: string;
   title: string;
-  start: string; // ISO string
+  start: string;
   end: string;
-  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  textColor?: string;
   extendedProps?: {
     employeeIds?: string[];
     employeeNames?: string[];
@@ -107,6 +233,8 @@ interface ShiftEvent {
     isSubstituteRequest?: boolean;
     isHighPriority?: boolean;
     status?: "unassigned" | "assigned" | "substitute-requested";
+    requiredStaff?: number;
+    shiftType?: "open" | "middle" | "close";
   };
 }
 
@@ -124,46 +252,155 @@ const EMPLOYEE_COLORS = [
   "#6E85B7", // 남색
 ];
 
+// 시간대 템플릿 타입 추가
+interface ShiftTemplate {
+  id: string;
+  name: string;
+  type: "open" | "middle" | "close";
+  startTime: string; // 'HH:MM' 포맷
+  endTime: string; // 'HH:MM' 포맷
+  requiredStaff: number;
+  color: string;
+}
+
+// 기본 템플릿 정의
+const DEFAULT_SHIFT_TEMPLATES: ShiftTemplate[] = [
+  {
+    id: "template-open",
+    name: "오픈",
+    type: "open",
+    startTime: "09:00",
+    endTime: "13:00",
+    requiredStaff: 2,
+    color: "#4CAF50", // 초록색
+  },
+  {
+    id: "template-middle",
+    name: "미들",
+    type: "middle",
+    startTime: "12:00",
+    endTime: "17:00",
+    requiredStaff: 3,
+    color: "#2196F3", // 파랑색
+  },
+  {
+    id: "template-close",
+    name: "마감",
+    type: "close",
+    startTime: "16:00",
+    endTime: "21:00",
+    requiredStaff: 2,
+    color: "#9C27B0", // 보라색
+  },
+];
+
+// 페이지 탭 타입
+type SchedulePageTab = "calendar" | "requests" | "optimal";
+
+// ShiftEvent와 SimpleShiftEvent 간 변환 유틸리티 함수
+const toShiftEvent = (event: SimpleShiftEvent): any => {
+  return {
+    ...event,
+    extendedProps: {
+      ...event.extendedProps,
+      shiftType: event.extendedProps?.shiftType || "middle",
+      requiredStaff: event.extendedProps?.requiredStaff || 1,
+    },
+  };
+};
+
+const toSimpleShiftEvent = (event: any): SimpleShiftEvent => {
+  return {
+    ...event,
+    extendedProps: {
+      ...event.extendedProps,
+    },
+  };
+};
+
 const SchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
-  const calendarRef = useRef<any>(null); // Add ref for direct calendar control
+  const calendarRef = useRef<any>(null);
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
+  // 탭 상태 추가
+  const [activeTab, setActiveTab] = useState<SchedulePageTab>("calendar");
+  const [selectedShiftId, setSelectedShiftId] = useState<string | undefined>(
+    undefined
+  );
 
   const [viewType, setViewType] = useState<"timeGridWeek" | "dayGridMonth">(
     "timeGridWeek"
   );
-  const [events, setEvents] = useState<ShiftEvent[]>([]);
-  const [selectedEvent, setSelectedEvent] = useState<ShiftEvent | null>(null);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const [isNewEvent, setIsNewEvent] = useState(false);
+  const [events, setEvents] = useState<SimpleShiftEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployeeIds, setFilteredEmployeeIds] = useState<string[]>([]);
-  const [showSidePanel, setShowSidePanel] = useState(true);
-
-  // 추가된 상태
-  const [availabilityFilter, setAvailabilityFilter] = useState<{
-    start: string;
-    end: string;
-  } | null>(null);
+  const [showSidePanel, setShowSidePanel] = useState(false);
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
-  const [employeeAvailability, setEmployeeAvailability] = useState<
-    Availability[]
-  >([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [showInfoAlert, setShowInfoAlert] = useState(true);
+  const [showInfoIcon, setShowInfoIcon] = useState(false); // 정보 아이콘 표시 상태 추가
 
-  // 매장과 알바생 정보 로드
+  // 이벤트 관련 상태 추가
+  const [selectedEvent, setSelectedEvent] = useState<SimpleShiftEvent | null>(
+    null
+  );
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isNewEvent, setIsNewEvent] = useState(false);
+
+  // 템플릿 관련 상태 추가
+  const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>(
+    DEFAULT_SHIFT_TEMPLATES
+  );
+  const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] =
+    useState<ShiftTemplate | null>(null);
+  const [isEditingTemplate, setIsEditingTemplate] = useState(false);
+
+  // 간소화된 알바생 색상 변환 함수
+  const getEmployeeColor = useCallback(
+    (employeeId?: string): string => {
+      if (!employeeId) return "#CCCCCC"; // 미배정은 회색
+
+      const index = employees.findIndex((e) => e.id === employeeId);
+      if (index === -1) return "#CCCCCC";
+
+      return EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length];
+    },
+    [employees]
+  );
+
+  // 매장 및 직원 정보 로드
   useEffect(() => {
-    const loadData = async () => {
+    let isMounted = true;
+
+    const loadStoreAndEmployees = async () => {
       try {
         setLoading(true);
+        setError(null);
 
-        const storeData = await getStoreInfo();
-        console.log("매장 정보 로드:", storeData);
+        // 매장 정보 로드
+        let storeData;
+        try {
+          storeData = await getStoreInfo();
+          if (!isMounted) return;
 
-        if (!storeData || !storeData.id) {
-          console.error("매장 정보가 없거나 ID가 없습니다.");
+          if (!storeData || !storeData.id) {
+            setError(
+              "매장 정보를 불러올 수 없습니다. 매장 설정을 먼저 완료해주세요."
+            );
+            setLoading(false);
+            return;
+          }
+        setStore(storeData);
+        } catch (err) {
+          console.error("Store data error:", err);
+          if (!isMounted) return;
+
           setError(
             "매장 정보를 불러올 수 없습니다. 매장 설정을 먼저 완료해주세요."
           );
@@ -171,97 +408,236 @@ const SchedulePage: React.FC = () => {
           return;
         }
 
-        const employeesData = await getEmployees();
-        console.log("직원 정보 로드:", employeesData);
+        // 직원 정보 로드
+        try {
+          const employeesData = await getEmployees();
+          if (!isMounted) return;
 
-        setStore(storeData);
-        setEmployees(employeesData);
-
-        // 기본적으로 모든 알바생 필터에 포함
+          setEmployees(employeesData || []);
+          if (employeesData && employeesData.length > 0) {
         setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
+          }
+        } catch (err) {
+          console.error("Employee data error:", err);
+          if (!isMounted) return;
 
-        // 근무 일정 로드
-        const shifts = await getShifts();
-        console.log("근무 일정 로드:", shifts);
+          setEmployees([]);
+          setFilteredEmployeeIds([]);
+        }
 
-        // 가상의 가능 시간 데이터 생성 (실제로는 API에서 가져와야 함)
-        const availabilityData: Availability[] = employeesData.flatMap((emp) =>
-          Array.from({ length: 7 }, (_, i) => ({
-            employeeId: emp.id,
-            dayOfWeek: i as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-            startTime: i % 2 === 0 ? "09:00" : "14:00",
-            endTime: i % 2 === 0 ? "15:00" : "22:00",
-            isRecurring: true,
-            exceptionDates: [],
-          }))
-        );
-
-        setEmployeeAvailability(availabilityData);
-
-        // 대타 요청 상태를 포함하도록 업데이트 (데모용 데이터)
-        setEvents(
-          shifts.map((shift: Shift) => {
-            // 임의로 일부 근무를 대타 요청 상태로 설정 (데모용)
-            const hasSubRequest = Math.random() > 0.8;
-            const isHighPriority = hasSubRequest && Math.random() > 0.5;
-
-            return {
-              id: shift.id,
-              title: shift.title || "",
-              start: shift.start,
-              end: shift.end,
-              color: getEmployeeColor(shift.employeeIds?.[0]),
-              extendedProps: {
-                employeeIds: shift.employeeIds,
-                employeeNames: shift.employeeIds?.map(
-                  (id: string) =>
-                    employeesData.find((e) => e.id === id)?.name || "Unknown"
-                ),
-                note: shift.note,
-                recurring: shift.isRecurring
-                  ? {
-                      frequency: "weekly",
-                      daysOfWeek: [new Date(shift.start).getDay()],
-                    }
-                  : undefined,
-                isSubstituteRequest: hasSubRequest,
-                isHighPriority: isHighPriority,
-                status: !shift.employeeIds?.length
-                  ? "unassigned"
-                  : hasSubRequest
-                  ? "substitute-requested"
-                  : "assigned",
-              },
-            };
-          })
-        );
-
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       } catch (err) {
-        console.error("Error loading data:", err);
-        setError("데이터를 불러오는 중 오류가 발생했습니다.");
-        setLoading(false);
+        console.error("Error loading store/employee data:", err);
+        if (isMounted) {
+          setError("기본 데이터를 불러오는 중 오류가 발생했습니다.");
+          setLoading(false);
+        }
       }
     };
 
-    loadData();
-  }, [navigate]);
+    loadStoreAndEmployees();
 
-  // 알바생 ID에 따른 색상 반환
-  const getEmployeeColor = useCallback(
-    (employeeId?: string): string => {
-      if (!employeeId) return EMPLOYEE_COLORS[EMPLOYEE_COLORS.length - 1];
+    return () => {
+      isMounted = false;
+    };
+  }, []); // 의존성 배열을 비워 마운트 시 한 번만 실행
 
-      const index = employees.findIndex((e) => e.id === employeeId);
-      if (index === -1) return EMPLOYEE_COLORS[EMPLOYEE_COLORS.length - 1];
+  // 근무 일정 데이터 로드 (별도의 useEffect로 분리)
+  useEffect(() => {
+    let isMounted = true;
 
-      return EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length];
+    const loadShifts = async () => {
+      if (loading || !store) return; // 기본 데이터가 로드되지 않았으면 실행하지 않음
+
+      try {
+        // 로딩 상태 설정 (근무 일정만 로딩 중)
+        setLoading(true);
+
+        // 근무 일정 로드
+        const shiftsData = await getShifts();
+        if (!isMounted) return;
+
+        setShifts(shiftsData || []);
+
+        // 이벤트 데이터 가공
+        processShiftsToEvents(shiftsData || []);
+      } catch (err) {
+        console.error("Shifts data error:", err);
+        if (isMounted) {
+          // 근무 일정 로드 실패해도 빈 배열로 설정
+          setShifts([]);
+          processShiftsToEvents([]);
+        }
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+        }
+      }
+    };
+
+    loadShifts();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [store, employees]); // store와 employees가 변경될 때만 근무 일정 로드
+
+  // 근무 일정을 이벤트로 가공하는 함수
+  const processShiftsToEvents = useCallback(
+    (shiftsData: Shift[]) => {
+      if (!employees.length) return;
+
+      const simpleEvents = shiftsData.map((shift: Shift) => {
+        // 직원 이름 구하기
+        const employeeNames = (shift.employeeIds || []).map((id: string) => {
+          const employee = employees.find((e) => e.id === id);
+          return employee ? employee.name : "미배정";
+        });
+
+        // 멀티플 직원 표시를 위한 제목 생성
+        let displayTitle = "미배정";
+        if (employeeNames.length > 0) {
+          if (employeeNames.length === 1) {
+            displayTitle = employeeNames[0];
+          } else {
+            displayTitle = `${employeeNames[0]} 외 ${
+              employeeNames.length - 1
+            }명`;
+          }
+        }
+
+        // 기본 required staff가 없으면 shift type에 따라 기본값 설정
+        let defaultRequiredStaff = 1;
+        if (shift.shiftType === "open") defaultRequiredStaff = 1;
+        else if (shift.shiftType === "middle") defaultRequiredStaff = 2;
+        else if (shift.shiftType === "close") defaultRequiredStaff = 2;
+
+        return {
+            id: shift.id,
+          title: displayTitle,
+            start: shift.start,
+            end: shift.end,
+          backgroundColor: getEmployeeColor(shift.employeeIds?.[0]),
+          borderColor: getEmployeeColor(shift.employeeIds?.[0]),
+          textColor: "#FFFFFF",
+            extendedProps: {
+            employeeIds: shift.employeeIds || [],
+            employeeNames: employeeNames,
+              note: shift.note,
+            requiredStaff: shift.requiredStaff || defaultRequiredStaff,
+            shiftType: shift.shiftType || "middle",
+              recurring: shift.isRecurring
+                ? {
+                  frequency: "weekly" as const,
+                    daysOfWeek: [new Date(shift.start).getDay()],
+                  }
+                : undefined,
+            },
+        };
+      });
+
+      setEvents(simpleEvents);
     },
-    [employees]
+    [employees, getEmployeeColor]
   );
 
+  // shifts 또는 employees가 변경될 때 이벤트 데이터 갱신
+  useEffect(() => {
+    processShiftsToEvents(shifts);
+  }, [shifts, processShiftsToEvents]);
+
+  // 페이지 초기 로드시 모바일 여부에 따라 사이드패널 설정
+  useEffect(() => {
+    setShowSidePanel(false); // 항상 닫힌 상태로 시작
+  }, [isMobile]);
+
+  // 스크롤 안내 상태 추가
+  const [showScrollGuide, setShowScrollGuide] = useState(true);
+
+  // 스크롤 안내 숨기기 타이머
+  useEffect(() => {
+    if (showScrollGuide) {
+      const timer = setTimeout(() => {
+        setShowScrollGuide(false);
+      }, 5000); // 5초 후 안내 숨기기
+
+      return () => clearTimeout(timer);
+    }
+  }, [showScrollGuide]);
+
+  // 직원 필터 토글
+  const handleEmployeeFilter = (employeeId: string) => {
+    setFilteredEmployeeIds((prev) => {
+      if (prev.includes(employeeId)) {
+        return prev.filter((id) => id !== employeeId);
+      } else {
+        return [...prev, employeeId];
+      }
+    });
+  };
+
+  // 알바생 드래그 시작 핸들러 추가
+  const handleEmployeeDragStart = (e: React.DragEvent, employeeId: string) => {
+    e.dataTransfer.setData("employeeId", employeeId);
+    // 시각적 드래그 효과 설정
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  // 캘린더에 드래그 드롭 핸들러
+  const handleCalendarDrop = (info: any) => {
+    // 드롭된 위치와 시간 정보
+    const dropDate = info.date;
+
+    // 드래그된 직원 ID 가져오기
+    const employeeId = info.jsEvent.dataTransfer.getData("employeeId");
+    if (!employeeId) return;
+
+    // 해당 시간에 가장 가까운 이벤트 찾기 (3시간 이내)
+    const nearestEvent = findNearestEvent(dropDate);
+
+    if (nearestEvent) {
+      // 이벤트에 직원 배정
+      handleAssignEmployee(nearestEvent.id, employeeId);
+    } else {
+      // 새 이벤트 생성 가능성도 있지만 여기서는 생략
+      console.log("드롭 위치 근처에 이벤트가 없습니다.");
+    }
+  };
+
+  // 가장 가까운 이벤트 찾기 헬퍼 함수
+  const findNearestEvent = (date: Date) => {
+    const targetTime = date.getTime();
+    let nearestEvent = null;
+    let minTimeDiff = Infinity;
+
+    for (const event of events) {
+      const eventStart = new Date(event.start).getTime();
+      const eventEnd = new Date(event.end).getTime();
+
+      // 이벤트 시간 범위 내에 드롭된 경우
+      if (targetTime >= eventStart && targetTime <= eventEnd) {
+        return event;
+      }
+
+      // 아닌 경우, 가장 가까운 이벤트 찾기
+      const diffStart = Math.abs(targetTime - eventStart);
+      const diffEnd = Math.abs(targetTime - eventEnd);
+      const minDiff = Math.min(diffStart, diffEnd);
+
+      // 3시간(10800000ms) 이내의 가장 가까운 이벤트
+      if (minDiff < 10800000 && minDiff < minTimeDiff) {
+        minTimeDiff = minDiff;
+        nearestEvent = event;
+      }
+    }
+
+    return nearestEvent;
+  };
+
   // 필터링된 이벤트
-  const filteredEvents = useMemo(() => {
+  const filteredEvents = React.useMemo(() => {
     let filtered = events;
 
     // 직원 필터 적용
@@ -270,7 +646,7 @@ const SchedulePage: React.FC = () => {
         // 미배정 이벤트는 항상 표시
         if (!event.extendedProps?.employeeIds?.length) return true;
 
-        return event.extendedProps.employeeIds.some((id) =>
+        return event.extendedProps.employeeIds.some((id: string) =>
           filteredEmployeeIds.includes(id)
         );
       });
@@ -285,55 +661,11 @@ const SchedulePage: React.FC = () => {
       );
     }
 
-    // 가능 시간 필터 적용
-    if (
-      availabilityFilter &&
-      availabilityFilter.start &&
-      availabilityFilter.end
-    ) {
-      const filterStartHour = parseInt(
-        availabilityFilter.start.split(":")[0],
-        10
-      );
-      const filterStartMinute = parseInt(
-        availabilityFilter.start.split(":")[1],
-        10
-      );
-      const filterEndHour = parseInt(availabilityFilter.end.split(":")[0], 10);
-      const filterEndMinute = parseInt(
-        availabilityFilter.end.split(":")[1],
-        10
-      );
-
-      // 해당 시간에 근무 가능한 직원 찾기
-      const availableEmployeeIds = employees
-        .filter((emp) => {
-          // 해당 직원의 가능 시간 확인
-          return employeeAvailability.some(
-            (avail) =>
-              avail.employeeId === emp.id &&
-              parseInt(avail.startTime.split(":")[0], 10) <= filterStartHour &&
-              parseInt(avail.endTime.split(":")[0], 10) >= filterEndHour
-          );
-        })
-        .map((emp) => emp.id);
-
-      // 필터링된 직원 ID 업데이트
-      setFilteredEmployeeIds(availableEmployeeIds);
-    }
-
     return filtered;
-  }, [
-    events,
-    filteredEmployeeIds,
-    availabilityFilter,
-    employeeAvailability,
-    employees,
-    showUnassignedOnly,
-  ]);
+  }, [events, filteredEmployeeIds, showUnassignedOnly]);
 
   // 미배정 근무 블록 목록
-  const unassignedShifts = useMemo(() => {
+  const unassignedShifts = React.useMemo(() => {
     return events.filter(
       (event) =>
         !event.extendedProps?.employeeIds?.length ||
@@ -341,97 +673,7 @@ const SchedulePage: React.FC = () => {
     );
   }, [events]);
 
-  // 대타 요청이 있는 근무 목록
-  const substituteRequestShifts = useMemo(() => {
-    return events
-      .filter((event) => event.extendedProps?.isSubstituteRequest === true)
-      .sort((a, b) => {
-        // 우선순위가 높은 요청을 먼저 표시
-        if (
-          a.extendedProps?.isHighPriority &&
-          !b.extendedProps?.isHighPriority
-        ) {
-          return -1;
-        }
-        if (
-          !a.extendedProps?.isHighPriority &&
-          b.extendedProps?.isHighPriority
-        ) {
-          return 1;
-        }
-        return 0;
-      });
-  }, [events]);
-
-  // 알바생별 근무 시간 계산
-  const employeeHours = useMemo(() => {
-    return employees.map((employee) => {
-      const employeeEvents = events.filter((event) =>
-        event.extendedProps?.employeeIds?.includes(employee.id)
-      );
-
-      const totalHours = employeeEvents.reduce((total, event) => {
-        const hours = differenceInHours(
-          new Date(event.end),
-          new Date(event.start)
-        );
-        return total + hours;
-      }, 0);
-
-      return {
-        employee,
-        totalHours,
-        shiftsCount: employeeEvents.length,
-        color: getEmployeeColor(employee.id),
-      };
-    });
-  }, [employees, events, getEmployeeColor]);
-
-  // 직원 필터 토글
-  const handleEmployeeFilter = (employeeId: string) => {
-    setFilteredEmployeeIds((prev) => {
-      if (prev.includes(employeeId)) {
-        return prev.filter((id) => id !== employeeId);
-      } else {
-        return [...prev, employeeId];
-      }
-    });
-  };
-
-  // 가능 시간 필터 변경 처리
-  const handleAvailabilityFilterChange = (
-    key: "start" | "end",
-    value: string
-  ) => {
-    setAvailabilityFilter((prev) => ({
-      ...(prev || { start: "09:00", end: "18:00" }),
-      [key]: value,
-    }));
-  };
-
-  // 필터 초기화
-  const resetFilters = () => {
-    setAvailabilityFilter(null);
-    setFilteredEmployeeIds(employees.map((emp) => emp.id));
-    setShowUnassignedOnly(false);
-  };
-
-  // 뷰 타입 변경 핸들러
-  const handleViewChange = (
-    _: React.MouseEvent<HTMLElement>,
-    newView: "timeGridWeek" | "dayGridMonth" | null
-  ) => {
-    if (newView) {
-      setViewType(newView);
-      // Directly control the calendar API to change view
-      if (calendarRef.current) {
-        const calendarApi = calendarRef.current.getApi();
-        calendarApi.changeView(newView);
-      }
-    }
-  };
-
-  // 날짜 선택 이벤트 핸들러
+  // 날짜 선택 이벤트 핸들러 - 새 근무 추가
   const handleDateSelect = (selectInfo: any) => {
     // 업무 시간 외 선택 방지
     if (store) {
@@ -439,13 +681,16 @@ const SchedulePage: React.FC = () => {
       const endDate = new Date(selectInfo.end);
 
       // 시작시간 제한 (오픈 시간 이전이면 오픈 시간으로 설정)
-      const openingHour = parseInt(store.openingHour.split(":")[0], 10);
+      const openingHour = parseInt(store.openingHour?.split(":")[0] || "9", 10);
       if (startDate.getHours() < openingHour) {
         startDate.setHours(openingHour, 0, 0);
       }
 
       // 종료시간 제한 (마감 시간 이후면 마감 시간으로 설정)
-      const closingHour = parseInt(store.closingHour.split(":")[0], 10);
+      const closingHour = parseInt(
+        store.closingHour?.split(":")[0] || "22",
+        10
+      );
       if (
         endDate.getHours() > closingHour ||
         (endDate.getHours() === closingHour && endDate.getMinutes() > 0)
@@ -460,15 +705,19 @@ const SchedulePage: React.FC = () => {
       }
 
       // 새 이벤트 생성
-      const newEvent: ShiftEvent = {
+      const newEvent: SimpleShiftEvent = {
         id: uuidv4(),
-        title: "",
+        title: "새 근무",
         start: startDate.toISOString(),
         end: endDate.toISOString(),
+        backgroundColor: "#CCCCCC",
+        borderColor: "#CCCCCC",
+        textColor: "#000000",
         extendedProps: {
           employeeIds: [],
           employeeNames: [],
-          status: "unassigned",
+          requiredStaff: 1,
+          shiftType: "middle",
         },
       };
 
@@ -480,11 +729,19 @@ const SchedulePage: React.FC = () => {
 
   // 이벤트 클릭 핸들러
   const handleEventClick = (clickInfo: any) => {
-    // 이벤트 클릭 시 상세 정보 표시
-    setSelectedEvent({
-      ...clickInfo.event.toPlainObject(),
-      extendedProps: clickInfo.event.extendedProps || {},
-    });
+    const eventData = {
+      id: clickInfo.event.id,
+      title: clickInfo.event.title,
+      start: clickInfo.event.startStr,
+      end: clickInfo.event.endStr,
+      backgroundColor: clickInfo.event.backgroundColor,
+      borderColor: clickInfo.event.borderColor,
+      textColor: clickInfo.event.textColor,
+      extendedProps: clickInfo.event.extendedProps,
+    };
+
+    setSelectedEvent(eventData);
+    setSelectedShiftId(eventData.id);
     setIsNewEvent(false);
     setIsDialogOpen(true);
   };
@@ -493,10 +750,14 @@ const SchedulePage: React.FC = () => {
   const handleEventDrop = (dropInfo: any) => {
     // 드래그앤드롭으로 이벤트 이동 시
     const updatedEvent = {
-      ...dropInfo.event.toPlainObject(),
-      start: dropInfo.event.start.toISOString(),
-      end: dropInfo.event.end.toISOString(),
-      extendedProps: dropInfo.event.extendedProps || {},
+      id: dropInfo.event.id,
+      title: dropInfo.event.title,
+      start: dropInfo.event.startStr,
+      end: dropInfo.event.endStr,
+      backgroundColor: dropInfo.event.backgroundColor,
+      borderColor: dropInfo.event.borderColor,
+      textColor: dropInfo.event.textColor,
+      extendedProps: dropInfo.event.extendedProps,
     };
 
     // 이벤트 업데이트 API 호출
@@ -512,10 +773,14 @@ const SchedulePage: React.FC = () => {
   const handleEventResize = (resizeInfo: any) => {
     // 이벤트 크기 조절 시
     const updatedEvent = {
-      ...resizeInfo.event.toPlainObject(),
-      start: resizeInfo.event.start.toISOString(),
-      end: resizeInfo.event.end.toISOString(),
-      extendedProps: resizeInfo.event.extendedProps || {},
+      id: resizeInfo.event.id,
+      title: resizeInfo.event.title,
+      start: resizeInfo.event.startStr,
+      end: resizeInfo.event.endStr,
+      backgroundColor: resizeInfo.event.backgroundColor,
+      borderColor: resizeInfo.event.borderColor,
+      textColor: resizeInfo.event.textColor,
+      extendedProps: resizeInfo.event.extendedProps,
     };
 
     // 이벤트 업데이트 API 호출
@@ -528,7 +793,7 @@ const SchedulePage: React.FC = () => {
   };
 
   // 근무 일정 저장 핸들러
-  const handleSaveShift = (shiftEvent: ShiftEvent) => {
+  const handleSaveShift = (shiftEvent: SimpleShiftEvent) => {
     // 새 이벤트인 경우 추가
     if (isNewEvent) {
       setEvents((prev) => [...prev, shiftEvent]);
@@ -547,16 +812,10 @@ const SchedulePage: React.FC = () => {
   };
 
   // API에 근무 일정 저장
-  const saveShiftToApi = async (shiftEvent: ShiftEvent) => {
+  const saveShiftToApi = async (shiftEvent: SimpleShiftEvent) => {
     try {
       // 매장 ID가 없으면 기본값 's1' 사용 (첫 번째 매장 ID)
       const storeId = store?.id || "s1";
-
-      console.log("근무 일정 저장 시도:", {
-        id: shiftEvent.id,
-        storeId: storeId,
-        employeeIds: shiftEvent.extendedProps?.employeeIds || [],
-      });
 
       const result = await saveShift({
         id: shiftEvent.id,
@@ -576,8 +835,59 @@ const SchedulePage: React.FC = () => {
       });
 
       console.log("근무 일정 저장 성공:", result);
+
+      // 저장 후 shifts 상태 업데이트 (대신 API 호출을 다시 하지 않음)
+      const updatedShift = {
+        id: shiftEvent.id,
+        storeId: storeId,
+        title: shiftEvent.title,
+        start: shiftEvent.start,
+        end: shiftEvent.end,
+        employeeIds: shiftEvent.extendedProps?.employeeIds || [],
+        isRecurring: !!shiftEvent.extendedProps?.recurring,
+        note: shiftEvent.extendedProps?.note,
+      };
+
+      setShifts((prevShifts) => {
+        const index = prevShifts.findIndex((s) => s.id === updatedShift.id);
+        if (index >= 0) {
+          // 기존 shift 업데이트
+          const newShifts = [...prevShifts];
+          newShifts[index] = updatedShift as Shift;
+          return newShifts;
+        } else {
+          // 새 shift 추가
+          return [...prevShifts, updatedShift as Shift];
+        }
+      });
     } catch (err) {
       console.error("Error saving shift:", err);
+    }
+  };
+
+  // 근무 일정 삭제 핸들러 추가
+  const handleDeleteShift = async (shiftId: string) => {
+    try {
+      // API 호출하여 근무 삭제
+      await deleteShift(shiftId);
+
+      // UI에서 이벤트 제거
+      setEvents((prev) => prev.filter((ev) => ev.id !== shiftId));
+
+      // shifts 상태에서도 제거
+      setShifts((prev) => prev.filter((s) => s.id !== shiftId));
+
+      // 대화상자 닫기
+      setIsDialogOpen(false);
+
+      // 선택된 이벤트 초기화
+      setSelectedEvent(null);
+
+      console.log("근무 일정 삭제 성공:", shiftId);
+    } catch (err) {
+      console.error("Error deleting shift:", err);
+      // 오류 발생 시 알림 표시 (선택적)
+      alert("근무 일정 삭제 중 오류가 발생했습니다.");
     }
   };
 
@@ -586,100 +896,670 @@ const SchedulePage: React.FC = () => {
     setIsDialogOpen(false);
   };
 
-  // 알바생 페이지로 이동
-  const handleGoToEmployees = () => {
-    navigate("/employees");
-  };
-
-  // 대타 요청 처리
+  // 대타 요청 핸들러
   const handleSubstituteRequest = (
-    event: ShiftEvent,
+    event: SimpleShiftEvent,
     isHighPriority: boolean = false
   ) => {
-    // 대타 요청 상태 토글
-    const isRequestActive = event.extendedProps?.isSubstituteRequest;
+    // 근무 블록 정보 가져오기
+    const targetShift = shifts.find((shift) => shift.id === event.id);
+    if (!targetShift || !targetShift.employeeIds?.length) return;
 
-    // 명시적으로 ShiftEvent 타입을 지정하여 타입 오류 해결
-    const updatedEvent: ShiftEvent = {
+    // 대타 요청 정보 구성
+    const requesterId = targetShift.employeeIds[0]; // 첫 번째 알바생을 요청자로 설정
+    const now = new Date().toISOString();
+
+    // 이벤트 수정 (대타 요청 마크)
+    const updatedEvent = {
       ...event,
       extendedProps: {
         ...event.extendedProps,
-        isSubstituteRequest: !isRequestActive,
-        isHighPriority: !isRequestActive ? isHighPriority : false,
-        status: !isRequestActive ? "substitute-requested" : "assigned",
+        isSubstituteRequest: true,
+        isHighPriority,
       },
     };
 
     // 이벤트 업데이트
-    setEvents((prev) =>
-      prev.map((ev) => (ev.id === event.id ? updatedEvent : ev))
-    );
+    handleSaveShift(updatedEvent);
 
-    // API 저장
-    saveShiftToApi(updatedEvent);
+    // 대화상자 닫기
+    setIsDialogOpen(false);
   };
 
-  // 이벤트 렌더링 커스터마이징
+  // 이벤트 내용 렌더링 함수
   const renderEventContent = (eventInfo: any) => {
-    const isSubRequest = eventInfo.event.extendedProps.isSubstituteRequest;
-    const isHighPriority = eventInfo.event.extendedProps.isHighPriority;
-    const isUnassigned = !eventInfo.event.extendedProps.employeeIds?.length;
+    const employeeIds = eventInfo.event.extendedProps.employeeIds || [];
+    const employeeNames = eventInfo.event.extendedProps.employeeNames || [];
+    const requiredStaff = eventInfo.event.extendedProps.requiredStaff || 1;
+    const shiftType = eventInfo.event.extendedProps.shiftType || "middle";
+    const view = calendarRef.current?.getApi()?.view?.type;
 
+    let shiftLabel = "";
+    if (shiftType === "open") shiftLabel = "오픈";
+    else if (shiftType === "middle") shiftLabel = "미들";
+    else if (shiftType === "close") shiftLabel = "마감";
+
+    // 주간 뷰에서 이벤트 렌더링
+    if (view === "timeGridWeek") {
     return (
-      <Box sx={{ p: 0.5, width: "100%", overflow: "hidden" }}>
-        {/* 제목 및 아이콘 */}
-        <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
-          {isSubRequest && (
-            <Tooltip title={isHighPriority ? "긴급 대타 요청" : "대타 요청"}>
-              <Box component="span" mr={0.5}>
-                {isHighPriority ? (
-                  <NotificationsActive
-                    fontSize="small"
-                    color="error"
-                    sx={{ animation: "pulse 1.5s infinite" }}
-                  />
-                ) : (
-                  <AssignmentLate fontSize="small" color="warning" />
-                )}
-              </Box>
-            </Tooltip>
-          )}
-
-          {isUnassigned && (
-            <Tooltip title="미배정 근무">
-              <Box component="span" mr={0.5}>
-                <Assignment fontSize="small" color="disabled" />
-              </Box>
-            </Tooltip>
-          )}
-
-          <Typography
-            variant="caption"
-            sx={{
-              fontWeight: isHighPriority ? "bold" : "normal",
-              color: isHighPriority ? "error.main" : "inherit",
+        <>
+          <div
+            className="fc-event-main-wrapper"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              height: "100%",
+              overflow: "hidden",
+              padding: "4px 6px",
             }}
           >
-            {eventInfo.event.title || (isUnassigned ? "미배정 근무" : "근무")}
-          </Typography>
-        </Box>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: "2px",
+              }}
+            >
+              <span
+                style={{
+                  fontSize: "0.85rem",
+                  fontWeight: "bold",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {shiftLabel}
+              </span>
+              <span
+                style={{
+                  backgroundColor: "rgba(255,255,255,0.3)",
+                  padding: "0px 4px",
+                  borderRadius: "4px",
+                  fontSize: "0.7rem",
+                  whiteSpace: "nowrap",
+                  fontWeight: "bold",
+                }}
+              >
+                {employeeIds.length}/{requiredStaff}
+              </span>
+            </div>
 
-        {/* 시간 */}
-        <Typography variant="caption" display="block">
+            <div
+              style={{ fontSize: "0.75rem", opacity: 0.9, marginBottom: "3px" }}
+            >
+              {eventInfo.timeText}
+            </div>
+
+            {employeeIds.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "3px",
+                  overflow: "hidden",
+                  flex: 1,
+                }}
+              >
+                {employeeIds.slice(0, 3).map((id: string, index: number) => {
+                  const employee = employees.find((e) => e.id === id);
+                  return employee ? (
+                    <div
+                      key={id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "4px",
+                        fontSize: "0.75rem",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        backgroundColor: "rgba(255,255,255,0.15)",
+                        padding: "2px 4px",
+                        borderRadius: "3px",
+                      }}
+                    >
+                      <span
+                        style={{
+                          width: "8px",
+                          height: "8px",
+                          borderRadius: "50%",
+                          backgroundColor: getEmployeeColor(id),
+                          display: "inline-block",
+                          boxShadow: "0 0 0 1px rgba(255,255,255,0.5)",
+                        }}
+                      ></span>
+                      <span>{employee.name}</span>
+                    </div>
+                  ) : null;
+                })}
+                {employeeIds.length > 3 && (
+                  <div
+                    style={{
+                      fontSize: "0.7rem",
+                      opacity: 0.9,
+                      fontStyle: "italic",
+                      textAlign: "center",
+                      backgroundColor: "rgba(255,255,255,0.15)",
+                      padding: "1px 4px",
+                      borderRadius: "3px",
+                    }}
+                  >
+                    외 {employeeIds.length - 3}명...
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </>
+      );
+    }
+
+    // 월간 뷰에서 이벤트 렌더링 (모든 이름 표시 및 시간 정보 추가)
+    return (
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          padding: "2px 4px",
+          height: "100%",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: "1px",
+          }}
+        >
+          <span
+            style={{
+              fontSize: "0.8rem",
+              fontWeight: "bold",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {shiftLabel}
+          </span>
+          <span
+            style={{
+              backgroundColor: "rgba(255,255,255,0.3)",
+              padding: "0px 4px",
+              borderRadius: "4px",
+              fontSize: "0.7rem",
+              fontWeight: "bold",
+            }}
+          >
+            {employeeIds.length}/{requiredStaff}
+          </span>
+        </div>
+
+        {/* 시간 정보 추가 */}
+        <div
+          style={{
+            fontSize: "0.7rem",
+            color: "rgba(255,255,255,0.9)",
+            marginBottom: "1px",
+            whiteSpace: "nowrap",
+          }}
+        >
           {format(new Date(eventInfo.event.start), "HH:mm")} -{" "}
           {format(new Date(eventInfo.event.end), "HH:mm")}
-        </Typography>
+        </div>
 
-        {/* 알바생 이름 */}
-        {eventInfo.event.extendedProps.employeeNames?.map(
-          (name: string, idx: number) => (
-            <Typography key={idx} variant="caption" display="block" noWrap>
-              {name}
-            </Typography>
-          )
+        {employeeIds.length > 0 && (
+          <div
+            style={{
+              fontSize: "0.73rem",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              opacity: 0.95,
+              display: "flex",
+              flexDirection: "column",
+              gap: "1px",
+            }}
+          >
+            {/* 모든 이름 표시 */}
+            {employeeIds.map((id: string, index: number) => {
+              const employee = employees.find((e) => e.id === id);
+              return employee ? (
+                <span
+                  key={id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "2px",
+                    fontSize: "0.7rem",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  <span
+                    style={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      backgroundColor: getEmployeeColor(id),
+                      display: "inline-block",
+                    }}
+                  ></span>
+                  {employee.name}
+                </span>
+              ) : null;
+            })}
+          </div>
         )}
-      </Box>
+      </div>
     );
+  };
+
+  // 뷰 타입 변경 핸들러
+  const handleViewChange = (viewType: string) => {
+    if (viewType === "timeGridWeek" || viewType === "dayGridMonth") {
+      setViewType(viewType);
+      if (calendarRef.current) {
+        const calendarApi = calendarRef.current.getApi();
+        calendarApi.changeView(viewType);
+      }
+    }
+  };
+
+  // 캘린더 참조 객체 지우기
+  useEffect(() => {
+    return () => {
+      if (calendarRef.current) {
+        const api = calendarRef.current.getApi();
+        if (api) {
+          try {
+            api.destroy();
+          } catch (err) {
+            console.error("캘린더 클린업 오류:", err);
+          }
+        }
+      }
+    };
+  }, [calendarRef]);
+
+  // 템플릿 저장 함수
+  const handleSaveTemplates = (updatedTemplates: ShiftTemplate[]) => {
+    setShiftTemplates(updatedTemplates);
+
+    // 로컬 스토리지에 템플릿 저장
+    try {
+      localStorage.setItem("shiftTemplates", JSON.stringify(updatedTemplates));
+    } catch (error) {
+      console.error("템플릿 저장 오류:", error);
+    }
+
+    setIsTemplateManagerOpen(false);
+  };
+
+  // 템플릿 로딩 함수
+  const loadTemplatesFromStorage = useCallback(() => {
+    try {
+      const savedTemplates = localStorage.getItem("shiftTemplates");
+      if (savedTemplates) {
+        setShiftTemplates(JSON.parse(savedTemplates));
+      }
+    } catch (error) {
+      console.error("템플릿 로딩 오류:", error);
+      // 오류 발생시 기본 템플릿 사용
+      setShiftTemplates(DEFAULT_SHIFT_TEMPLATES);
+    }
+  }, []);
+
+  // 템플릿 로딩
+  useEffect(() => {
+    loadTemplatesFromStorage();
+  }, [loadTemplatesFromStorage]);
+
+  // 템플릿 관리 다이얼로그 컴포넌트
+  const TemplateManagerDialog = () => {
+    const [templates, setTemplates] = useState<ShiftTemplate[]>([
+      ...shiftTemplates,
+    ]);
+    const [editingIndex, setEditingIndex] = useState<number | null>(null);
+    const [editingTemplate, setEditingTemplate] =
+      useState<ShiftTemplate | null>(null);
+
+    const handleEditTemplate = (index: number) => {
+      setEditingIndex(index);
+      setEditingTemplate({ ...templates[index] });
+    };
+
+    const handleUpdateTemplate = () => {
+      if (editingIndex !== null && editingTemplate) {
+        const updatedTemplates = [...templates];
+        updatedTemplates[editingIndex] = editingTemplate;
+        setTemplates(updatedTemplates);
+        setEditingIndex(null);
+        setEditingTemplate(null);
+      }
+    };
+
+    const handleAddTemplate = () => {
+      const newTemplate: ShiftTemplate = {
+        id: `template-${Date.now()}`,
+        name: "새 템플릿",
+        type: "middle",
+        startTime: "12:00",
+        endTime: "17:00",
+        requiredStaff: 1,
+        color: "#2196F3",
+      };
+
+      setTemplates([...templates, newTemplate]);
+      setEditingIndex(templates.length);
+      setEditingTemplate(newTemplate);
+    };
+
+    const handleDeleteTemplate = (index: number) => {
+      const updatedTemplates = [...templates];
+      updatedTemplates.splice(index, 1);
+      setTemplates(updatedTemplates);
+
+      if (editingIndex === index) {
+        setEditingIndex(null);
+        setEditingTemplate(null);
+      }
+    };
+
+    const handleTemplateFieldChange = (
+      field: keyof ShiftTemplate,
+      value: any
+    ) => {
+      if (editingTemplate) {
+        setEditingTemplate({
+          ...editingTemplate,
+          [field]: value,
+        });
+      }
+    };
+
+    return (
+      <Dialog
+        open={isTemplateManagerOpen}
+        onClose={() => setIsTemplateManagerOpen(false)}
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle>
+          근무 템플릿 관리
+          <IconButton
+            aria-label="close"
+            onClick={() => setIsTemplateManagerOpen(false)}
+            sx={{ position: "absolute", right: 8, top: 8 }}
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", gap: 2, height: "450px" }}>
+            {/* 왼쪽: 템플릿 목록 */}
+            <Box sx={{ width: "40%", borderRight: "1px solid #eee", pr: 2 }}>
+              <Box
+                sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
+              >
+                <Typography variant="subtitle1">템플릿 목록</Typography>
+                <Button
+                  startIcon={<AddIcon />}
+                  size="small"
+                  onClick={handleAddTemplate}
+                >
+                  추가
+                </Button>
+              </Box>
+
+              <List sx={{ overflow: "auto", maxHeight: "370px" }}>
+                {templates.map((template, index) => (
+                  <ListItemButton
+                    key={template.id}
+                    selected={editingIndex === index}
+                    onClick={() => handleEditTemplate(index)}
+                    sx={{ position: "relative", pr: 6 }}
+                  >
+                    <ListItemText
+                      primary={template.name}
+                      secondary={`${template.startTime} - ${template.endTime}`}
+                    />
+                    <IconButton
+                      edge="end"
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteTemplate(index);
+                      }}
+                      sx={{ position: "absolute", right: 8 }}
+                    >
+                      <CloseIcon fontSize="small" />
+                    </IconButton>
+                  </ListItemButton>
+                ))}
+              </List>
+            </Box>
+
+            {/* 오른쪽: 템플릿 편집 */}
+            <Box sx={{ width: "60%", pl: 2 }}>
+              {editingTemplate ? (
+                <Box>
+                  <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                    템플릿 편집
+                  </Typography>
+
+                  <TextField
+                    label="템플릿 이름"
+                    fullWidth
+                    margin="normal"
+                    value={editingTemplate.name}
+                    onChange={(e) =>
+                      handleTemplateFieldChange("name", e.target.value)
+                    }
+                  />
+
+                  <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
+                    <TextField
+                      label="시작 시간"
+                      type="time"
+                      value={editingTemplate.startTime}
+                      onChange={(e) =>
+                        handleTemplateFieldChange("startTime", e.target.value)
+                      }
+                      InputLabelProps={{ shrink: true }}
+                    />
+                    <TextField
+                      label="종료 시간"
+                      type="time"
+                      value={editingTemplate.endTime}
+                      onChange={(e) =>
+                        handleTemplateFieldChange("endTime", e.target.value)
+                      }
+                      InputLabelProps={{ shrink: true }}
+                    />
+                  </Box>
+
+                  <TextField
+                    label="필요 인원"
+                    type="number"
+                    margin="normal"
+                    value={editingTemplate.requiredStaff}
+                    onChange={(e) =>
+                      handleTemplateFieldChange(
+                        "requiredStaff",
+                        parseInt(e.target.value)
+                      )
+                    }
+                    InputLabelProps={{ shrink: true }}
+                  />
+
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="body2">템플릿 유형</Typography>
+                    <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                      <Button
+                        variant={
+                          editingTemplate.type === "open"
+                            ? "contained"
+                            : "outlined"
+                        }
+                        onClick={() =>
+                          handleTemplateFieldChange("type", "open")
+                        }
+                        sx={{
+                          bgcolor:
+                            editingTemplate.type === "open"
+                              ? "#4CAF50"
+                              : "transparent",
+                          color:
+                            editingTemplate.type === "open"
+                              ? "white"
+                              : "inherit",
+                        }}
+                      >
+                        오픈
+                      </Button>
+                      <Button
+                        variant={
+                          editingTemplate.type === "middle"
+                            ? "contained"
+                            : "outlined"
+                        }
+                        onClick={() =>
+                          handleTemplateFieldChange("type", "middle")
+                        }
+                        sx={{
+                          bgcolor:
+                            editingTemplate.type === "middle"
+                              ? "#2196F3"
+                              : "transparent",
+                          color:
+                            editingTemplate.type === "middle"
+                              ? "white"
+                              : "inherit",
+                        }}
+                      >
+                        미들
+                      </Button>
+                      <Button
+                        variant={
+                          editingTemplate.type === "close"
+                            ? "contained"
+                            : "outlined"
+                        }
+                        onClick={() =>
+                          handleTemplateFieldChange("type", "close")
+                        }
+                        sx={{
+                          bgcolor:
+                            editingTemplate.type === "close"
+                              ? "#9C27B0"
+                              : "transparent",
+                          color:
+                            editingTemplate.type === "close"
+                              ? "white"
+                              : "inherit",
+                        }}
+                      >
+                        마감
+                      </Button>
+                    </Box>
+                  </Box>
+
+        <Button
+          variant="contained"
+          color="primary"
+                    sx={{ mt: 3 }}
+                    onClick={handleUpdateTemplate}
+        >
+                    적용
+        </Button>
+      </Box>
+              ) : (
+                <Box
+                  sx={{
+                    display: "flex",
+                    height: "100%",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Typography color="textSecondary">
+                    왼쪽에서 템플릿을 선택하거나 새 템플릿을 추가하세요
+                  </Typography>
+                </Box>
+              )}
+            </Box>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsTemplateManagerOpen(false)}>취소</Button>
+          <Button
+            variant="contained"
+            color="primary"
+            onClick={() => handleSaveTemplates(templates)}
+          >
+            저장
+          </Button>
+        </DialogActions>
+      </Dialog>
+    );
+  };
+
+  // 탭 변경 핸들러
+  const handleTabChange = (
+    _: React.SyntheticEvent,
+    newValue: SchedulePageTab
+  ) => {
+    setActiveTab(newValue);
+  };
+
+  // 직원 배정 핸들러 (최적 스케줄링에서 사용)
+  const handleAssignEmployee = (shiftId: string, employeeId: string) => {
+    // 해당 shift 이벤트 찾기
+    const shiftEvent = events.find((event) => event.id === shiftId);
+
+    if (shiftEvent) {
+      // 이벤트 복사본 생성
+      const updatedEvent = { ...shiftEvent };
+
+      // 직원 ID 추가
+      updatedEvent.extendedProps = {
+        ...updatedEvent.extendedProps,
+        employeeIds: [
+          ...(updatedEvent.extendedProps?.employeeIds || []),
+          employeeId,
+        ],
+      };
+
+      // 직원 이름 가져오기
+      const employee = employees.find((emp) => emp.id === employeeId);
+      if (employee) {
+        updatedEvent.extendedProps = {
+          ...updatedEvent.extendedProps,
+          employeeNames: [
+            ...(updatedEvent.extendedProps?.employeeNames || []),
+            employee.name,
+          ],
+        };
+
+        // 첫 번째 직원이면 타이틀 업데이트
+        if (!updatedEvent.extendedProps?.employeeIds?.length) {
+          updatedEvent.title = employee.name;
+        }
+
+        // 배경색 업데이트
+        updatedEvent.backgroundColor = getEmployeeColor(employeeId);
+        updatedEvent.borderColor = getEmployeeColor(employeeId);
+      }
+
+      // 이벤트 저장
+      handleSaveShift(updatedEvent);
+    }
   };
 
   // 로딩 상태 표시
@@ -691,464 +1571,785 @@ const SchedulePage: React.FC = () => {
           justifyContent: "center",
           alignItems: "center",
           height: "80vh",
+          flexDirection: "column",
+          gap: 2,
         }}
       >
-        <CircularProgress />
-      </Box>
+        <CircularProgress size={60} thickness={4} />
+        <Typography variant="h6">스케줄 정보를 불러오는 중입니다...</Typography>
+        <Typography variant="body2" color="text.secondary">
+          잠시만 기다려주세요. 첫 로딩은 시간이 조금 더 걸릴 수 있습니다.
+                </Typography>
+          </Box>
     );
   }
 
   // 에러 상태 표시
   if (error) {
-    return (
+              return (
       <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
-      </Box>
-    );
+        <Alert severity="error" sx={{ mb: 2 }}>
+          {error}
+        </Alert>
+        <Typography variant="body1" sx={{ mb: 2 }}>
+          스케줄 페이지 로딩 중 오류가 발생했습니다. 다음 중 하나를
+          시도해보세요:
+                  </Typography>
+        <List>
+          <ListItem>
+            <ListItemText
+              primary="페이지 새로고침"
+              secondary="브라우저 캐시를 비우고 다시 시도합니다."
+            />
+            <Button
+              variant="outlined"
+              onClick={() => window.location.reload()}
+              size="small"
+            >
+              새로고침
+            </Button>
+          </ListItem>
+          {error.includes("매장 정보") && (
+            <ListItem>
+              <ListItemText
+                primary="지점 설정으로 이동"
+                secondary="매장 정보를 설정해야 스케줄 관리가 가능합니다."
+              />
+              <Button
+                variant="contained"
+                color="primary"
+                onClick={() => navigate("/settings")}
+                size="small"
+              >
+                설정으로 이동
+              </Button>
+            </ListItem>
+          )}
+        </List>
+                </Box>
+              );
   }
 
+  // 알림창 닫기 핸들러 (정보 아이콘 표시)
+  const handleCloseInfoAlert = () => {
+    setShowInfoAlert(false);
+    setShowInfoIcon(true); // 알림창 닫으면 정보 아이콘 표시
+  };
+
+  // 정보 아이콘 클릭 핸들러
+  const handleInfoIconClick = () => {
+    setShowInfoAlert(true);
+    setShowInfoIcon(false);
+  };
+
   return (
-    <Box sx={{ display: "flex", height: "calc(100vh - 64px)" }}>
-      {/* 왼쪽 사이드패널 (필터, 알바생 목록 등) */}
-      <Drawer
-        variant="persistent"
-        anchor="left"
-        open={showSidePanel}
-        sx={{
-          width: showSidePanel ? 280 : 0,
-          flexShrink: 0,
-          transition: theme.transitions.create("width", {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-          "& .MuiDrawer-paper": {
-            width: 280,
-            boxSizing: "border-box",
-            height: "100%",
-            overflow: "auto",
-            position: "relative",
-          },
-        }}
-      >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            스케줄 관리
-          </Typography>
-
-          {/* 가능 시간 필터 */}
-          <Box sx={{ my: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              <FilterAlt
-                fontSize="small"
-                sx={{ verticalAlign: "middle", mr: 0.5 }}
-              />
-              가능 시간 필터
-            </Typography>
-
-            <Grid container spacing={1} sx={{ mb: 1 }}>
-              <Grid item xs={5}>
-                <TextField
-                  label="시작"
-                  type="time"
-                  size="small"
-                  fullWidth
-                  value={availabilityFilter?.start || "09:00"}
-                  onChange={(e) =>
-                    handleAvailabilityFilterChange("start", e.target.value)
-                  }
-                  InputLabelProps={{ shrink: true }}
-                />
-              </Grid>
-              <Grid item xs={2} sx={{ textAlign: "center", pt: 2 }}>
-                <Typography variant="body2">~</Typography>
-              </Grid>
-              <Grid item xs={5}>
-                <TextField
-                  label="종료"
-                  type="time"
-                  size="small"
-                  fullWidth
-                  value={availabilityFilter?.end || "18:00"}
-                  onChange={(e) =>
-                    handleAvailabilityFilterChange("end", e.target.value)
-                  }
-                  InputLabelProps={{ shrink: true }}
-                />
-              </Grid>
-            </Grid>
-
-            <Box sx={{ mb: 2, display: "flex", justifyContent: "flex-end" }}>
-              <Button size="small" onClick={resetFilters} variant="outlined">
-                필터 초기화
-              </Button>
-            </Box>
-          </Box>
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 미배정 근무만 보기 */}
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={showUnassignedOnly}
-                onChange={(e) => setShowUnassignedOnly(e.target.checked)}
-                size="small"
-              />
-            }
-            label={<Typography variant="body2">미배정 근무만 보기</Typography>}
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "calc(100vh - 64px)",
+        position: "relative",
+        overflow: "auto", // 전체 페이지 스크롤 가능
+        backgroundColor: "#f9fafb",
+        px: 0.25, // 0.5에서 0.25로 줄이기 - 50% 감소
+      }}
+    >
+      {/* 상단 탭 메뉴 - sticky 위치 제거하여 스크롤과 함께 이동하게 함 */}
+      <Paper sx={{ mb: 0, borderRadius: 0 }}>
+        <Tabs
+          value={activeTab}
+          onChange={handleTabChange}
+          variant="fullWidth"
+          sx={{
+            borderBottom: 1,
+            borderColor: "divider",
+            "& .MuiTab-root": {
+              py: 2,
+            },
+          }}
+        >
+          <Tab
+            icon={<CalendarIcon />}
+            iconPosition="start"
+            label="근무 캘린더"
+            value="calendar"
           />
+          <Tab
+            icon={<InboxIcon />}
+            iconPosition="start"
+            label="대타 요청 관리"
+            value="requests"
+          />
+          <Tab
+            icon={<AutoAwesomeIcon />}
+            iconPosition="start"
+            label="주간 스케줄 계획"
+            value="optimal"
+          />
+        </Tabs>
+        </Paper>
 
-          <Divider sx={{ my: 2 }} />
-
-          {/* 알바생 필터 */}
-          <Typography variant="subtitle2" gutterBottom>
-            <PersonAdd
-              fontSize="small"
-              sx={{ verticalAlign: "middle", mr: 0.5 }}
-            />
-            알바생 필터
-          </Typography>
-          <List sx={{ pt: 0 }}>
-            {employees.map((employee) => (
-              <ListItem key={employee.id} disablePadding>
-                <ListItemButton
-                  dense
-                  onClick={() => handleEmployeeFilter(employee.id)}
-                  selected={filteredEmployeeIds.includes(employee.id)}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <Box
-                      sx={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        bgcolor: getEmployeeColor(employee.id),
-                      }}
-                    />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={employee.name}
-                    primaryTypographyProps={{ variant: "body2" }}
-                    secondary={employee.role || "일반 근무자"}
-                    secondaryTypographyProps={{ variant: "caption" }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-          {employees.length === 0 && (
-            <Alert severity="info" sx={{ mt: 1 }}>
-              등록된 알바생이 없습니다
-              <Button
-                variant="text"
-                size="small"
-                onClick={handleGoToEmployees}
-                sx={{ ml: 1 }}
-              >
-                알바생 등록
-              </Button>
-            </Alert>
-          )}
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 미배정 근무 블록 목록 */}
-          <Typography variant="subtitle2" gutterBottom>
-            <Assignment
-              fontSize="small"
-              sx={{ verticalAlign: "middle", mr: 0.5 }}
-            />
-            미배정 근무 ({unassignedShifts.length})
-          </Typography>
-
-          {unassignedShifts.length > 0 ? (
-            <List sx={{ pt: 0 }}>
-              {unassignedShifts.map((shift) => (
-                <ListItem
-                  key={shift.id}
-                  sx={{
-                    bgcolor: "grey.100",
-                    borderRadius: 1,
-                    mb: 1,
-                    p: 1,
-                  }}
-                >
-                  <ListItemText
-                    primary={format(new Date(shift.start), "M.d (eee) HH:mm")}
-                    secondary={format(new Date(shift.end), "HH:mm")}
-                    secondaryTypographyProps={{ variant: "caption" }}
-                  />
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      setSelectedEvent(shift);
-                      setIsNewEvent(false);
-                      setIsDialogOpen(true);
-                    }}
-                  >
-                    <AssignmentInd fontSize="small" />
-                  </IconButton>
-                </ListItem>
-              ))}
-            </List>
-          ) : (
-            <Alert severity="success" sx={{ mt: 1 }}>
-              모든 근무가 배정되었습니다.
-            </Alert>
-          )}
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 대타 요청 목록 */}
-          <Typography variant="subtitle2" gutterBottom>
-            <AssignmentLate
-              fontSize="small"
-              sx={{ verticalAlign: "middle", mr: 0.5 }}
-            />
-            대타 요청 ({substituteRequestShifts.length})
-          </Typography>
-
-          {substituteRequestShifts.length > 0 ? (
-            <List sx={{ pt: 0 }}>
-              {substituteRequestShifts.map((shift) => (
-                <ListItem
-                  key={shift.id}
-                  sx={{
-                    bgcolor: shift.extendedProps?.isHighPriority
-                      ? "error.light"
-                      : "warning.light",
-                    borderRadius: 1,
-                    mb: 1,
-                    p: 1,
-                  }}
-                >
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: "flex", alignItems: "center" }}>
-                        {shift.extendedProps?.isHighPriority && (
-                          <NotificationsActive
-                            fontSize="small"
-                            color="error"
-                            sx={{ mr: 0.5 }}
-                          />
-                        )}
-                        <Typography variant="body2">
-                          {format(new Date(shift.start), "M.d (eee) HH:mm")}
-                        </Typography>
-                      </Box>
-                    }
-                    secondary={
-                      <Box>
-                        <Typography variant="caption" display="block">
-                          {format(new Date(shift.end), "HH:mm")}
-                        </Typography>
-                        <Typography variant="caption" display="block">
-                          {shift.extendedProps?.employeeNames?.[0]}
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      setSelectedEvent(shift);
-                      setIsNewEvent(false);
-                      setIsDialogOpen(true);
-                    }}
-                  >
-                    <MoreVert fontSize="small" />
-                  </IconButton>
-                </ListItem>
-              ))}
-            </List>
-          ) : (
-            <Alert severity="success" sx={{ mt: 1 }}>
-              대타 요청이 없습니다.
-            </Alert>
-          )}
-        </Box>
-      </Drawer>
-
-      {/* 메인 콘텐츠 영역 (캘린더) */}
-      <Box
-        sx={{
-          flexGrow: 1,
-          p: 3,
-          height: "100%",
-          overflow: "auto",
-          width: "100%",
-          transition: theme.transitions.create(["margin", "width"], {
-            easing: theme.transitions.easing.easeOut,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-          marginLeft: showSidePanel ? "280px" : 0,
-        }}
-      >
-        {/* 상단 액션 버튼들 */}
+      {/* 탭 콘텐츠 */}
+      {activeTab === "calendar" && (
         <Box
           sx={{
             display: "flex",
-            justifyContent: "space-between",
-            mb: 2,
-            flexWrap: "wrap",
-            gap: 1,
+            height: "auto",
+            position: "relative",
+            overflow: "visible",
+            maxWidth: "100%", // 전체 너비 최대화
+            mx: -1, // -0.75에서 -1로 더 줄이기
+            px: 0.15, // 0.25에서 0.15로 줄이기
           }}
         >
-          <ToggleButtonGroup
-            value={viewType}
-            exclusive
-            onChange={handleViewChange}
-            size="small"
-          >
-            <ToggleButton value="timeGridWeek">
-              <ViewWeek fontSize="small" sx={{ mr: 1 }} />
-              주간
-            </ToggleButton>
-            <ToggleButton value="dayGridMonth">
-              <CalendarMonth fontSize="small" sx={{ mr: 1 }} />
-              월간
-            </ToggleButton>
-          </ToggleButtonGroup>
-
-          <Box>
-            <Button
-              variant="outlined"
-              color="primary"
-              size="small"
-              startIcon={<AccessTime />}
-              onClick={() => setShowSidePanel(!showSidePanel)}
-              sx={{ mr: 1 }}
+      {/* 사이드 패널 */}
+          {showSidePanel && (
+            <Paper
+              sx={{
+                width: 230, // 더 줄임
+                minWidth: 230, // 더 줄임
+                display: "flex",
+                flexDirection: "column",
+                borderRadius: 1,
+                borderRight: "1px solid rgba(0, 0, 0, 0.08)",
+                overflow: "hidden",
+                mr: 0.25, // 마진 더 줄임
+                boxShadow: "0 2px 6px rgba(0,0,0,0.08)",
+                marginTop: "4px",
+              }}
             >
-              {showSidePanel ? "사이드패널 닫기" : "사이드패널 열기"}
-            </Button>
-          </Box>
+              <Box
+        sx={{
+                  p: 2,
+                  borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
+                  bgcolor: "rgba(0, 0, 0, 0.02)",
+                }}
+              >
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                  알바생 필터
+          </Typography>
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Button
+                size="small"
+                    variant="outlined"
+                onClick={() =>
+                  setFilteredEmployeeIds(employees.map((e) => e.id))
+                }
+                    sx={{ fontSize: "0.75rem" }}
+              >
+                전체 선택
+              </Button>
+              <Button
+                size="small"
+                    variant="outlined"
+                onClick={() => setFilteredEmployeeIds([])}
+                    sx={{ fontSize: "0.75rem" }}
+              >
+                전체 해제
+              </Button>
+                </Box>
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={showUnassignedOnly}
+                      onChange={(e) => setShowUnassignedOnly(e.target.checked)}
+                size="small"
+                    />
+                  }
+                  label={
+                    <Typography variant="body2">미배정 근무만 보기</Typography>
+                  }
+                />
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ display: "block", mt: 1 }}
+                >
+                  * 알바생을 클릭하면 해당 알바생의 근무만 표시됩니다
+                </Typography>
+            </Box>
+
+              <List
+                sx={{
+                  width: "100%",
+                  overflowY: "auto",
+                  p: 1,
+                  flex: 1,
+                }}
+              >
+                {employees.map((employee) => (
+                  <ListItem key={employee.id} disablePadding sx={{ mb: 0.5 }}>
+                  <ListItemButton
+                    dense
+                      draggable
+                      onDragStart={(e) =>
+                        handleEmployeeDragStart(e, employee.id)
+                      }
+                    onClick={() => handleEmployeeFilter(employee.id)}
+                    sx={{
+                      borderRadius: 1,
+                        py: 1,
+                        bgcolor: filteredEmployeeIds.includes(employee.id)
+                          ? `${getEmployeeColor(employee.id)}22`
+                        : "transparent",
+                        cursor: "pointer",
+                        "&:hover": {
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
+                          "& .drag-indicator": {
+                            opacity: 1,
+                          },
+                        },
+                      }}
+                    >
+                      <ListItemIcon
+                        sx={{
+                          minWidth: 40,
+                          display: "flex",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            width: 18,
+                            height: 18,
+                            bgcolor: getEmployeeColor(employee.id),
+                            borderRadius: "50%",
+                        }}
+                      />
+                    </ListItemIcon>
+                      <ListItemText
+                        primary={employee.name}
+                        secondary={
+                          <Box
+                            component="span"
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 0.5,
+                            }}
+                          >
+                            <Typography
+                              variant="caption"
+                              sx={{ fontSize: "0.7rem" }}
+                            >
+                              {employee.role || "일반 직원"}
+                            </Typography>
+                            <Typography
+                              className="drag-indicator"
+                              variant="caption"
+                              sx={{
+                                fontSize: "0.7rem",
+                                ml: 1,
+                                color: "text.secondary",
+                                opacity: 0,
+                                transition: "opacity 0.2s",
+                              }}
+                            >
+                              (드래그하여 배정)
+                            </Typography>
+                          </Box>
+                        }
+                        primaryTypographyProps={{
+                          variant: "body2",
+                          fontWeight: filteredEmployeeIds.includes(employee.id)
+                            ? 600
+                            : 400,
+                        }}
+                      />
+                    </ListItemButton>
+                  </ListItem>
+                ))}
+              </List>
+
+              <Box
+                sx={{
+                  p: 2,
+                  borderTop: "1px solid rgba(0, 0, 0, 0.08)",
+                  borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
+                  bgcolor: "rgba(0, 0, 0, 0.02)",
+                }}
+              >
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
+                  미배정 근무
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {unassignedShifts.length}개의 미배정 근무가 있습니다.
+                </Typography>
+              </Box>
+
+              <List
+                sx={{
+                  width: "100%",
+                  overflowY: "auto",
+                  p: 1,
+                  flex: 1,
+                  maxHeight: "40%",
+                }}
+              >
+                {unassignedShifts.length === 0 ? (
+                  <ListItem>
+                    <ListItemText
+                      primary="미배정 근무가 없습니다"
+                      primaryTypographyProps={{
+                        variant: "body2",
+                        align: "center",
+                        color: "text.secondary",
+                      }}
+                    />
+                  </ListItem>
+                ) : (
+                  unassignedShifts.map((shift) => {
+                    const startDate = new Date(shift.start);
+                    const endDate = new Date(shift.end);
+                    const formattedDate = format(startDate, "M/d (E)");
+                    const formattedTime = `${format(
+                      startDate,
+                      "HH:mm"
+                    )} - ${format(endDate, "HH:mm")}`;
+                    const shiftType =
+                      shift.extendedProps?.shiftType || "middle";
+                    let shiftTypeText = "";
+                    if (shiftType === "open") shiftTypeText = "오픈";
+                    else if (shiftType === "middle") shiftTypeText = "미들";
+                    else if (shiftType === "close") shiftTypeText = "마감";
+
+                    return (
+                      <ListItem key={shift.id} disablePadding sx={{ mb: 0.5 }}>
+                        <ListItemButton
+                          dense
+                          onClick={() => {
+                            setSelectedEvent(shift);
+                            setIsNewEvent(false);
+                            setIsDialogOpen(true);
+                          }}
+                          sx={{
+                            borderRadius: 1,
+                            py: 1,
+                            borderLeft: "3px solid #AAAAAA",
+                          }}
+                        >
+                    <ListItemText
+                      primary={
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                }}
+                              >
+                                <Typography variant="body2" fontWeight={500}>
+                                  {formattedDate}
+                        </Typography>
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    bgcolor: "action.hover",
+                                    px: 1,
+                                    borderRadius: 1,
+                                  }}
+                                >
+                                  {shiftTypeText}
+                                </Typography>
+                              </Box>
+                      }
+                      secondary={
+                              <Typography variant="caption" display="block">
+                                {formattedTime}
+                        </Typography>
+                      }
+                    />
+                  </ListItemButton>
+                      </ListItem>
+                    );
+                  })
+              )}
+            </List>
+            </Paper>
+          )}
+
+          {/* 메인 콘텐츠 영역 (캘린더) */}
+          <Box
+            sx={{
+              flex: 1,
+              display: "flex",
+              flexDirection: "column",
+              overflow: "hidden",
+              height: "100%",
+            }}
+          >
+            <Box
+              sx={{
+                mb: 0.5, // 2에서 0.5로 마진 줄이기
+                display: "flex",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 1,
+                backgroundColor: "white",
+                padding: 1, // 1.5에서 1로 패딩 줄이기
+                borderRadius: 1,
+                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                position: "relative", // 정보 아이콘 위치 지정을 위함
+              }}
+            >
+              <Box sx={{ display: "flex", gap: 1, mr: "auto" }}>
+                <Button
+                  size="small"
+                  variant={
+                    viewType === "timeGridWeek" ? "contained" : "outlined"
+                  }
+                  onClick={() => handleViewChange("timeGridWeek")}
+                  sx={{
+                    fontWeight: viewType === "timeGridWeek" ? 600 : 400,
+                    boxShadow: viewType === "timeGridWeek" ? 1 : 0,
+                  }}
+                >
+                  주간
+                </Button>
+                <Button
+                  size="small"
+                  variant={
+                    viewType === "dayGridMonth" ? "contained" : "outlined"
+                  }
+                  onClick={() => handleViewChange("dayGridMonth")}
+                  sx={{
+                    fontWeight: viewType === "dayGridMonth" ? 600 : 400,
+                    boxShadow: viewType === "dayGridMonth" ? 1 : 0,
+                  }}
+                >
+                  월간
+                </Button>
         </Box>
 
-        {/* 캘린더 */}
-        <Paper
-          elevation={1}
-          sx={{
-            height: "calc(100% - 50px)",
-            width: "100%", // Ensure full width
-            "& .fc": {
-              height: "100%",
-              width: "100%", // Ensure full width
-            },
-            "& .fc-event": {
-              cursor: "pointer",
-            },
-            "& .fc-event-unassigned": {
-              backgroundColor: "#E0E0E0",
-              borderColor: "#9E9E9E",
-            },
-            "& .fc-event-substitute-requested": {
-              borderLeft: "4px solid orange",
-            },
-            "& .fc-event-high-priority": {
-              borderLeft: "4px solid red",
-              animation: "pulse 1.5s infinite",
-            },
-            // Add transitions for smooth view changes
-            "& .fc-view-harness": {
-              transition: "height 0.3s ease",
-            },
-            // Ensure proper height for month view
-            "& .fc .fc-dayGridMonth-view .fc-daygrid-body": {
-              height: "auto !important",
-            },
-            // Improve mobile responsiveness
-            "@media (max-width: 600px)": {
-              "& .fc-toolbar": {
-                flexDirection: "column",
-                gap: "10px",
-              },
-            },
-          }}
-        >
-          <FullCalendar
-            ref={calendarRef} // Add ref for direct control
-            plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView={viewType}
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right: "",
-            }}
-            // 편집 가능한 기능들
-            editable={true}
-            droppable={true}
-            selectable={true}
-            selectMirror={true}
-            dayMaxEvents={true}
-            // 사용자 상호작용 핸들러
-            select={handleDateSelect}
-            eventClick={handleEventClick}
-            eventDrop={handleEventDrop}
-            eventResize={handleEventResize}
-            eventContent={renderEventContent}
-            // 이벤트 데이터
-            events={filteredEvents}
-            // 시간 표시 설정
-            slotMinTime={store?.openingHour || "09:00:00"}
-            slotMaxTime={store?.closingHour || "23:00:00"}
-            // Fixed height for various views to ensure smooth transitions
-            height="100%"
-            // Animation settings
-            firstDay={1}
-            weekNumbers={false}
-            nowIndicator={true}
-            // View-specific settings
-            views={{
-              dayGridMonth: {
-                dayMaxEventRows: 4,
-              },
-              timeGridWeek: {
-                dayHeaderFormat: { weekday: "short" },
-              },
-            }}
-            eventClassNames={(arg) => {
-              const classes = [];
+              <Box sx={{ display: "flex", gap: 1 }}>
+                {/* 정보 아이콘 - 알림창이 닫혔을 때만 표시 */}
+                {showInfoIcon && (
+                  <IconButton
+                    size="small"
+                    color="primary"
+                    onClick={handleInfoIconClick}
+                    sx={{ mr: 0.2 }}
+                  >
+                    <InfoIcon fontSize="small" />
+                  </IconButton>
+                )}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  onClick={() => setShowSidePanel(!showSidePanel)}
+                  sx={{ fontWeight: 600 }}
+                  startIcon={showSidePanel ? <ChevronLeft /> : <ChevronRight />}
+                >
+                  {showSidePanel ? "패널 닫기" : "패널 열기"}
+                </Button>
+              </Box>
+            </Box>
 
-              if (!arg.event.extendedProps.employeeIds?.length) {
-                classes.push("fc-event-unassigned");
+            <Alert
+              severity="info"
+              sx={{
+                mb: 0.5,
+                display: showInfoAlert ? "flex" : "none",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                py: 0.5,
+                "& .MuiAlert-message": {
+                  py: 0.5,
+                },
+              }}
+              action={
+                <IconButton
+                  aria-label="close"
+                  color="inherit"
+                  size="small"
+                  onClick={handleCloseInfoAlert}
+                >
+                  <CloseIcon fontSize="inherit" />
+                </IconButton>
               }
+            >
+              <AlertTitle>근무 캘린더 안내</AlertTitle>
+              <Typography variant="body2">
+                • <strong>알바생 필터:</strong> 알바생을 클릭하여 특정 알바생의
+                근무만 표시하거나 숨길 수 있습니다.
+                <br />• <strong>드래그 앤 드롭:</strong> 알바생을 달력의 근무
+                시간에 끌어다 놓아 쉽게 배정할 수 있습니다.
+                <br />• <strong>미배정 근무(회색):</strong> 아직 알바생이
+                배정되지 않은 근무 시간입니다.
+                <br />• <strong>인력 부족 근무(주황색):</strong> 필요 인원보다
+                적게 배정된 근무 시간입니다.
+                <br />• <strong>배정 완료 근무(초록색):</strong> 필요 인원이
+                모두 채워진 근무 시간입니다.
+          </Typography>
+            </Alert>
 
-              if (arg.event.extendedProps.isSubstituteRequest) {
-                classes.push("fc-event-substitute-requested");
+            <Paper
+              sx={{
+                flex: 1,
+                minHeight: 0,
+                overflow: "auto",
+                display: "flex",
+                p: 0, // 패딩 제거
+                position: "relative",
+                width: "100%",
+                "& .fc": {
+                  ...schedulerStyles,
+                  height: "100%",
+                  width: "100%",
+                },
+                "& .fc-view-harness": {
+                  height: "auto !important",
+                  minHeight: "500px",
+                  width: "100%",
+                },
+                "& .fc-scroller": {
+                  height: "auto !important",
+                  overflow: "visible !important",
+                },
+                "& .fc-toolbar-title": {
+                  fontSize: "1.2rem",
+                  fontWeight: "600",
+                  color: "#333",
+                },
+                "& .fc-toolbar": {
+                  padding: "0 0.1rem", // 패딩 줄이기
+                },
+                "& .fc-button-primary": {
+                  backgroundColor: "#3f51b5",
+                  borderColor: "#3f51b5",
+                },
+                "& .fc-button-primary:not(:disabled):hover": {
+                  backgroundColor: "#303f9f",
+                  borderColor: "#303f9f",
+                },
+                "& .fc-button-primary:not(:disabled).fc-button-active": {
+                  backgroundColor: "#303f9f",
+                  borderColor: "#303f9f",
+                },
+                "& .fc-button-primary:disabled": {
+                  backgroundColor: "#9fa8da",
+                  borderColor: "#9fa8da",
+                },
+                // 추가 스타일
+                "& .fc-daygrid-event": {
+                  padding: "1px",
+                  borderRadius: "3px",
+                  margin: "2px 0",
+                },
+                "& .fc-daygrid-event-dot": {
+                  display: "none", // 월간 뷰의 점(dot) 숨기기
+                },
+                "& .fc-daygrid-day-number": {
+                  fontSize: "0.85rem",
+                  fontWeight: "500",
+                  color: "#333",
+                },
+                "& .fc-daygrid-day-frame": {
+                  minHeight: "120px", // 월간 뷰 셀 최소 높이
+                },
+                "& .fc-col-header": {
+                  position: "sticky", // 헤더를 고정
+                  top: 0, // 상단에 고정
+                  zIndex: 5, // 다른 요소 위에 표시되도록 z-index 설정
+                  backgroundColor: "#fff", // 배경색 설정
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.1)", // 그림자 효과 추가
+                },
+                boxShadow: 2,
+              }}
+            >
+              {/* 스크롤 안내 */}
+              {showScrollGuide && (
+                <Box
+                  sx={{
+                    position: "absolute",
+                    bottom: 16,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    bgcolor: "rgba(0,0,0,0.7)",
+                    color: "white",
+                    px: 2,
+                    py: 1,
+                    borderRadius: 2,
+                    zIndex: 10,
+                    display: { xs: "flex", md: "none" },
+                    alignItems: "center",
+                    gap: 1,
+                    boxShadow: 2,
+                  }}
+                >
+                  <Typography variant="body2">스크롤하여 더 보기</Typography>
+                  <IconButton
+                    size="small"
+                    onClick={() => setShowScrollGuide(false)}
+                    sx={{ color: "white", p: 0.2 }}
+                  >
+                    <CloseIcon fontSize="small" />
+                  </IconButton>
+        </Box>
+              )}
 
-                if (arg.event.extendedProps.isHighPriority) {
-                  classes.push("fc-event-high-priority");
-                }
-              }
+              <FullCalendar
+                ref={calendarRef}
+                plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+                initialView={viewType}
+                headerToolbar={{
+                  left: "prev,next today",
+                  center: "title",
+                  right: "",
+                }}
+                height="auto"
+                allDaySlot={false}
+                slotDuration="00:30:00"
+                slotLabelInterval="01:00"
+                slotMinTime={store?.openingHour || "09:00:00"}
+                slotMaxTime={store?.closingHour || "22:00:00"}
+                events={filteredEvents}
+                selectable={true}
+                selectMirror={true}
+                dayMaxEvents={10} // 8에서 10으로 증가
+                weekends={true}
+                eventOverlap={true} // 이벤트 겹침 허용
+                eventMaxStack={8} // 6에서 8로 최대 겹침 개수 증가
+                select={handleDateSelect}
+                eventClick={handleEventClick}
+                eventDrop={handleEventDrop}
+                eventResize={handleEventResize}
+                navLinks={true}
+                nowIndicator={true}
+                editable={true}
+                droppable={true}
+                drop={handleCalendarDrop}
+                dayHeaderFormat={{ weekday: "short", day: "numeric" }}
+                eventClassNames={(arg) => {
+                  // 직원 배정 상태에 따른 클래스 추가
+                  const employeeIds = arg.event.extendedProps.employeeIds || [];
+                  const requiredStaff =
+                    arg.event.extendedProps.requiredStaff || 1;
+                  let classes = [];
 
-              return classes;
-            }}
-            // CSS 커스텀 설정
-            businessHours={{
-              daysOfWeek: [0, 1, 2, 3, 4, 5, 6], // 0=Sunday, 1=Monday, etc.
-              startTime: store?.openingHour || "09:00",
-              endTime: store?.closingHour || "23:00",
-            }}
-          />
-        </Paper>
+                  if (employeeIds.length === 0) {
+                    classes.push("unassigned-shift");
+                  } else if (employeeIds.length < requiredStaff) {
+                    classes.push("understaffed-shift");
+                  } else {
+                    classes.push("fully-staffed-shift");
+                  }
+
+                  // 겹치는 상황 처리를 위한 추가 클래스
+                  const currentView = viewType;
+                  if (currentView === "timeGridWeek") {
+                    classes.push("week-view-event");
+                  } else {
+                    classes.push("month-view-event");
+                  }
+
+                  return classes;
+                }}
+                eventContent={renderEventContent}
+                // 추가 캘린더 설정
+                slotLabelFormat={{
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }}
+                eventTimeFormat={{
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false,
+                }}
+                stickyHeaderDates={true}
+                locale={"ko"}
+                firstDay={1}
+                businessHours={{
+                  daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+                  startTime: store?.openingHour || "09:00",
+                  endTime: store?.closingHour || "22:00",
+                }}
+                views={{
+                  timeGridWeek: {
+                    titleFormat: {
+                      year: "numeric",
+                      month: "short",
+                      day: "numeric",
+                    },
+                    slotEventOverlap: true, // 이벤트 겹침 허용으로 변경
+                  },
+                  dayGridMonth: {
+                    titleFormat: { year: "numeric", month: "long" },
+                  },
+                }}
+                dayCellClassNames="day-cell"
+                slotLabelClassNames="slot-label"
+                dayHeaderClassNames="day-header"
+                expandRows={true}
+                viewDidMount={() => {
+                  // 캘린더 초기화 후 크기 업데이트
+                  setTimeout(() => {
+                    if (calendarRef.current) {
+                      try {
+                        const api = calendarRef.current.getApi();
+                        api.updateSize();
+                      } catch (err) {
+                        console.error("캘린더 업데이트 오류:", err);
+                      }
+                    }
+                  }, 100);
+                }}
+                datesSet={() => {
+                  // 날짜 변경 시 캘린더 크기 업데이트
+                  if (calendarRef.current) {
+                    try {
+                      const calendarApi = calendarRef.current.getApi();
+                      calendarApi.updateSize();
+                    } catch (err) {
+                      console.error("날짜 변경 시 업데이트 오류:", err);
+                    }
+                  }
+                }}
+              />
+            </Paper>
       </Box>
+        </Box>
+      )}
+
+      {/* 요청 관리 탭 */}
+      {activeTab === "requests" && (
+        <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
+          <RequestManagement />
+        </Box>
+      )}
+
+      {/* 주간 스케줄 탭 */}
+      {activeTab === "optimal" && (
+        <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
+          <Schedule
+            onAssignEmployee={handleAssignEmployee}
+            selectedShiftId={selectedShiftId}
+          />
+        </Box>
+      )}
 
       {/* 근무 일정 수정 다이얼로그 */}
       {isDialogOpen && selectedEvent && (
         <ShiftDialog
-          eventData={selectedEvent}
+          eventData={toShiftEvent(selectedEvent)}
           isNew={isNewEvent}
           employees={employees}
           onClose={handleCloseDialog}
-          onSave={handleSaveShift}
-          onSubstituteRequest={handleSubstituteRequest}
+          onSave={(event) => handleSaveShift(toSimpleShiftEvent(event))}
+          onSubstituteRequest={(event, isHighPriority) =>
+            handleSubstituteRequest(toSimpleShiftEvent(event), isHighPriority)
+          }
+          onOpenTemplateManager={() => setIsTemplateManagerOpen(true)}
+          onDelete={
+            isNewEvent ? undefined : () => handleDeleteShift(selectedEvent.id)
+          } // 삭제 핸들러 추가
         />
       )}
+
+      {/* 템플릿 관리 다이얼로그 렌더링 */}
+      <TemplateManagerDialog />
     </Box>
   );
 };
 
 export default SchedulePage;
-
-// If you still get "not a module" errors, you can add this line:
-// export {};

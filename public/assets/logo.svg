@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- 배경 원 -->
+  <circle cx="100" cy="100" r="90" fill="#f0f4ff" />
+  <!-- M 글자 (모던한 스타일) -->
+  <path d="M55 50 L55 150 L75 150 L75 90 L100 125 L125 90 L125 150 L145 150 L145 50 L125 50 L100 90 L75 50 Z" fill="#4050B5" />
+  <!-- 장식 요소 -->
+  <rect x="50" y="160" width="100" height="8" rx="4" fill="#6070FF" />
+</svg> 

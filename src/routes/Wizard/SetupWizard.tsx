@@ -1,8 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
-import { Box, CircularProgress, Container } from "@mui/material";
+import {
+  Navigate,
+  useNavigate,
+  useLocation,
+  useSearchParams,
+} from "react-router-dom";
+import { Box, CircularProgress, Container, Typography } from "@mui/material";
 import Wizard from "./Wizard";
-import { hasInitialSetup } from "../../services/api";
+import { hasInitialSetup, getStoreInfo } from "../../services/api";
 
 /**
  * 초기 설정 마법사 래퍼 컴포넌트
@@ -10,29 +15,48 @@ import { hasInitialSetup } from "../../services/api";
  */
 function SetupWizard() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isNewStoreMode = searchParams.get("mode") === "new-store";
   const [loading, setLoading] = useState(true);
   const [initialized, setInitialized] = useState(false);
 
-  // 초기 설정 상태 확인
+  // 초기 설정 상태 재확인
   useEffect(() => {
+    // 새 매장 추가 모드인 경우 초기 설정 확인을 건너뜁니다
+    if (isNewStoreMode) {
+      setLoading(false);
+      setInitialized(false);
+      return;
+    }
+
     const checkSetup = async () => {
       try {
+        setLoading(true);
         const isSetup = await hasInitialSetup();
-        setInitialized(isSetup);
-        setLoading(false);
 
-        // 이미 설정되어 있으면 대시보드로 리디렉션
         if (isSetup) {
-          navigate("/dashboard");
+          // 지점 정보 유효성 추가 확인
+          const storeInfo = await getStoreInfo();
+          if (storeInfo && storeInfo.id) {
+            console.log("이미 지점 설정이 완료되었습니다:", storeInfo);
+            setInitialized(true);
+            setLoading(false);
+            return;
+          }
         }
+
+        // 지점 설정이 필요한 경우
+        setInitialized(false);
+        setLoading(false);
       } catch (error) {
-        console.error("Failed to check setup status:", error);
+        console.error("지점 설정 상태 확인 실패:", error);
+        setInitialized(false);
         setLoading(false);
       }
     };
 
     checkSetup();
-  }, [navigate]);
+  }, [navigate, isNewStoreMode]);
 
   // 로딩 중 표시
   if (loading) {
@@ -48,7 +72,7 @@ function SetupWizard() {
           }}
         >
           <CircularProgress />
-          <Box sx={{ mt: 2 }}>로딩 중...</Box>
+          <Box sx={{ mt: 2 }}>지점 설정 상태 확인 중...</Box>
         </Box>
       </Container>
     );
@@ -56,11 +80,38 @@ function SetupWizard() {
 
   // 이미 초기화된 경우 대시보드로 리디렉션
   if (initialized) {
-    return <Navigate to="/dashboard" replace />;
+    return (
+      <Container maxWidth="md">
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
+            minHeight: "100vh",
+          }}
+        >
+          <Typography variant="h5" gutterBottom>
+            이미 지점 설정이 완료되었습니다
+          </Typography>
+          <Box sx={{ mt: 2 }}>
+            <Typography variant="body1" gutterBottom>
+              잠시 후 대시보드로 이동합니다...
+            </Typography>
+          </Box>
+          {/* 대시보드로 리다이렉트 */}
+          {setTimeout(() => navigate("/dashboard"), 2000) && null}
+        </Box>
+      </Container>
+    );
   }
 
   // 마법사 렌더링
-  return <Wizard />;
+  return (
+    <Container maxWidth="md">
+      <Wizard />
+    </Container>
+  );
 }
 
 export default SetupWizard;
