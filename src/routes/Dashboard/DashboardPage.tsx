@@ -29,6 +29,8 @@ import {
   TableHead,
   TableRow,
   Paper,
+  Container,
+  Fab,
 } from "@mui/material";
 import {
   Schedule as ScheduleIcon,
@@ -41,6 +43,8 @@ import {
   EventNote as EventNoteIcon,
   Today as TodayIcon,
   DateRange as DateRangeIcon,
+  Add as AddIcon,
+  Store as StoreIcon,
 } from "@mui/icons-material";
 import {
   BarChart,
@@ -66,6 +70,7 @@ import {
   differenceInHours,
 } from "date-fns";
 import { Employee, Shift, Store } from "../../lib/types";
+import { useNavigate } from 'react-router-dom';
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -97,6 +102,7 @@ function DashboardPage() {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [store, setStore] = useState<Store | null>(null);
   const [tabValue, setTabValue] = useState(0);
+  const navigate = useNavigate();
 
   // 색상 팔레트
   const COLORS = [
@@ -257,6 +263,10 @@ function DashboardPage() {
     return Math.min(100, Math.round((filledSlots / totalSlots) * 100));
   };
 
+  const handleAddNewStore = () => {
+    navigate('/setup?mode=new-store');
+  };
+
   // 로딩 상태 표시
   if (loading) {
     return (
@@ -283,7 +293,19 @@ function DashboardPage() {
   }
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
+      {/* 새 지점 추가 버튼 */}
+      <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 3 }}>
+        <Button
+          variant="contained"
+          color="primary"
+          startIcon={<AddIcon />}
+          onClick={handleAddNewStore}
+        >
+          새 지점 추가
+        </Button>
+      </Box>
+
       <Box
         sx={{
           display: "flex",
@@ -333,10 +355,9 @@ function DashboardPage() {
               <Typography variant="body2" color="textSecondary">
                 <Chip
                   size="small"
-                  label={`재직 중: ${
-                    employees.filter((e: Employee) => e.status === "active")
-                      .length
-                  }명`}
+                  label={`재직 중: ${employees.filter((e: Employee) => e.status === "active")
+                    .length
+                    }명`}
                   color="success"
                 />
               </Typography>
@@ -394,11 +415,10 @@ function DashboardPage() {
               <Typography variant="body2" color="textSecondary">
                 <Chip
                   size="small"
-                  label={`알바생 평균: ${
-                    employees.length
-                      ? Math.round(totalWeeklyHours / employees.length)
-                      : 0
-                  }시간`}
+                  label={`알바생 평균: ${employees.length
+                    ? Math.round(totalWeeklyHours / employees.length)
+                    : 0
+                    }시간`}
                   color="info"
                 />
               </Typography>
@@ -427,11 +447,10 @@ function DashboardPage() {
               <Typography variant="body2" color="textSecondary">
                 <Chip
                   size="small"
-                  label={`알바생 평균: ${
-                    employees.length
-                      ? Math.round(totalMonthlyHours / employees.length)
-                      : 0
-                  }시간`}
+                  label={`알바생 평균: ${employees.length
+                    ? Math.round(totalMonthlyHours / employees.length)
+                    : 0
+                    }시간`}
                   color="warning"
                 />
               </Typography>
@@ -592,8 +611,8 @@ function DashboardPage() {
                             notification.type === "warning"
                               ? "warning.main"
                               : notification.type === "success"
-                              ? "success.main"
-                              : "info.main",
+                                ? "success.main"
+                                : "info.main",
                         }}
                       >
                         {notification.type === "warning" ? (
@@ -631,7 +650,25 @@ function DashboardPage() {
           </Card>
         </Grid>
       </Grid>
-    </Box>
+
+      {/* 모바일용 플로팅 버튼 */}
+      <Box
+        sx={{
+          display: { xs: 'block', md: 'none' },
+          position: 'fixed',
+          bottom: 16,
+          right: 16,
+        }}
+      >
+        <Fab
+          color="primary"
+          aria-label="새 지점 추가"
+          onClick={handleAddNewStore}
+        >
+          <AddIcon />
+        </Fab>
+      </Box>
+    </Container>
   );
 }
 
