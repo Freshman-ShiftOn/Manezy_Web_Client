@@ -78,6 +78,14 @@ interface ShiftTemplate {
   };
 }
 
+// 시간대별 기본 색상
+const TYPE_COLORS = {
+  open: "#4CAF50",
+  middle: "#2196F3",
+  close: "#9C27B0",
+  custom: "#FF9800",
+};
+
 interface TemplateManagerDialogProps {
   open: boolean;
   onClose: () => void;
@@ -91,6 +99,13 @@ const DEFAULT_POSITIONS = ["매니저", "바리스타", "서빙", "주방", "캐
 // 요일 목록
 const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 
+// 기본 근무 파트 목록
+const DEFAULT_SHIFT_TYPES = [
+  { id: "open", name: "오픈", color: TYPE_COLORS.open, isDefault: true },
+  { id: "middle", name: "미들", color: TYPE_COLORS.middle, isDefault: true },
+  { id: "close", name: "마감", color: TYPE_COLORS.close, isDefault: true },
+];
+
 // 새 템플릿의 기본값
 const DEFAULT_NEW_TEMPLATE: ShiftTemplate = {
   id: "",
@@ -103,14 +118,6 @@ const DEFAULT_NEW_TEMPLATE: ShiftTemplate = {
   requiredPositions: {
     바리스타: 1,
   },
-};
-
-// 시간대별 기본 색상
-const TYPE_COLORS = {
-  open: "#4CAF50",
-  middle: "#2196F3",
-  close: "#9C27B0",
-  custom: "#FF9800",
 };
 
 // 탭 패널 컴포넌트
@@ -158,12 +165,62 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   const [expandedDays, setExpandedDays] = useState<{ [key: number]: boolean }>(
     {}
   );
+  const [showPartManager, setShowPartManager] = useState(false);
+  const [shiftTypes, setShiftTypes] =
+    useState<
+      Array<{ id: string; name: string; color: string; isDefault?: boolean }>
+    >(DEFAULT_SHIFT_TYPES);
+  const [editingShiftType, setEditingShiftType] = useState<{
+    id: string;
+    name: string;
+    color: string;
+    isDefault?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     setLocalTemplates([...templates]);
     setIsAddMode(false);
     setEditingTemplate(null);
+
+    // 로컬 스토리지에서 근무 파트 목록 불러오기
+    const savedShiftTypes = localStorage.getItem("manezy_shift_types");
+    if (savedShiftTypes) {
+      try {
+        const parsedTypes = JSON.parse(savedShiftTypes);
+        // 기존 기본 타입이 있는지 확인하고 없으면 추가 (오픈/미들/마감은 항상 존재해야 함)
+        const mergedTypes = [...parsedTypes];
+
+        DEFAULT_SHIFT_TYPES.forEach((defaultType) => {
+          if (!mergedTypes.some((t) => t.id === defaultType.id)) {
+            mergedTypes.push(defaultType);
+          }
+        });
+
+        setShiftTypes(mergedTypes);
+      } catch (error) {
+        console.error("근무 파트 불러오기 오류:", error);
+        setShiftTypes(DEFAULT_SHIFT_TYPES);
+      }
+    }
   }, [templates, open]);
+
+  // shiftTypes가 변경될 때 로컬 스토리지에 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem("manezy_shift_types", JSON.stringify(shiftTypes));
+    } catch (error) {
+      console.error("근무 파트 저장 오류:", error);
+    }
+  }, [shiftTypes]);
+
+  // shiftTypes가 변경될 때 탭 값 검사
+  useEffect(() => {
+    // 현재 선택된 탭이 유효한지 확인
+    if (tabValue >= shiftTypes.length) {
+      // 유효하지 않다면 첫 번째 탭으로 리셋
+      setTabValue(0);
+    }
+  }, [shiftTypes, tabValue]);
 
   // 탭 변경 핸들러
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -191,11 +248,11 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
       const updatedTemplates = localTemplates.filter(
         (t) => t.id !== templateId
       );
-      setLocalTemplates(updatedTemplates);
+    setLocalTemplates(updatedTemplates);
 
-      if (editingTemplate?.id === templateId) {
-        setEditingTemplate(null);
-        setIsAddMode(false);
+    if (editingTemplate?.id === templateId) {
+      setEditingTemplate(null);
+      setIsAddMode(false);
       }
     }
   };
@@ -369,10 +426,123 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     onClose();
   };
 
+  // 새 근무 파트 추가
+  const handleAddNewShiftType = () => {
+    const newId = prompt("새 근무 파트의 ID를 입력하세요 (영문/숫자만 가능):");
+    if (!newId || !newId.trim()) return;
+
+    // 영문/숫자만 허용하는 검증
+    if (!/^[a-zA-Z0-9]+$/.test(newId)) {
+      alert("ID는 영문자와 숫자만 사용 가능합니다.");
+      return;
+    }
+
+    // ID 중복 검사
+    if (shiftTypes.some((type) => type.id === newId)) {
+      alert(`'${newId}' ID는 이미 사용 중입니다. 다른 ID를 입력해주세요.`);
+      return;
+    }
+
+    const newType = {
+      id: newId,
+      name: newId,
+      color: TYPE_COLORS.custom,
+    };
+
+    setShiftTypes([...shiftTypes, newType]);
+    setEditingShiftType(newType);
+  };
+
+  // 근무 파트 삭제
+  const handleDeleteShiftType = (id: string) => {
+    // 기본 파트는 삭제 불가
+    const typeToDelete = shiftTypes.find((type) => type.id === id);
+    if (typeToDelete?.isDefault) {
+      alert("기본 파트(오픈, 미들, 마감)는 삭제할 수 없습니다.");
+      return;
+    }
+
+    // 해당 파트를 사용하는 템플릿이 있는지 확인
+    const templatesUsingType = localTemplates.filter(
+      (template) => template.type === id
+    );
+    if (templatesUsingType.length > 0) {
+      if (
+        !window.confirm(
+          `이 파트를 사용하고 있는 템플릿이 ${templatesUsingType.length}개 있습니다. 삭제하면 해당 템플릿들도 모두 삭제됩니다. 계속하시겠습니까?`
+        )
+      ) {
+        return;
+      }
+
+      // 해당 파트를 사용하는 템플릿 모두 삭제
+      const updatedTemplates = localTemplates.filter(
+        (template) => template.type !== id
+      );
+      setLocalTemplates(updatedTemplates);
+    }
+
+    // 파트 삭제
+    setShiftTypes(shiftTypes.filter((type) => type.id !== id));
+
+    // 편집 중이었다면 편집 모드 종료
+    if (editingShiftType?.id === id) {
+      setEditingShiftType(null);
+    }
+  };
+
+  // 근무 파트 저장
+  const handleSaveShiftType = () => {
+    if (!editingShiftType) return;
+
+    // 이름 검증
+    if (!editingShiftType.name.trim()) {
+      alert("파트 이름을 입력해주세요.");
+      return;
+    }
+
+    // 파트 정보 업데이트
+    const updatedTypes = shiftTypes.map((type) =>
+      type.id === editingShiftType.id ? editingShiftType : type
+    );
+
+    setShiftTypes(updatedTypes);
+
+    // 해당 파트 ID를 사용하는 템플릿의 표시 이름도 변경할지 물어보기
+    const templatesUsingThisType = localTemplates.filter(
+      (template) =>
+        template.type === editingShiftType.id &&
+        template.name.includes(editingShiftType.id)
+    );
+
+    if (
+      templatesUsingThisType.length > 0 &&
+      window.confirm(`이 파트를 사용하는 템플릿의 이름도 업데이트하시겠습니까?`)
+    ) {
+      const updatedTemplates = localTemplates.map((template) => {
+        if (template.type === editingShiftType.id) {
+          // 템플릿 이름이 기존 파트 이름을 포함하고 있다면 새 파트 이름으로 대체
+          return {
+            ...template,
+            name: template.name.replace(
+              new RegExp(`\\b${editingShiftType.id}\\b`, "gi"),
+              editingShiftType.name
+            ),
+          };
+        }
+        return template;
+      });
+
+      setLocalTemplates(updatedTemplates);
+    }
+
+    setEditingShiftType(null);
+  };
+
   // 요일별 필요 인원수 렌더링
   const renderDayVariations = () => {
     const template = newTemplate;
-    return (
+  return (
       <Grid item xs={12} mt={2}>
         <Typography variant="subtitle1" gutterBottom>
           요일별 설정
@@ -402,7 +572,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                   <Tab
                     key={day}
                     label={day}
-                    sx={{
+        sx={{
                       color:
                         idx === 0
                           ? "error.main"
@@ -416,17 +586,17 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
             </Box>
 
             <Box>
-              <Typography variant="subtitle2" gutterBottom>
+          <Typography variant="subtitle2" gutterBottom>
                 {DAYS_OF_WEEK[selectedDay]}요일 설정
-              </Typography>
+          </Typography>
 
               <Grid container spacing={2} mt={1}>
                 <Grid item xs={12}>
-                  <TextField
-                    fullWidth
+              <TextField
+                fullWidth
                     label={`${DAYS_OF_WEEK[selectedDay]}요일 필요 인원수`}
                     type="number"
-                    size="small"
+                size="small"
                     value={
                       newTemplate.dayVariations?.[selectedDay]?.requiredStaff ||
                       newTemplate.requiredStaff
@@ -445,8 +615,8 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                         </InputAdornment>
                       ),
                     }}
-                  />
-                </Grid>
+              />
+            </Grid>
 
                 <Grid item xs={12}>
                   <Typography variant="body2" sx={{ mb: 1 }}>
@@ -468,7 +638,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                           <TableRow key={`${selectedDay}-${position}`}>
                             <TableCell>{position}</TableCell>
                             <TableCell align="right">
-                              <TextField
+              <TextField
                                 type="number"
                                 size="small"
                                 value={
@@ -477,7 +647,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                                   newTemplate.requiredPositions?.[position] ||
                                   0
                                 }
-                                onChange={(e) =>
+                onChange={(e) =>
                                   handleDayPositionChange(
                                     selectedDay,
                                     position,
@@ -492,9 +662,9 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                       </TableBody>
                     </Table>
                   </TableContainer>
-                </Grid>
-              </Grid>
-            </Box>
+            </Grid>
+          </Grid>
+          </Box>
           </Paper>
         )}
       </Grid>
@@ -647,7 +817,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                         </MenuItem>
                       </Select>
                     </FormControl>
-                  </Box>
+          </Box>
                 </TableCell>
               </TableRow>
             </TableBody>
@@ -667,17 +837,17 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           {newTemplate ? "새 템플릿 추가" : "템플릿 편집"}
         </Typography>
         <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              fullWidth
+              <Grid item xs={12} sm={6}>
+                <TextField
+                  fullWidth
               label="템플릿 이름"
               value={editingTemplate.name}
               onChange={(e) => updateEditingTemplate("name", e.target.value)}
               margin="normal"
-            />
-          </Grid>
+                />
+              </Grid>
           <Grid item xs={12} sm={6}>
-            <TextField
+                <TextField
               fullWidth
               label="근무 유형"
               value={editingTemplate.type}
@@ -689,7 +859,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <TimePicker
-                label="시작 시간"
+                  label="시작 시간"
                 value={new Date(`2022-01-01T${editingTemplate.startTime}`)}
                 onChange={(date) => {
                   if (date) {
@@ -704,11 +874,11 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                 slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
               />
             </LocalizationProvider>
-          </Grid>
+              </Grid>
           <Grid item xs={12} sm={6}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <TimePicker
-                label="종료 시간"
+                  label="종료 시간"
                 value={new Date(`2022-01-01T${editingTemplate.endTime}`)}
                 onChange={(date) => {
                   if (date) {
@@ -723,14 +893,14 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                 slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
               />
             </LocalizationProvider>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
+              </Grid>
+              <Grid item xs={12} sm={6}>
+                <TextField
               fullWidth
-              type="number"
+                  type="number"
               label="기본 필요 인원"
               value={editingTemplate.requiredStaff}
-              onChange={(e) =>
+                  onChange={(e) =>
                 updateEditingTemplate(
                   "requiredStaff",
                   parseInt(e.target.value) || 1
@@ -738,15 +908,15 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
               }
               margin="normal"
               InputProps={{ inputProps: { min: 1 } }}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
+                />
+              </Grid>
+              <Grid item xs={12} sm={6}>
             <MuiColorInput
               format="hex"
               value={editingTemplate.color}
               onChange={(color) => updateEditingTemplate("color", color)}
-              label="색상"
-              fullWidth
+                  label="색상"
+                  fullWidth
               margin="normal"
             />
           </Grid>
@@ -888,64 +1058,40 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
 
   // 특정 탭 렌더링
   const renderTabContent = (tabType: string) => {
-    const tabTemplates = localTemplates.filter((t) =>
-      tabType === "custom"
-        ? !["open", "middle", "close"].includes(t.type)
-        : t.type === tabType
-    );
+    const tabTemplates = localTemplates.filter((t) => t.type === tabType);
+    const currentType = shiftTypes.find((t) => t.id === tabType);
+
+    if (!currentType) return null;
 
     if (isAddMode && newTemplate.type === tabType) {
       return renderEditForm();
     }
 
-    if (
-      editingTemplate &&
-      (tabType === "custom"
-        ? !["open", "middle", "close"].includes(editingTemplate.type)
-        : editingTemplate.type === tabType)
-    ) {
+    if (editingTemplate && editingTemplate.type === tabType) {
       return renderEditForm();
     }
 
     return (
       <>
-        <Box
-          sx={{
-            display: "flex",
+            <Box
+              sx={{
+                display: "flex",
             justifyContent: "space-between",
             mb: 2,
-          }}
-        >
+              }}
+            >
           <Typography variant="subtitle1">
-            {tabType === "open"
-              ? "오픈 근무 템플릿 목록"
-              : tabType === "middle"
-              ? "미들 근무 템플릿 목록"
-              : tabType === "close"
-              ? "마감 근무 템플릿 목록"
-              : "커스텀 근무 템플릿 목록"}
+            {currentType.name} 근무 템플릿 목록
           </Typography>
-          <Button
+              <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
-            onClick={() =>
-              tabType === "custom"
-                ? handleAddCustomTemplate()
-                : handleAddNewTemplate(tabType)
-            }
+            onClick={() => handleAddNewTemplate(tabType)}
             size="small"
           >
-            {tabType === "custom"
-              ? "새 커스텀 템플릿"
-              : `새 ${
-                  tabType === "open"
-                    ? "오픈"
-                    : tabType === "middle"
-                    ? "미들"
-                    : "마감"
-                } 템플릿`}
-          </Button>
+            새 {currentType.name} 템플릿
+              </Button>
         </Box>
         <TemplateList templates={tabTemplates} />
       </>
@@ -976,11 +1122,24 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
         }}
       >
         <Typography variant="h6">근무 템플릿 관리</Typography>
-        <Tooltip title="여기서 근무 템플릿을 생성하고 관리할 수 있습니다. 오픈/미들/마감 외에도 커스텀 근무 유형을 만들 수 있으며, 각 템플릿별로 요일마다 다른 포지션 및 필요 인원을 설정할 수 있습니다.">
-          <IconButton size="small" sx={{ ml: 1 }}>
-            <HelpIcon />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          <Tooltip title="근무 파트 유형을 관리합니다. 새로운 파트를 추가하거나 기존 파트를 수정, 삭제할 수 있습니다.">
+              <Button
+              size="small"
+              variant="outlined"
+              startIcon={<SettingsIcon />}
+              onClick={() => setShowPartManager(true)}
+              sx={{ mr: 1 }}
+            >
+              파트 관리
+              </Button>
+          </Tooltip>
+          <Tooltip title="여기서 근무 템플릿을 생성하고 관리할 수 있습니다. 오픈/미들/마감 외에도 커스텀 근무 유형을 만들 수 있으며, 각 템플릿별로 요일마다 다른 포지션 및 필요 인원을 설정할 수 있습니다.">
+            <IconButton size="small" sx={{ ml: 1 }}>
+              <HelpIcon />
+            </IconButton>
+          </Tooltip>
+            </Box>
       </DialogTitle>
 
       <DialogContent
@@ -997,7 +1156,8 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
             value={tabValue}
             onChange={handleTabChange}
             aria-label="shift type tabs"
-            variant="fullWidth"
+            variant="scrollable"
+            scrollButtons="auto"
             sx={{
               "& .MuiTab-root": {
                 fontWeight: "bold",
@@ -1008,61 +1168,27 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
               },
             }}
           >
-            <Tab
-              label="오픈 근무"
-              sx={{
-                color: TYPE_COLORS.open,
-                borderBottom:
-                  tabValue === 0 ? `3px solid ${TYPE_COLORS.open}` : "none",
-              }}
-            />
-            <Tab
-              label="미들 근무"
-              sx={{
-                color: TYPE_COLORS.middle,
-                borderBottom:
-                  tabValue === 1 ? `3px solid ${TYPE_COLORS.middle}` : "none",
-              }}
-            />
-            <Tab
-              label="마감 근무"
-              sx={{
-                color: TYPE_COLORS.close,
-                borderBottom:
-                  tabValue === 2 ? `3px solid ${TYPE_COLORS.close}` : "none",
-              }}
-            />
-            <Tab
-              label="커스텀 근무"
-              sx={{
-                color: TYPE_COLORS.custom,
-                borderBottom:
-                  tabValue === 3 ? `3px solid ${TYPE_COLORS.custom}` : "none",
-              }}
-            />
+            {shiftTypes.map((type, index) => (
+              <Tab
+                key={type.id}
+                label={type.name}
+                sx={{
+                  color: type.color,
+                  borderBottom:
+                    tabValue === index ? `3px solid ${type.color}` : "none",
+                }}
+              />
+            ))}
           </Tabs>
-        </Box>
+          </Box>
 
         <Box sx={{ flexGrow: 1, overflow: "auto" }}>
-          {/* 오픈 템플릿 */}
-          <TabPanel value={tabValue} index={0}>
-            {renderTabContent("open")}
-          </TabPanel>
-
-          {/* 미들 템플릿 */}
-          <TabPanel value={tabValue} index={1}>
-            {renderTabContent("middle")}
-          </TabPanel>
-
-          {/* 마감 템플릿 */}
-          <TabPanel value={tabValue} index={2}>
-            {renderTabContent("close")}
-          </TabPanel>
-
-          {/* 커스텀 템플릿 */}
-          <TabPanel value={tabValue} index={3}>
-            {renderTabContent("custom")}
-          </TabPanel>
+          {/* 동적으로 탭 패널 생성 */}
+          {shiftTypes.map((type, index) => (
+            <TabPanel key={type.id} value={tabValue} index={index}>
+              {renderTabContent(type.id)}
+            </TabPanel>
+          ))}
         </Box>
       </DialogContent>
 
@@ -1085,6 +1211,149 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           모든 변경사항 저장
         </Button>
       </DialogActions>
+
+      {/* 근무 파트 관리 다이얼로그 */}
+      <Dialog
+        open={showPartManager}
+        onClose={() => setShowPartManager(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>근무 파트 관리</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="textSecondary" sx={{ mb: 2 }}>
+            근무 파트를 추가, 수정, 삭제할 수 있습니다. 기본 파트(오픈, 미들,
+            마감)는 삭제할 수 없지만 이름을 변경할 수 있습니다.
+          </Typography>
+
+          <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
+      <Table size="small">
+        <TableHead>
+          <TableRow>
+                  <TableCell>파트 ID</TableCell>
+            <TableCell>이름</TableCell>
+                  <TableCell>색상</TableCell>
+                  <TableCell align="right">관리</TableCell>
+          </TableRow>
+        </TableHead>
+        <TableBody>
+                {shiftTypes.map((type) => (
+                  <TableRow key={type.id}>
+                    <TableCell>{type.id}</TableCell>
+                    <TableCell>{type.name}</TableCell>
+                    <TableCell>
+                <Box
+                  sx={{
+                          width: 24,
+                          height: 24,
+                          borderRadius: 1,
+                          bgcolor: type.color,
+                        }}
+                      />
+              </TableCell>
+                    <TableCell align="right">
+                      <IconButton
+                        size="small"
+                        onClick={() => setEditingShiftType({ ...type })}
+                      >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+                      {!type.isDefault && (
+                <IconButton
+                  size="small"
+                  color="error"
+                          onClick={() => handleDeleteShiftType(type.id)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+                      )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </TableContainer>
+
+          <Button
+            variant="outlined"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={handleAddNewShiftType}
+            fullWidth
+          >
+            새 근무 파트 추가
+          </Button>
+
+          {editingShiftType && (
+            <Box
+              sx={{
+                mt: 2,
+                p: 2,
+                bgcolor: "background.default",
+                borderRadius: 1,
+              }}
+            >
+              <Typography variant="subtitle1" gutterBottom>
+                {editingShiftType.isDefault
+                  ? "기본 파트 수정"
+                  : "근무 파트 수정"}
+              </Typography>
+              <Grid container spacing={2}>
+                <Grid item xs={12}>
+                  <TextField
+                    fullWidth
+                    label="파트 이름"
+                    value={editingShiftType.name}
+                    onChange={(e) =>
+                      setEditingShiftType({
+                        ...editingShiftType,
+                        name: e.target.value,
+                      })
+                    }
+                    size="small"
+                    margin="normal"
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <MuiColorInput
+                    format="hex"
+                    value={editingShiftType.color}
+                    onChange={(color) =>
+                      setEditingShiftType({
+                        ...editingShiftType,
+                        color,
+                      })
+                    }
+                    label="색상"
+                    fullWidth
+                    size="small"
+                    margin="normal"
+                  />
+                </Grid>
+              </Grid>
+              <Box sx={{ mt: 2, display: "flex", justifyContent: "flex-end" }}>
+                <Button
+                  color="inherit"
+                  onClick={() => setEditingShiftType(null)}
+                  sx={{ mr: 1 }}
+                >
+                  취소
+                </Button>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handleSaveShiftType}
+                >
+                  저장
+                </Button>
+              </Box>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setShowPartManager(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
     </Dialog>
   );
 };

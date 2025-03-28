@@ -6,15 +6,23 @@ import {
   Typography,
   Button,
   Divider,
+  Tab,
+  Tabs,
 } from "@mui/material";
 import { getEmployees } from "../../services/api";
 import { Employee } from "../../lib/types";
 import WeeklyScheduleManager from "./components/WeeklyScheduleManager";
+import DragDropScheduler from "./components/DragDropScheduler";
 import TemplateManagerDialog from "./TemplateManagerDialog";
 import {
   Settings as SettingsIcon,
   Restore as RestoreIcon,
+  ViewWeek as ViewWeekIcon,
+  CalendarViewWeek as CalendarViewWeekIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
+import ShiftDialog from "./ShiftDialog";
+import mockData from "../../lib/mockData";
 
 // 모의 직원 데이터
 const MOCK_EMPLOYEES: Employee[] = [
@@ -298,6 +306,9 @@ interface ScheduleProps {
   selectedShiftId?: string;
 }
 
+// 스케줄 모드 타입
+type ScheduleMode = "traditional" | "dragdrop";
+
 const Schedule: React.FC<ScheduleProps> = ({
   onAssignEmployee,
   selectedShiftId,
@@ -309,6 +320,11 @@ const Schedule: React.FC<ScheduleProps> = ({
     DEFAULT_SHIFT_TEMPLATES
   );
   const [initialSchedule, setInitialSchedule] = useState<ScheduleItem[]>([]);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("dragdrop");
+  const [showShiftDialog, setShowShiftDialog] = useState(false);
+  const [currentShift, setCurrentShift] = useState(null);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
+  const [schedule, setSchedule] = useState(mockData.schedules);
 
   // 초기 데이터 로딩
   useEffect(() => {
@@ -359,10 +375,16 @@ const Schedule: React.FC<ScheduleProps> = ({
     setIsTemplateManagerOpen(false);
   };
 
-  // 주간 스케줄 적용 핸들러
+  // 변경된 스케줄을 처리하는 함수
   const handleWeeklyScheduleApply = (schedule: any[]) => {
     console.log("주간 스케줄 적용:", schedule);
     // TODO: 주간 스케줄을 저장하는 API 호출 구현
+  };
+
+  // 드래그 앤 드롭 스케줄 저장
+  const handleDragDropScheduleSave = (dragDropSchedule) => {
+    console.log("드래그 앤 드롭 스케줄 저장:", dragDropSchedule);
+    // TODO: 스케줄을 저장하는 API 호출 구현
   };
 
   // 초기 샘플 스케줄 재생성
@@ -375,6 +397,32 @@ const Schedule: React.FC<ScheduleProps> = ({
       const newSchedule = generateInitialSchedule(employees);
       setInitialSchedule(newSchedule);
     }
+  };
+
+  const handleShiftClick = (shift) => {
+    setCurrentShift(shift);
+    setShowShiftDialog(true);
+  };
+
+  const handleAddShift = () => {
+    setCurrentShift(null);
+    setShowShiftDialog(true);
+  };
+
+  const handleShiftDialogClose = () => {
+    setShowShiftDialog(false);
+  };
+
+  const handleTemplateManagerOpen = () => {
+    setShowTemplateDialog(true);
+  };
+
+  const handleTemplateManagerClose = () => {
+    setShowTemplateDialog(false);
+  };
+
+  const handleScheduleChange = (newSchedule) => {
+    setSchedule(newSchedule);
   };
 
   // 로딩 상태 표시
@@ -404,7 +452,26 @@ const Schedule: React.FC<ScheduleProps> = ({
         }}
       >
         <Typography variant="h6">주간 스케줄 관리</Typography>
-        <Box>
+        <Box sx={{ display: "flex", alignItems: "center" }}>
+          <Tabs
+            value={scheduleMode}
+            onChange={(_, newValue) => setScheduleMode(newValue)}
+            sx={{ mr: 2 }}
+          >
+            <Tab
+              value="traditional"
+              icon={<ViewWeekIcon />}
+              label="기본 모드"
+              iconPosition="start"
+            />
+            <Tab
+              value="dragdrop"
+              icon={<CalendarViewWeekIcon />}
+              label="드래그 앤 드롭"
+              iconPosition="start"
+            />
+          </Tabs>
+
           <Button
             variant="outlined"
             color="secondary"
@@ -418,7 +485,7 @@ const Schedule: React.FC<ScheduleProps> = ({
             variant="outlined"
             color="primary"
             startIcon={<SettingsIcon />}
-            onClick={() => setIsTemplateManagerOpen(true)}
+            onClick={handleTemplateManagerOpen}
           >
             근무 템플릿 관리
           </Button>
@@ -433,21 +500,47 @@ const Schedule: React.FC<ScheduleProps> = ({
           p: 2,
         }}
       >
-        <WeeklyScheduleManager
-          employees={employees}
-          onApplySchedule={handleWeeklyScheduleApply}
-          templates={shiftTemplates}
-          initialSchedule={initialSchedule}
-        />
+        {scheduleMode === "traditional" ? (
+          <WeeklyScheduleManager
+            employees={employees}
+            onApplySchedule={handleWeeklyScheduleApply}
+            templates={shiftTemplates}
+            initialSchedule={initialSchedule}
+          />
+        ) : (
+          <DragDropScheduler
+            employees={employees}
+            onSaveSchedule={handleDragDropScheduleSave}
+            initialSchedule={[]}
+          />
+        )}
       </Box>
 
       {/* 템플릿 관리 대화상자 */}
       {isTemplateManagerOpen && (
         <TemplateManagerDialog
           open={isTemplateManagerOpen}
-          onClose={() => setIsTemplateManagerOpen(false)}
+          onClose={handleTemplateManagerClose}
           templates={shiftTemplates}
           onSaveTemplates={handleSaveTemplates}
+        />
+      )}
+
+      {showShiftDialog && (
+        <ShiftDialog
+          eventData={{
+            id: currentShift?.id || "",
+            title: currentShift?.title || "",
+            start: "",
+            end: "",
+            extendedProps: {
+              employeeIds: [],
+            },
+          }}
+          isNew={!currentShift}
+          employees={employees}
+          onClose={handleShiftDialogClose}
+          onSave={(event) => console.log("Shift saved:", event)}
         />
       )}
     </Paper>
