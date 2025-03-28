@@ -43,6 +43,8 @@ import {
 } from "@mui/icons-material";
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
 import { Employee } from "../../../lib/types";
+import { useTheme } from "@mui/material/styles";
+import { alpha } from "@mui/material/styles";
 
 // 드래그 앤 드롭 스케줄러 타입
 interface ScheduleShift {
@@ -68,7 +70,8 @@ interface ScheduleShift {
 interface DragDropSchedulerProps {
   employees: Employee[];
   onSaveSchedule: (schedule: ScheduleShift[]) => void;
-  initialSchedule?: ScheduleShift[];
+  initialSchedule?: any[]; // 다양한 초기 데이터 형식 허용
+  templates?: any[]; // 템플릿 데이터
 }
 
 // 요일 배열
@@ -85,14 +88,14 @@ const DAYS_OF_WEEK = [
 // 기본 교대시간
 const DEFAULT_TIME_SLOTS = [
   {
-    id: "morning",
+    id: "open",
     name: "오픈",
     startTime: "09:00",
     endTime: "15:00",
     color: "#4CAF50",
   },
   {
-    id: "afternoon",
+    id: "middle",
     name: "미들",
     startTime: "15:00",
     endTime: "17:00",
@@ -143,6 +146,7 @@ interface TimeSlot {
   startTime: string;
   endTime: string;
   color: string;
+  requiredStaff?: number; // 필요한 직원 수 옵션 추가
 }
 
 // 스케줄 타입 정의
@@ -153,6 +157,16 @@ interface ScheduleEntry {
   position?: string;
   day: string;
 }
+
+// 포지션별 스타일과 색상 설정
+const POSITION_COLORS = {
+  매니저: "#FF5252",
+  바리스타: "#4CAF50",
+  서빙: "#2196F3",
+  캐셔: "#FF9800",
+  주방: "#9C27B0",
+  일반: "#757575",
+};
 
 // 교대 시간 관리 다이얼로그
 const TimeSlotManagerDialog: React.FC<{
@@ -439,35 +453,147 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
   employees,
   onSaveSchedule,
   initialSchedule = [],
+  templates = [],
 }) => {
-  const [schedule, setSchedule] = useState<ScheduleShift[]>(
-    initialSchedule.length > 0 ? initialSchedule : []
-  );
+  const theme = useTheme();
+
+  // 요일 번호에서 요일 ID로 변환하는 함수
+  const getDayKeyFromNumber = (dayNumber: number): string => {
+    const dayMap: Record<number, string> = {
+      0: "sunday",
+      1: "monday",
+      2: "tuesday",
+      3: "wednesday",
+      4: "thursday",
+      5: "friday",
+      6: "saturday",
+    };
+    return dayMap[dayNumber] || "monday";
+  };
+
+  // 요일 ID에서 요일 번호로 변환하는 함수
+  const getDayNumberFromKey = (dayKey: string): number => {
+    const dayMap: Record<string, number> = {
+      sunday: 0,
+      monday: 1,
+      tuesday: 2,
+      wednesday: 3,
+      thursday: 4,
+      friday: 5,
+      saturday: 6,
+    };
+    return dayMap[dayKey] || 1;
+  };
+
+  // 시간대 초기화 (템플릿에서 가져옴)
+  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(() => {
+    // 템플릿이 제공된 경우 템플릿에서 시간대 정보 추출
+    if (templates && templates.length > 0) {
+      return templates.map((template) => ({
+        id: template.type,
+        name: template.name,
+        startTime: template.startTime,
+        endTime: template.endTime,
+        color: template.color,
+      }));
+    }
+    // 기본 시간대 사용
+    return DEFAULT_TIME_SLOTS;
+  });
+
+  // 스케줄 상태 초기화
+  const [schedule, setSchedule] = useState<ScheduleShift[]>(() => {
+    // 초기 스케줄 데이터가 제공된 경우 변환 필요
+    if (initialSchedule && initialSchedule.length > 0) {
+      // 요일-시간대별 그룹화를 위한 맵
+      const groupedByDayAndShift = new Map();
+
+      // 모든 요일과 시간대 조합에 대해 기본 교대 정보 생성
+      DAYS_OF_WEEK.forEach((day) => {
+        timeSlots.forEach((slot) => {
+          const mapKey = `${day.id}-${slot.id}`;
+
+          // 요일에 적용 가능한 템플릿 찾기 (함수 정의 전이므로 인라인으로 처리)
+          const dayNum = getDayNumberFromKey(day.id);
+          const applicableTemplate = templates.find(
+            (t) =>
+              t.type === slot.id &&
+              (!t.applicableDays ||
+                t.applicableDays.length === 0 ||
+                t.applicableDays.includes(dayNum))
+          );
+
+          const timeSlotInfo = applicableTemplate ||
+            timeSlots.find((ts) => ts.id === slot.id) || {
+              startTime: "09:00",
+              endTime: "17:00",
+              color: "#2196F3",
+            };
+
+          // 템플릿에 requiredPositions이 있으면 사용, 없으면 기본값 사용
+          const requiredPositions = timeSlotInfo.requiredPositions || {
+            매니저: 1,
+            바리스타: 1,
+            서빙: 1,
+          };
+
+          // 기본 교대 정보 설정
+          groupedByDayAndShift.set(mapKey, {
+            id: mapKey,
+            day: day.id,
+            timeSlot: slot.id,
+            startTime: timeSlotInfo.startTime,
+            endTime: timeSlotInfo.endTime,
+            color: timeSlotInfo.color,
+            employees: [],
+            maxEmployees: timeSlotInfo.requiredStaff || 3,
+            requiredRoles: requiredPositions,
+          });
+        });
+      });
+
+      // 초기 데이터에서 직원 배정 정보 추출
+      initialSchedule.forEach((item) => {
+        const dayKey = getDayKeyFromNumber(item.day);
+        const timeSlotKey = item.shiftType || "open";
+        const mapKey = `${dayKey}-${timeSlotKey}`;
+
+        // 직원이 할당된 경우만 직원 목록에 추가
+        if (item.employeeId && groupedByDayAndShift.has(mapKey)) {
+          const employee = employees.find((emp) => emp.id === item.employeeId);
+          if (employee) {
+            const shift = groupedByDayAndShift.get(mapKey);
+            shift.employees.push({
+              id: employee.id,
+              name: employee.name,
+              role: employee.role || "일반",
+              avatarColor: getAvatarColor(employee.name),
+            });
+            groupedByDayAndShift.set(mapKey, shift);
+          }
+        }
+      });
+
+      return Array.from(groupedByDayAndShift.values());
+    }
+
+    // 초기 데이터가 없으면 빈 배열 반환
+    return [];
+  });
+
   const [draggedEmployee, setDraggedEmployee] = useState<{
     employee: Employee;
     role: string;
     timeSlot: string;
   } | null>(null);
-  const [selectedEmployee, setSelectedEmployee] = useState<string>("");
-  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>("");
-  const [selectedDay, setSelectedDay] = useState<string>("");
-  const [selectedPosition, setSelectedPosition] = useState<string>("");
-
-  // 시간대 관리 다이얼로그 상태
-  const [timeSlotDialogOpen, setTimeSlotDialogOpen] = useState(false);
-  const [timeSlots, setTimeSlots] = useState<TimeSlot[]>(
-    DEFAULT_TIME_SLOTS.map((slot) => ({
-      id: slot.id,
-      name: slot.name,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      color: slot.color,
-    }))
-  );
 
   // 템플릿 관리 상태
   const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
-  const [templates, setTemplates] = useState<
+  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+  const [templateName, setTemplateName] = useState("");
+
+  // 로컬 템플릿 상태 (부모 컴포넌트에서 받아온 templates와 구분)
+  const [localTemplates, setLocalTemplates] = useState<
     {
       id: string;
       name: string;
@@ -480,27 +606,55 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
       schedule: [],
     },
   ]);
-  const [templateName, setTemplateName] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState<string>("");
+
+  // 시간대 관리 다이얼로그 상태
+  const [timeSlotDialogOpen, setTimeSlotDialogOpen] = useState(false);
+
+  // 직원 역할별 그룹화
+  const employeesByRole = employees.reduce((acc, emp) => {
+    const role = emp.role || "일반";
+    if (!acc[role]) acc[role] = [];
+    acc[role].push(emp);
+    return acc;
+  }, {} as Record<string, Employee[]>);
+
+  // 역할 순서 정의
+  const ROLE_ORDER = ["매니저", "바리스타", "서빙", "캐셔", "주방", "일반"];
+
+  // 역할 정렬
+  const sortedRoles = Object.keys(employeesByRole).sort((a, b) => {
+    const indexA = ROLE_ORDER.indexOf(a);
+    const indexB = ROLE_ORDER.indexOf(b);
+    if (indexA === -1) return 1;
+    if (indexB === -1) return -1;
+    return indexA - indexB;
+  });
+
+  // 템플릿이 변경될 때 시간대 정보 업데이트
+  useEffect(() => {
+    if (schedule.length > 0 && templates.length > 0) {
+      updateTimeSlotInfo();
+    }
+  }, [templates]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 초기화
   useEffect(() => {
     if (initialSchedule && initialSchedule.length > 0) {
-      setSchedule(initialSchedule);
+      // 초기화는 useState에서 처리
     } else {
       createEmptySchedule();
     }
 
-    // 로컬 스토리지에서 템플릿 불러오기
-    const savedTemplates = localStorage.getItem("scheduleTemplates");
-    if (savedTemplates) {
-      try {
-        setTemplates(JSON.parse(savedTemplates));
-      } catch (e) {
-        console.error("템플릿 불러오기 실패", e);
+    // 로컬 스토리지에서 템플릿 로드
+    try {
+      const savedTemplates = localStorage.getItem("scheduleTemplates");
+      if (savedTemplates) {
+        setLocalTemplates(JSON.parse(savedTemplates));
       }
+    } catch (error) {
+      console.error("템플릿 로드 오류:", error);
     }
-  }, []);
+  }, [initialSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 빈 스케줄 생성
   const createEmptySchedule = () => {
@@ -509,20 +663,29 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
     // 각 요일과 시간대에 대한 빈 교대 항목 생성
     DAYS_OF_WEEK.forEach((day) => {
       timeSlots.forEach((slot) => {
+        // 요일별 적용 가능한 템플릿 찾기
+        const applicableTemplate = findApplicableTemplate(day.id, slot.id);
+
+        // 적용 가능한 템플릿이 있으면 그 정보 사용, 없으면 기본 시간대 정보 사용
+        const slotInfo = applicableTemplate || slot;
+
+        // 템플릿에 requiredPositions이 있으면 사용, 없으면 기본값 사용
+        const requiredPositions = slotInfo.requiredPositions || {
+          매니저: 1,
+          바리스타: 1,
+          서빙: 1,
+        };
+
         newSchedule.push({
           id: `${day.id}-${slot.id}`,
           day: day.id,
           timeSlot: slot.id,
-          startTime: slot.startTime,
-          endTime: slot.endTime,
-          color: slot.color,
-          employees: [],
-          maxEmployees: 3,
-          requiredRoles: {
-            매니저: 1,
-            바리스타: 1,
-            서빙: 1,
-          },
+          startTime: slotInfo.startTime,
+          endTime: slotInfo.endTime,
+          color: slotInfo.color,
+          employees: [], // 항상 빈 배열로 초기화
+          maxEmployees: slotInfo.requiredStaff || 3,
+          requiredRoles: requiredPositions,
         });
       });
     });
@@ -532,25 +695,42 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
 
   // 드래그 종료 시 핸들러
   const handleDragEnd = (result: any) => {
+    console.log("Drag ended with result:", result);
+
     // 유효하지 않은 드래그 결과면 무시
-    if (!result.destination) return;
+    if (!result.destination) {
+      console.log("No destination, ignoring drag");
+      return;
+    }
     if (
       result.destination.droppableId === result.source.droppableId &&
       result.destination.index === result.source.index
-    )
+    ) {
+      console.log("Dropped at the same position, ignoring drag");
       return;
+    }
 
     const { source, destination, draggableId } = result;
+    console.log(
+      `Dragging from ${source.droppableId} to ${destination.droppableId}`
+    );
+    console.log(`DraggableId: ${draggableId}`);
 
     try {
       // 직원 목록에서 드래그한 경우
       if (
-        source.droppableId === "employeeList" &&
-        destination.droppableId !== "employeeList"
+        source.droppableId === "employees-list" &&
+        destination.droppableId !== "employees-list"
       ) {
+        console.log("Dragging employee from list to schedule");
         // 직원 찾기
-        const employee = employees.find((emp) => emp.id === draggableId);
-        if (!employee) return;
+        const employeeId = draggableId.replace("employee-", "");
+        const employee = employees.find((emp) => emp.id === employeeId);
+        if (!employee) {
+          console.log(`Employee with id ${employeeId} not found`);
+          return;
+        }
+        console.log(`Found employee: ${employee.name}`);
 
         // 대상 교대 찾기
         const targetShift = schedule.find(
@@ -558,12 +738,16 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
         );
 
         if (targetShift) {
+          console.log(
+            `Found target shift: ${targetShift.day}-${targetShift.timeSlot}`
+          );
           // 이미 배정된 직원인지 확인
           const exists = targetShift.employees.some(
             (emp) => emp.id === employee.id
           );
 
           if (exists) {
+            console.log("Employee already assigned to this shift");
             alert("이미 해당 교대에 배정된 직원입니다.");
             return;
           }
@@ -573,12 +757,18 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
             targetShift.maxEmployees &&
             targetShift.employees.length >= targetShift.maxEmployees
           ) {
+            console.log(
+              `Shift already has maximum employees (${targetShift.maxEmployees})`
+            );
             alert(
               `이 교대에는 최대 ${targetShift.maxEmployees}명까지 배정할 수 있습니다.`
             );
             return;
           }
 
+          console.log(
+            `Adding employee ${employee.name} to shift ${targetShift.id}`
+          );
           // 직원 추가
           const updatedSchedule = schedule.map((shift) => {
             if (shift.id === targetShift.id) {
@@ -599,14 +789,19 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
           });
 
           setSchedule(updatedSchedule);
+          console.log("Schedule updated successfully");
+        } else {
+          console.log(
+            `Target shift with id ${destination.droppableId} not found`
+          );
         }
         return;
       }
 
       // 교대 간 직원 이동 (시프트 내에서의 드래그)
       if (
-        source.droppableId !== "employeeList" &&
-        destination.droppableId !== "employeeList" &&
+        source.droppableId !== "employees-list" &&
+        destination.droppableId !== "employees-list" &&
         source.droppableId !== destination.droppableId
       ) {
         const sourceShift = schedule.find(
@@ -618,9 +813,15 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
 
         if (!sourceShift || !destShift) return;
 
+        // 드래그한 직원 ID 추출
+        const employeeId = draggableId.replace(
+          `shift-${source.droppableId}-`,
+          ""
+        );
+
         // 드래그한 직원 찾기
         const employeeToMove = sourceShift.employees.find(
-          (emp) => emp.id === draggableId
+          (emp) => emp.id === employeeId
         );
         if (!employeeToMove) return;
 
@@ -640,9 +841,7 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
           if (shift.id === sourceShift.id) {
             return {
               ...shift,
-              employees: shift.employees.filter(
-                (emp) => emp.id !== draggableId
-              ),
+              employees: shift.employees.filter((emp) => emp.id !== employeeId),
             };
           }
           if (shift.id === destShift.id) {
@@ -661,7 +860,7 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
       // 같은 교대 내에서 직원 순서 변경
       if (
         source.droppableId === destination.droppableId &&
-        source.droppableId !== "employeeList"
+        source.droppableId !== "employees-list"
       ) {
         const shiftId = source.droppableId;
         const shift = schedule.find((s) => s.id === shiftId);
@@ -687,104 +886,9 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
         setSchedule(updatedSchedule);
         return;
       }
-
-      // 직원 목록 내에서 순서 변경은 처리하지 않음 (필요 시 구현)
     } catch (error) {
       console.error("드래그 앤 드롭 처리 중 오류 발생:", error);
     }
-  };
-
-  // 직원 배정 추가
-  const handleAddAssignment = () => {
-    if (!selectedEmployee || !selectedTimeSlot || !selectedDay) {
-      alert("직원, 시간대, 요일을 모두 선택해주세요.");
-      return;
-    }
-
-    // 선택된 직원 정보 찾기
-    const employee = employees.find((emp) => emp.id === selectedEmployee);
-    if (!employee) return;
-
-    // 이미 해당 요일, 시간대에 동일한 직원이 배정되어 있는지 확인
-    const exists = schedule.some(
-      (shift) =>
-        shift.day === selectedDay &&
-        shift.timeSlot === selectedTimeSlot &&
-        shift.employees.some((emp) => emp.id === selectedEmployee)
-    );
-
-    if (exists) {
-      alert("이미 해당 요일과 시간대에 배정된 직원입니다.");
-      return;
-    }
-
-    // 해당 요일과 시간대의 교대 찾기
-    const targetShift = schedule.find(
-      (shift) =>
-        shift.day === selectedDay && shift.timeSlot === selectedTimeSlot
-    );
-
-    if (!targetShift) {
-      alert("해당 시간대가 존재하지 않습니다.");
-      return;
-    }
-
-    // 최대 직원 수 확인
-    if (
-      targetShift.maxEmployees &&
-      targetShift.employees.length >= targetShift.maxEmployees
-    ) {
-      alert(
-        `이 교대에는 최대 ${targetShift.maxEmployees}명까지 배정할 수 있습니다.`
-      );
-      return;
-    }
-
-    // 필수 포지션 확인
-    if (targetShift.requiredRoles) {
-      const currentRoles = targetShift.employees.reduce((acc, emp) => {
-        acc[emp.role] = (acc[emp.role] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-
-      const requiredRole = selectedPosition || employee.role;
-      if (targetShift.requiredRoles[requiredRole]) {
-        const currentCount = currentRoles[requiredRole] || 0;
-        if (currentCount >= targetShift.requiredRoles[requiredRole]) {
-          alert(
-            `이 교대에는 ${requiredRole} 포지션이 이미 충분히 배정되어 있습니다.`
-          );
-          return;
-        }
-      }
-    }
-
-    // 새로운 직원 배정 추가
-    const updatedSchedule = schedule.map((shift) => {
-      if (shift.id === targetShift.id) {
-        return {
-          ...shift,
-          employees: [
-            ...shift.employees,
-            {
-              id: employee.id,
-              name: employee.name,
-              role: selectedPosition || employee.role || "일반",
-              avatarColor: getAvatarColor(employee.name),
-            },
-          ],
-        };
-      }
-      return shift;
-    });
-
-    setSchedule(updatedSchedule);
-
-    // 선택 초기화
-    setSelectedEmployee("");
-    setSelectedTimeSlot("");
-    setSelectedDay("");
-    setSelectedPosition("");
   };
 
   // 교대에서 직원 제거
@@ -802,338 +906,17 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
     setSchedule(updatedSchedule);
   };
 
-  // 요일별 시간대 렌더링
-  const renderDay = (dayIndex: number) => {
-    const day = DAYS_OF_WEEK[dayIndex];
-    const dayId = day.id;
-    const dayName = day.name;
-
-    // 해당 요일의 시간대 찾기
-    const dayShifts = schedule.filter((shift) => shift.day === dayId);
-
-    // 시간대 순서대로 정렬
-    const sortedShifts = [...dayShifts].sort((a, b) => {
-      const aSlot = timeSlots.findIndex((slot) => slot.id === a.timeSlot);
-      const bSlot = timeSlots.findIndex((slot) => slot.id === b.timeSlot);
-      return aSlot - bSlot;
-    });
-
-    return (
-      <Paper elevation={1} sx={{ p: 2, height: "100%" }}>
-        <Typography
-          variant="h6"
-          sx={{
-            mb: 1,
-            color:
-              dayIndex === 5 || dayIndex === 6 ? "error.main" : "text.primary",
-            fontWeight: "bold",
-          }}
-        >
-          {dayName}
-        </Typography>
-        <Divider sx={{ mb: 2 }} />
-
-        {sortedShifts.map((shift) => {
-          // 시간대 정보 찾기
-          const timeSlotInfo = timeSlots.find(
-            (slot) => slot.id === shift.timeSlot
-          );
-          const timeSlotName = timeSlotInfo
-            ? timeSlotInfo.name
-            : shift.timeSlot;
-          const startTime = timeSlotInfo
-            ? timeSlotInfo.startTime
-            : shift.startTime;
-          const endTime = timeSlotInfo ? timeSlotInfo.endTime : shift.endTime;
-          const color = timeSlotInfo ? timeSlotInfo.color : shift.color;
-
-          return (
-            <Box key={shift.id} sx={{ mb: 2 }}>
-              <Box
-                sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  mb: 1,
-                  bgcolor: `${color}20`,
-                  p: 1,
-                  borderRadius: 1,
-                  borderLeft: `4px solid ${color}`,
-                }}
-              >
-                <Typography variant="subtitle1" sx={{ fontWeight: "medium" }}>
-                  {timeSlotName}
-                  <Typography
-                    component="span"
-                    variant="body2"
-                    sx={{ ml: 1, color: "text.secondary" }}
-                  >
-                    ({startTime} - {endTime})
-                  </Typography>
-                </Typography>
-                <Box>
-                  <Chip
-                    size="small"
-                    label={`${shift.employees.length}/${
-                      shift.maxEmployees || "∞"
-                    }`}
-                    color={
-                      shift.maxEmployees &&
-                      shift.employees.length >= shift.maxEmployees
-                        ? "success"
-                        : "default"
-                    }
-                    sx={{ ml: 1 }}
-                  />
-                </Box>
-              </Box>
-
-              <Droppable droppableId={shift.id}>
-                {(provided, snapshot) => (
-                  <Box
-                    ref={provided.innerRef}
-                    {...provided.droppableProps}
-                    sx={{
-                      minHeight: 50,
-                      bgcolor: snapshot.isDraggingOver
-                        ? "action.hover"
-                        : "background.paper",
-                      border: "1px dashed",
-                      borderColor: snapshot.isDraggingOver
-                        ? "primary.main"
-                        : "divider",
-                      borderRadius: 1,
-                      p: 1,
-                      transition: "all 0.2s ease",
-                    }}
-                  >
-                    {shift.employees.length === 0 ? (
-                      <Typography
-                        color="text.secondary"
-                        align="center"
-                        sx={{ py: 1 }}
-                      >
-                        직원을 여기로 드래그하세요
-                      </Typography>
-                    ) : (
-                      shift.employees.map((employee, index) => (
-                        <Draggable
-                          key={employee.id}
-                          draggableId={employee.id}
-                          index={index}
-                        >
-                          {(provided, snapshot) => (
-                            <Paper
-                              ref={provided.innerRef}
-                              {...provided.draggableProps}
-                              {...provided.dragHandleProps}
-                              elevation={snapshot.isDragging ? 3 : 1}
-                              sx={{
-                                p: 1,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 1,
-                                bgcolor: snapshot.isDragging
-                                  ? "action.hover"
-                                  : "background.paper",
-                                cursor: "grab",
-                                "&:hover": {
-                                  bgcolor: "action.hover",
-                                },
-                                transition: "all 0.2s ease-in-out",
-                                mb: 1,
-                                "&:last-child": { mb: 0 },
-                              }}
-                            >
-                              <Avatar
-                                sx={{
-                                  bgcolor: getAvatarColor(employee.name),
-                                  width: 32,
-                                  height: 32,
-                                  border: "2px solid",
-                                  borderColor: "background.paper",
-                                }}
-                              >
-                                {employee.name.charAt(0)}
-                              </Avatar>
-                              <Box sx={{ flex: 1, minWidth: 0 }}>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontWeight: 500,
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {employee.name}
-                                </Typography>
-                                <Typography
-                                  variant="caption"
-                                  color="text.secondary"
-                                  sx={{
-                                    display: "block",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                  }}
-                                >
-                                  {employee.role}
-                                </Typography>
-                              </Box>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() =>
-                                  handleRemoveEmployee(shift.id, employee.id)
-                                }
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </Paper>
-                          )}
-                        </Draggable>
-                      ))
-                    )}
-                    {provided.placeholder}
-                  </Box>
-                )}
-              </Droppable>
-            </Box>
-          );
-        })}
-      </Paper>
+  // 특정 교대 시간대의 직원 목록 가져오기
+  const getShiftEmployees = (dayId: string, timeSlotId: string) => {
+    const shift = schedule.find(
+      (s) => s.day === dayId && s.timeSlot === timeSlotId
     );
+    return shift ? shift.employees : [];
   };
 
-  // 직원 목록 렌더링
-  const renderEmployeeList = () => {
-    const roleGroups: Record<string, Employee[]> = {};
-
-    // 역할별로 직원 그룹화
-    employees.forEach((employee) => {
-      const role = employee.role || "미정";
-      if (!roleGroups[role]) {
-        roleGroups[role] = [];
-      }
-      roleGroups[role].push(employee);
-    });
-
-    return (
-      <Paper elevation={1} sx={{ p: 2, height: "100%" }}>
-        <Droppable droppableId="employeeList">
-          {(provided) => (
-            <Box ref={provided.innerRef} {...provided.droppableProps}>
-              {Object.entries(roleGroups).map(([role, groupEmployees]) => (
-                <Box key={role} sx={{ mb: 2 }}>
-                  <Box
-                    sx={{
-                      mb: 1,
-                      bgcolor: "action.hover",
-                      p: 0.5,
-                      pl: 1,
-                      borderRadius: 1,
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    <Typography variant="subtitle2">
-                      {role} ({groupEmployees.length}명)
-                    </Typography>
-                    <Chip
-                      size="small"
-                      label={`${groupEmployees.length}명`}
-                      color="primary"
-                      variant="outlined"
-                    />
-                  </Box>
-
-                  {groupEmployees.map((employee, index) => (
-                    <Draggable
-                      key={employee.id}
-                      draggableId={employee.id}
-                      index={index}
-                    >
-                      {(provided, snapshot) => (
-                        <Paper
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          {...provided.dragHandleProps}
-                          elevation={snapshot.isDragging ? 3 : 1}
-                          sx={{
-                            p: 1,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                            bgcolor: snapshot.isDragging
-                              ? "action.hover"
-                              : "background.paper",
-                            cursor: "grab",
-                            "&:hover": {
-                              bgcolor: "action.hover",
-                            },
-                            transition: "all 0.2s ease-in-out",
-                          }}
-                        >
-                          <Avatar
-                            sx={{
-                              bgcolor: getAvatarColor(employee.name),
-                              width: 32,
-                              height: 32,
-                              border: "2px solid",
-                              borderColor: "background.paper",
-                            }}
-                          >
-                            {employee.name.charAt(0)}
-                          </Avatar>
-                          <Box sx={{ flex: 1, minWidth: 0 }}>
-                            <Typography
-                              variant="body2"
-                              sx={{
-                                fontWeight: 500,
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {employee.name}
-                            </Typography>
-                            <Typography
-                              variant="caption"
-                              color="text.secondary"
-                              sx={{
-                                display: "block",
-                                whiteSpace: "nowrap",
-                                overflow: "hidden",
-                                textOverflow: "ellipsis",
-                              }}
-                            >
-                              {employee.role}
-                            </Typography>
-                          </Box>
-                          <Tooltip title="드래그하여 교대에 배정">
-                            <DragIndicatorIcon
-                              fontSize="small"
-                              color="action"
-                              sx={{
-                                opacity: 0.5,
-                                transition: "opacity 0.2s ease-in-out",
-                              }}
-                            />
-                          </Tooltip>
-                        </Paper>
-                      )}
-                    </Draggable>
-                  ))}
-                </Box>
-              ))}
-              {provided.placeholder}
-            </Box>
-          )}
-        </Droppable>
-      </Paper>
-    );
+  // 스케줄 저장
+  const handleSaveSchedule = () => {
+    onSaveSchedule(schedule);
   };
 
   // 시간대 관리
@@ -1184,169 +967,570 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
     setTemplateDialogOpen(false);
   };
 
-  // 현재 스케줄을 템플릿으로 저장
+  // 템플릿 저장
   const handleSaveTemplate = () => {
     if (!templateName.trim()) {
-      alert("템플릿 이름을 입력해주세요.");
+      alert("템플릿 이름을 입력하세요");
       return;
     }
 
-    const newTemplateId = `template-${Date.now()}`;
-    const newTemplates = [
-      ...templates,
-      {
-        id: newTemplateId,
-        name: templateName,
-        schedule: [...schedule],
-      },
-    ];
+    const newTemplate = {
+      id: `template-${Date.now()}`,
+      name: templateName,
+      schedule: [...schedule],
+    };
 
-    setTemplates(newTemplates);
-    localStorage.setItem("scheduleTemplates", JSON.stringify(newTemplates));
+    const newTemplates = [...localTemplates, newTemplate];
+    setLocalTemplates(newTemplates);
     setTemplateDialogOpen(false);
     setTemplateName("");
+
+    // 로컬 스토리지에 템플릿 저장
+    try {
+      localStorage.setItem("scheduleTemplates", JSON.stringify(newTemplates));
+    } catch (error) {
+      console.error("템플릿 저장 오류:", error);
+    }
   };
 
   // 템플릿 불러오기
   const handleLoadTemplate = (templateId: string) => {
-    const template = templates.find((t) => t.id === templateId);
-    if (!template) return;
-
-    if (
-      window.confirm(
-        "기존 스케줄이 모두 삭제되고 선택한 템플릿으로 대체됩니다. 계속하시겠습니까?"
-      )
-    ) {
-      setSchedule([...template.schedule]);
-      setSelectedTemplate("");
+    const template = localTemplates.find((t) => t.id === templateId);
+    if (template && template.schedule.length > 0) {
+      if (
+        window.confirm(
+          "현재 스케줄을 템플릿으로 대체하시겠습니까? 저장되지 않은 변경사항은 손실됩니다."
+        )
+      ) {
+        setSchedule([...template.schedule]);
+      }
+    } else {
+      alert("템플릿에 저장된 스케줄이 없습니다.");
     }
   };
 
   // 템플릿 삭제
   const handleDeleteTemplate = (templateId: string) => {
     if (window.confirm("정말로 이 템플릿을 삭제하시겠습니까?")) {
-      const newTemplates = templates.filter((t) => t.id !== templateId);
-      setTemplates(newTemplates);
+      const newTemplates = localTemplates.filter((t) => t.id !== templateId);
+      setLocalTemplates(newTemplates);
       localStorage.setItem("scheduleTemplates", JSON.stringify(newTemplates));
     }
   };
 
+  // 각 시간대의 정보를 업데이트하는 함수 추가
+  const updateTimeSlotInfo = () => {
+    console.log("Templates to apply:", templates); // 로그 추가
+    const updatedSchedule = schedule.map((shift) => {
+      const dayNum = getDayNumberFromKey(shift.day);
+      console.log(
+        `Checking for day ${shift.day}, number: ${dayNum}, timeSlot: ${shift.timeSlot}`
+      ); // 로그 추가
+
+      // 해당 요일의 해당 시간대에 맞는 템플릿 찾기
+      const applicableTemplate = templates.find((template) => {
+        const isCorrectType = template.type === shift.timeSlot;
+        const isApplicableDay =
+          !template.applicableDays ||
+          template.applicableDays.length === 0 ||
+          template.applicableDays.includes(dayNum);
+
+        console.log(
+          `Template ${template.name}, type: ${
+            template.type
+          }, days: ${JSON.stringify(
+            template.applicableDays
+          )}, isCorrectType: ${isCorrectType}, isApplicableDay: ${isApplicableDay}`
+        ); // 로그 추가
+
+        return isCorrectType && isApplicableDay;
+      });
+
+      if (applicableTemplate) {
+        console.log(
+          `Found template for ${shift.day}-${shift.timeSlot}: ${applicableTemplate.name}`
+        ); // 로그 추가
+        return {
+          ...shift,
+          startTime: applicableTemplate.startTime,
+          endTime: applicableTemplate.endTime,
+          color: applicableTemplate.color,
+          maxEmployees: applicableTemplate.requiredStaff || shift.maxEmployees,
+          requiredRoles:
+            applicableTemplate.requiredPositions || shift.requiredRoles,
+        };
+      }
+
+      console.log(`No template found for ${shift.day}-${shift.timeSlot}`); // 로그 추가
+      return shift;
+    });
+
+    setSchedule(updatedSchedule);
+  };
+
+  // 특정 요일의 시간대에 가장 적합한 템플릿을 찾는 함수
+  const findApplicableTemplate = (dayId: string, timeSlotId: string) => {
+    const dayNum = getDayNumberFromKey(dayId);
+    const foundTemplate = templates.find((template) => {
+      const isCorrectType = template.type === timeSlotId;
+      const isApplicableDay =
+        !template.applicableDays ||
+        template.applicableDays.length === 0 ||
+        template.applicableDays.includes(dayNum);
+      return isCorrectType && isApplicableDay;
+    });
+    return foundTemplate;
+  };
+
   return (
-    <Box sx={{ p: 2 }}>
-      <Box sx={{ display: "flex", justifyContent: "space-between", mb: 3 }}>
-        <Typography variant="h5">주간 스케줄 작성</Typography>
-        <Box>
+    <Box
+      sx={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        maxHeight: "calc(100vh - 200px)",
+      }}
+    >
+      {/* 컨트롤 버튼 영역 */}
+      <Box
+        sx={{
+          mb: 2,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+        }}
+      >
+        <Box sx={{ display: "flex", gap: 1 }}>
           <Button
             variant="outlined"
-            startIcon={<RefreshIcon />}
-            onClick={createEmptySchedule}
-            sx={{ mr: 1 }}
+            startIcon={<CopyIcon />}
+            onClick={handleOpenTemplateDialog}
           >
-            초기화
+            템플릿 불러오기
           </Button>
           <Button
             variant="outlined"
             startIcon={<SettingsIcon />}
             onClick={handleOpenTimeSlotDialog}
-            sx={{ mr: 1 }}
           >
             시간대 관리
           </Button>
+        </Box>
+        <Box sx={{ display: "flex", gap: 1 }}>
           <Button
             variant="outlined"
-            startIcon={<CopyIcon />}
-            onClick={handleOpenTemplateDialog}
-            sx={{ mr: 1 }}
+            startIcon={<RefreshIcon />}
+            onClick={createEmptySchedule}
           >
-            템플릿 관리
+            초기화
           </Button>
           <Button
             variant="contained"
+            color="primary"
             startIcon={<SaveIcon />}
-            onClick={() => onSaveSchedule(schedule)}
+            onClick={handleSaveSchedule}
           >
             저장
           </Button>
         </Box>
       </Box>
 
-      {/* 템플릿 불러오기 선택 UI */}
-      <Paper sx={{ p: 2, mb: 3 }}>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-          <FormControl fullWidth size="small" sx={{ flex: 1 }}>
-            <InputLabel>템플릿 불러오기</InputLabel>
-            <Select
-              value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
-              label="템플릿 불러오기"
-            >
-              {templates.map((template) => (
-                <MenuItem key={template.id} value={template.id}>
-                  {template.name}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-          <Button
-            variant="contained"
-            onClick={() => handleLoadTemplate(selectedTemplate)}
-            disabled={!selectedTemplate}
-          >
-            불러오기
-          </Button>
-        </Box>
-      </Paper>
-
+      {/* 주간 스케줄 영역 */}
       <DragDropContext onDragEnd={handleDragEnd}>
-        <Grid container spacing={3}>
-          {/* 왼쪽: 직원 목록 */}
-          <Grid item xs={12} md={3}>
-            <Box sx={{ position: "sticky", top: 20 }}>
+        <Box
+          sx={{
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+            flexGrow: 1,
+          }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "row",
+              overflow: "auto",
+              flexGrow: 1,
+              gap: 2,
+            }}
+          >
+            {/* 왼쪽: 직원 목록 - 화면 왼쪽에 고정된 패널 */}
+            <Paper
+              elevation={1}
+              sx={{
+                width: 260,
+                flexShrink: 0,
+                p: 2,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+              }}
+            >
+              <Typography variant="h6" gutterBottom>
+                직원 목록
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{ ml: 1 }}
+                >
+                  총 {employees.length}명
+                </Typography>
+              </Typography>
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mb: 2 }}
+              >
+                직원을 시간표로 드래그하세요
+              </Typography>
+
               <Box
                 sx={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  mb: 2,
-                  bgcolor: "background.paper",
-                  p: 2,
-                  borderRadius: 1,
-                  boxShadow: 1,
+                  flexGrow: 1,
+                  overflow: "auto",
+                  pb: 2,
                 }}
               >
-                <Typography variant="h6">직원 목록</Typography>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <Chip
-                    size="small"
-                    label={`총 ${employees.length}명`}
-                    color="primary"
-                    variant="outlined"
-                  />
-                  <Tooltip title="직원을 교대로 드래그하여 배정할 수 있습니다">
-                    <IconButton size="small">
-                      <HelpIcon fontSize="small" />
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              </Box>
-              {renderEmployeeList()}
-            </Box>
-          </Grid>
+                <Droppable droppableId="employees-list">
+                  {(provided, snapshot) => (
+                    <Box {...provided.droppableProps} ref={provided.innerRef}>
+                      {sortedRoles.map((role, roleIndex) => (
+                        <Box key={role} sx={{ mb: 2 }}>
+                          <Box
+                            sx={{
+                              bgcolor: "grey.100",
+                              px: 1.5,
+                              py: 0.5,
+                              borderRadius: 1,
+                              mb: 1,
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              borderLeft: `4px solid ${
+                                POSITION_COLORS[
+                                  role as keyof typeof POSITION_COLORS
+                                ] || POSITION_COLORS.일반
+                              }`,
+                            }}
+                          >
+                            <Typography variant="subtitle2">{role}</Typography>
+                            <Typography variant="caption">
+                              {employeesByRole[role].length}명
+                            </Typography>
+                          </Box>
 
-          {/* 오른쪽: 스케줄 */}
-          <Grid item xs={12} md={9}>
-            <Typography variant="h6" gutterBottom>
-              주간 스케줄
-            </Typography>
-            <Grid container spacing={2}>
-              {DAYS_OF_WEEK.map((day, index) => (
-                <Grid item xs={12} md={6} lg={4} key={day.id}>
-                  {renderDay(index)}
-                </Grid>
-              ))}
-            </Grid>
-          </Grid>
-        </Grid>
+                          {employeesByRole[role].map((employee, index) => (
+                            <Draggable
+                              key={employee.id}
+                              draggableId={`employee-${employee.id}`}
+                              index={roleIndex * 100 + index}
+                            >
+                              {(provided, snapshot) => (
+                                <Box
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  {...provided.dragHandleProps}
+                                  sx={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    mb: 1,
+                                    p: 1,
+                                    borderRadius: 1,
+                                    boxShadow: 1,
+                                    bgcolor: snapshot.isDragging
+                                      ? alpha(theme.palette.primary.main, 0.1)
+                                      : "white",
+                                    "&:hover": {
+                                      bgcolor: alpha(
+                                        theme.palette.primary.main,
+                                        0.05
+                                      ),
+                                    },
+                                    borderLeft: `3px solid ${
+                                      POSITION_COLORS[
+                                        role as keyof typeof POSITION_COLORS
+                                      ] || POSITION_COLORS.일반
+                                    }`,
+                                  }}
+                                >
+                                  <Avatar
+                                    sx={{
+                                      width: 32,
+                                      height: 32,
+                                      mr: 1,
+                                      bgcolor: getAvatarColor(employee.name),
+                                      fontSize: "0.875rem",
+                                    }}
+                                  >
+                                    {employee.name.charAt(0)}
+                                  </Avatar>
+                                  <Box sx={{ flexGrow: 1 }}>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{ fontWeight: 500 }}
+                                    >
+                                      {employee.name}
+                                    </Typography>
+                                    <Typography
+                                      variant="caption"
+                                      color="text.secondary"
+                                    >
+                                      {employee.role || "일반"}
+                                    </Typography>
+                                  </Box>
+                                  <DragIndicatorIcon
+                                    fontSize="small"
+                                    sx={{
+                                      color: "action.disabled",
+                                      opacity: 0.5,
+                                    }}
+                                  />
+                                </Box>
+                              )}
+                            </Draggable>
+                          ))}
+                        </Box>
+                      ))}
+                      {provided.placeholder}
+                    </Box>
+                  )}
+                </Droppable>
+              </Box>
+            </Paper>
+
+            {/* 오른쪽: 스케줄 영역 */}
+            <Box
+              sx={{
+                flexGrow: 1,
+                overflowX: "auto",
+                overflowY: "auto",
+                // 스크롤바 스타일링
+                "&::-webkit-scrollbar": {
+                  height: "8px",
+                  width: "8px",
+                },
+                "&::-webkit-scrollbar-track": {
+                  bgcolor: "action.hover",
+                },
+                "&::-webkit-scrollbar-thumb": {
+                  bgcolor: "grey.400",
+                  borderRadius: "4px",
+                },
+              }}
+            >
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(7, minmax(200px, 1fr))",
+                  gap: 2,
+                  minWidth: "1400px",
+                }}
+              >
+                {/* 요일별 칼럼 */}
+                {DAYS_OF_WEEK.map((day) => (
+                  <Box key={day.id}>
+                    <Paper
+                      sx={{
+                        p: 2,
+                        height: "100%",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
+                      <Typography
+                        variant="h6"
+                        align="center"
+                        sx={{
+                          mb: 2,
+                          color:
+                            day.id === "saturday" || day.id === "sunday"
+                              ? "error.main"
+                              : "text.primary",
+                        }}
+                      >
+                        {day.name}
+                      </Typography>
+
+                      {/* 시간대 목록 */}
+                      <Box
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        }}
+                      >
+                        {timeSlots.map((timeSlot) => {
+                          const shiftId = `${day.id}-${timeSlot.id}`;
+                          const shiftEmployees = getShiftEmployees(
+                            day.id,
+                            timeSlot.id
+                          );
+                          const maxEmployees = timeSlot.requiredStaff || 3; // 동적 최대 직원 수 설정
+
+                          return (
+                            <Box key={shiftId}>
+                              <Box
+                                sx={{
+                                  p: 1,
+                                  bgcolor: alpha(timeSlot.color, 0.1),
+                                  borderBottom: `1px solid ${alpha(
+                                    timeSlot.color,
+                                    0.3
+                                  )}`,
+                                  display: "flex",
+                                  justifyContent: "space-between",
+                                  alignItems: "center",
+                                  borderLeft: `4px solid ${timeSlot.color}`,
+                                }}
+                              >
+                                <Typography
+                                  variant="subtitle2"
+                                  sx={{
+                                    fontWeight: "bold",
+                                    color: timeSlot.color,
+                                  }}
+                                >
+                                  {timeSlot.name}
+                                </Typography>
+                                <Typography variant="caption">
+                                  {timeSlot.startTime}-{timeSlot.endTime} (
+                                  {shiftEmployees.length}/{maxEmployees})
+                                </Typography>
+                              </Box>
+
+                              <Droppable droppableId={shiftId}>
+                                {(provided, snapshot) => (
+                                  <Box
+                                    ref={provided.innerRef}
+                                    {...provided.droppableProps}
+                                    sx={{
+                                      minHeight: "100px",
+                                      p: 1,
+                                      bgcolor: snapshot.isDraggingOver
+                                        ? alpha(timeSlot.color, 0.1)
+                                        : alpha(
+                                            theme.palette.background.default,
+                                            0.5
+                                          ),
+                                      border: "1px solid",
+                                      borderColor: alpha(timeSlot.color, 0.3),
+                                      borderRadius: "0 0 4px 4px",
+                                    }}
+                                  >
+                                    {shiftEmployees.length === 0 ? (
+                                      <Typography
+                                        variant="body2"
+                                        sx={{
+                                          color: "text.secondary",
+                                          textAlign: "center",
+                                          py: 2,
+                                          fontStyle: "italic",
+                                        }}
+                                      >
+                                        직원을 여기로 드래그하세요
+                                      </Typography>
+                                    ) : (
+                                      shiftEmployees.map((employee, index) => (
+                                        <Draggable
+                                          key={`${shiftId}-${employee.id}`}
+                                          draggableId={`shift-${shiftId}-${employee.id}`}
+                                          index={index}
+                                        >
+                                          {(provided, snapshot) => (
+                                            <Box
+                                              ref={provided.innerRef}
+                                              {...provided.draggableProps}
+                                              {...provided.dragHandleProps}
+                                              sx={{
+                                                display: "flex",
+                                                alignItems: "center",
+                                                p: 1,
+                                                mb: 1,
+                                                borderRadius: 1,
+                                                boxShadow: snapshot.isDragging
+                                                  ? 3
+                                                  : 1,
+                                                bgcolor: "white",
+                                                "&:hover": {
+                                                  boxShadow: 2,
+                                                },
+                                                borderLeft: `3px solid ${
+                                                  POSITION_COLORS[
+                                                    employee.role as keyof typeof POSITION_COLORS
+                                                  ] || POSITION_COLORS.일반
+                                                }`,
+                                              }}
+                                            >
+                                              <Avatar
+                                                sx={{
+                                                  width: 24,
+                                                  height: 24,
+                                                  mr: 1,
+                                                  bgcolor: getAvatarColor(
+                                                    employee.name
+                                                  ),
+                                                  fontSize: "0.75rem",
+                                                }}
+                                              >
+                                                {employee.name.charAt(0)}
+                                              </Avatar>
+                                              <Box sx={{ flexGrow: 1 }}>
+                                                <Typography
+                                                  variant="body2"
+                                                  sx={{
+                                                    fontWeight: 500,
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                  }}
+                                                >
+                                                  {employee.name}
+                                                </Typography>
+                                                <Typography
+                                                  variant="caption"
+                                                  color="text.secondary"
+                                                  sx={{
+                                                    display: "block",
+                                                    overflow: "hidden",
+                                                    textOverflow: "ellipsis",
+                                                    whiteSpace: "nowrap",
+                                                  }}
+                                                >
+                                                  {employee.role || "일반"}
+                                                </Typography>
+                                              </Box>
+                                              <IconButton
+                                                size="small"
+                                                onClick={() =>
+                                                  handleRemoveEmployee(
+                                                    shiftId,
+                                                    employee.id
+                                                  )
+                                                }
+                                                sx={{ p: 0.5 }}
+                                              >
+                                                <DeleteIcon fontSize="small" />
+                                              </IconButton>
+                                            </Box>
+                                          )}
+                                        </Draggable>
+                                      ))
+                                    )}
+                                    {provided.placeholder}
+                                  </Box>
+                                )}
+                              </Droppable>
+                            </Box>
+                          );
+                        })}
+                      </Box>
+                    </Paper>
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+          </Box>
+        </Box>
       </DragDropContext>
 
       {/* 시간대 관리 다이얼로그 */}
@@ -1412,7 +1596,7 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
           <Typography variant="subtitle1" gutterBottom>
             저장된 템플릿
           </Typography>
-          {templates.length === 0 ? (
+          {localTemplates.length === 0 ? (
             <Typography variant="body2" color="text.secondary">
               저장된 템플릿이 없습니다.
             </Typography>
@@ -1426,7 +1610,7 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {templates.map((template) => (
+                  {localTemplates.map((template) => (
                     <TableRow key={template.id}>
                       <TableCell>{template.name}</TableCell>
                       <TableCell align="right">

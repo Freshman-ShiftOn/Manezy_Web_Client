@@ -34,6 +34,11 @@ import {
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Card,
+  CardContent,
+  Checkbox,
+  FormGroup,
+  FormLabel,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -47,6 +52,7 @@ import {
   ExpandMore as ExpandMoreIcon,
   Today as TodayIcon,
   Help as HelpIcon,
+  Warning as WarningIcon,
 } from "@mui/icons-material";
 import { TwitterPicker } from "react-color";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
@@ -76,6 +82,7 @@ interface ShiftTemplate {
       };
     };
   };
+  applicableDays?: number[]; // [0, 1, 2, 3, 4, 5, 6] - 일요일부터 토요일
 }
 
 // 시간대별 기본 색상
@@ -97,7 +104,15 @@ interface TemplateManagerDialogProps {
 const DEFAULT_POSITIONS = ["매니저", "바리스타", "서빙", "주방", "캐셔"];
 
 // 요일 목록
-const DAYS_OF_WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+const DAYS_OF_WEEK = [
+  { id: 0, name: "일요일" },
+  { id: 1, name: "월요일" },
+  { id: 2, name: "화요일" },
+  { id: 3, name: "수요일" },
+  { id: 4, name: "목요일" },
+  { id: 5, name: "금요일" },
+  { id: 6, name: "토요일" },
+];
 
 // 기본 근무 파트 목록
 const DEFAULT_SHIFT_TYPES = [
@@ -161,7 +176,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [isAddMode, setIsAddMode] = useState(false);
   const [showDayVariations, setShowDayVariations] = useState(false);
-  const [selectedDay, setSelectedDay] = useState<number>(0); // 일요일
+  const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [expandedDays, setExpandedDays] = useState<{ [key: number]: boolean }>(
     {}
   );
@@ -176,6 +191,16 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     color: string;
     isDefault?: boolean;
   } | null>(null);
+
+  // 요일 선택 상태 추가
+  const [selectedDays, setSelectedDays] = useState<number[]>([1, 2, 3, 4, 5]); // 기본값: 월~금
+
+  // 편집 중인 제약 조건 상태
+  const [positionConstraints, setPositionConstraints] = useState<
+    Record<string, number>
+  >({});
+  const [newPositionName, setNewPositionName] = useState<string>("");
+  const [newPositionCount, setNewPositionCount] = useState<number>(1);
 
   useEffect(() => {
     setLocalTemplates([...templates]);
@@ -227,7 +252,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     setTabValue(newValue);
   };
 
-  // 템플릿 수정 시작
+  // 템플릿 편집 핸들러
   const handleEditTemplate = (template: ShiftTemplate) => {
     setEditingTemplate({ ...template });
     setNewTemplate({
@@ -236,6 +261,9 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     });
     setIsAddMode(false);
     setExpandedDays({});
+    // 템플릿의 적용 요일 설정
+    setSelectedDays(template.applicableDays || [1, 2, 3, 4, 5]);
+    setPositionConstraints(template.requiredPositions || {});
   };
 
   // 템플릿 삭제
@@ -248,77 +276,44 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
       const updatedTemplates = localTemplates.filter(
         (t) => t.id !== templateId
       );
-    setLocalTemplates(updatedTemplates);
+      setLocalTemplates(updatedTemplates);
 
-    if (editingTemplate?.id === templateId) {
-      setEditingTemplate(null);
-      setIsAddMode(false);
+      if (editingTemplate?.id === templateId) {
+        setEditingTemplate(null);
+        setIsAddMode(false);
       }
     }
   };
 
-  // 새 템플릿 추가 모드 시작
+  // 새 템플릿 추가
   const handleAddNewTemplate = (type: string) => {
-    const newId = `template-${Date.now()}`;
+    // ID 생성
+    const templateId = `${type}-${Date.now()}`;
 
-    // 시간대별 기본값 설정
-    const defaultTimes: Record<
-      string,
-      { startTime: string; endTime: string; positions?: Record<string, number> }
-    > = {
-      open: {
-        startTime: "09:00",
-        endTime: "13:00",
-        positions: { 매니저: 1, 바리스타: 1 },
-      },
-      middle: {
-        startTime: "12:00",
-        endTime: "17:00",
-        positions: { 바리스타: 1, 서빙: 1, 캐셔: 1 },
-      },
-      close: {
-        startTime: "16:00",
-        endTime: "22:00",
-        positions: { 매니저: 1, 주방: 1 },
-      },
-      custom: {
-        startTime: "10:00",
-        endTime: "15:00",
-        positions: { 바리스타: 1 },
-      },
-    };
+    // 타입에 맞는 기본 색상 가져오기
+    const shiftType = shiftTypes.find((t) => t.id === type);
+    const color = shiftType ? shiftType.color : "#2196F3";
 
-    const isDefaultType = ["open", "middle", "close"].includes(type);
-    const defaultTime = isDefaultType
-      ? defaultTimes[type]
-      : defaultTimes.custom;
-
-    const defaultName = isDefaultType
-      ? type === "open"
-        ? "오픈"
-        : type === "middle"
-        ? "미들"
-        : "마감"
-      : "커스텀 근무";
-
-    const defaultColor = isDefaultType
-      ? TYPE_COLORS[type as keyof typeof TYPE_COLORS]
-      : TYPE_COLORS.custom;
-
-    const newTemplateData = {
-      ...DEFAULT_NEW_TEMPLATE,
-      id: newId,
+    // 초기 템플릿 설정
+    const template: ShiftTemplate = {
+      id: templateId,
+      name: `${shiftType ? shiftType.name : type} 템플릿`,
       type: type,
-      name: defaultName,
-      startTime: defaultTime.startTime,
-      endTime: defaultTime.endTime,
-      color: defaultColor,
-      requiredPositions: defaultTime.positions || { 바리스타: 1 },
+      startTime: "09:00",
+      endTime: "18:00",
+      requiredStaff: 2,
+      color: color,
+      requiredPositions: {
+        바리스타: 1,
+        서빙: 1,
+      },
+      applicableDays: [1, 2, 3, 4, 5], // 기본값: 월~금
     };
 
-    setNewTemplate(newTemplateData);
+    setNewTemplate(template);
+    setEditingTemplate(template);
     setIsAddMode(true);
-    setEditingTemplate(null);
+    setSelectedDays([1, 2, 3, 4, 5]); // 기본값: 월~금
   };
 
   // 새 커스텀 템플릿 추가
@@ -331,18 +326,25 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
 
   // 템플릿 저장 (추가 또는 수정)
   const handleSaveTemplate = () => {
-    if (!newTemplate.name.trim()) {
+    if (!editingTemplate || !editingTemplate.name.trim()) {
       alert("템플릿 이름을 입력해주세요.");
       return;
     }
 
+    // 저장할 템플릿에 applicableDays 필드 설정
+    const templateToSave = {
+      ...editingTemplate,
+      applicableDays:
+        selectedDays.length > 0 ? [...selectedDays] : [0, 1, 2, 3, 4, 5, 6],
+    };
+
     if (isAddMode) {
       // 새 템플릿 추가
-      setLocalTemplates([...localTemplates, newTemplate]);
-    } else if (editingTemplate) {
+      setLocalTemplates([...localTemplates, templateToSave]);
+    } else {
       // 기존 템플릿 수정
       const updatedTemplates = localTemplates.map((t) =>
-        t.id === editingTemplate.id ? newTemplate : t
+        t.id === templateToSave.id ? templateToSave : t
       );
       setLocalTemplates(updatedTemplates);
     }
@@ -363,49 +365,44 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     updateEditingTemplate("color", color);
   };
 
-  // 요일별 필요 인원 변경 핸들러
-  const handleDayStaffChange = (day: number, value: number) => {
-    const updatedDayVariations = {
-      ...newTemplate.dayVariations,
-      [day]: {
-        ...(newTemplate.dayVariations?.[day] || {}),
-        requiredStaff: value,
-      },
-    };
+  // 특정 요일의 스태프 수 변경
+  const handleDayStaffChange = (dayId: number, count: number) => {
+    if (!newTemplate || !newTemplate.dayVariations) return;
 
-    setNewTemplate({
-      ...newTemplate,
-      dayVariations: updatedDayVariations,
+    setNewTemplate((prev) => {
+      const updated = { ...prev };
+      if (!updated.dayVariations) {
+        updated.dayVariations = {};
+      }
+      if (!updated.dayVariations[dayId]) {
+        updated.dayVariations[dayId] = {};
+      }
+      updated.dayVariations[dayId].requiredStaff = count;
+      return updated;
     });
   };
 
-  // 요일별 포지션 인원 변경 핸들러
+  // 특정 요일의 특정 포지션 인원 수 변경
   const handleDayPositionChange = (
-    day: number,
+    dayId: number,
     position: string,
-    value: number
+    count: number
   ) => {
-    const dayPositions = {
-      ...(newTemplate.dayVariations?.[day]?.requiredPositions || {}),
-    };
+    if (!newTemplate || !newTemplate.dayVariations) return;
 
-    if (value <= 0) {
-      delete dayPositions[position];
-    } else {
-      dayPositions[position] = value;
-    }
-
-    const updatedDayVariations = {
-      ...newTemplate.dayVariations,
-      [day]: {
-        ...(newTemplate.dayVariations?.[day] || {}),
-        requiredPositions: dayPositions,
-      },
-    };
-
-    setNewTemplate({
-      ...newTemplate,
-      dayVariations: updatedDayVariations,
+    setNewTemplate((prev) => {
+      const updated = { ...prev };
+      if (!updated.dayVariations) {
+        updated.dayVariations = {};
+      }
+      if (!updated.dayVariations[dayId]) {
+        updated.dayVariations[dayId] = {};
+      }
+      if (!updated.dayVariations[dayId].requiredPositions) {
+        updated.dayVariations[dayId].requiredPositions = {};
+      }
+      updated.dayVariations[dayId].requiredPositions[position] = count;
+      return updated;
     });
   };
 
@@ -539,134 +536,97 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
     setEditingShiftType(null);
   };
 
-  // 요일별 필요 인원수 렌더링
+  // 적용 요일 선택 UI
   const renderDayVariations = () => {
-    const template = newTemplate;
-  return (
+    return (
       <Grid item xs={12} mt={2}>
         <Typography variant="subtitle1" gutterBottom>
-          요일별 설정
+          적용 요일 선택
         </Typography>
-        <Box mb={1}>
-          <FormControlLabel
-            control={
-              <Switch
-                checked={showDayVariations}
-                onChange={() => setShowDayVariations(!showDayVariations)}
-              />
-            }
-            label="요일별로 다른 설정 적용하기"
-          />
+        <Box sx={{ mb: 1 }}>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => {
+              if (selectedDays.length === 7) {
+                setSelectedDays([]);
+              } else {
+                setSelectedDays([0, 1, 2, 3, 4, 5, 6]);
+              }
+            }}
+            sx={{ mr: 1, mb: 1 }}
+          >
+            {selectedDays.length === 7 ? "전체 해제" : "전체 선택"}
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setSelectedDays([1, 2, 3, 4, 5])}
+            sx={{ mr: 1, mb: 1 }}
+            color="primary"
+          >
+            평일만 (월-금)
+          </Button>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setSelectedDays([0, 6])}
+            sx={{ mb: 1 }}
+            color="error"
+          >
+            주말만 (토, 일)
+          </Button>
         </Box>
-
-        {showDayVariations && (
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Box mb={2}>
-              <Tabs
-                value={selectedDay}
-                onChange={(e, newValue) => setSelectedDay(newValue)}
-                variant="scrollable"
-                scrollButtons="auto"
-              >
-                {DAYS_OF_WEEK.map((day, idx) => (
-                  <Tab
-                    key={day}
-                    label={day}
-        sx={{
-                      color:
-                        idx === 0
-                          ? "error.main"
-                          : idx === 6
-                          ? "primary.main"
-                          : "text.primary",
-                    }}
-                  />
-                ))}
-              </Tabs>
-            </Box>
-
-            <Box>
-          <Typography variant="subtitle2" gutterBottom>
-                {DAYS_OF_WEEK[selectedDay]}요일 설정
-          </Typography>
-
-              <Grid container spacing={2} mt={1}>
-                <Grid item xs={12}>
-              <TextField
-                fullWidth
-                    label={`${DAYS_OF_WEEK[selectedDay]}요일 필요 인원수`}
-                    type="number"
-                size="small"
-                    value={
-                      newTemplate.dayVariations?.[selectedDay]?.requiredStaff ||
-                      newTemplate.requiredStaff
-                    }
-                    onChange={(e) =>
-                      handleDayStaffChange(
-                        selectedDay,
-                        parseInt(e.target.value) || 1
-                      )
-                    }
-                    InputProps={{
-                      inputProps: { min: 1 },
-                      startAdornment: (
-                        <InputAdornment position="start">
-                          <PersonIcon fontSize="small" />
-                        </InputAdornment>
-                      ),
-                    }}
-              />
-            </Grid>
-
-                <Grid item xs={12}>
-                  <Typography variant="body2" sx={{ mb: 1 }}>
-                    {DAYS_OF_WEEK[selectedDay]}요일 필요 포지션
-                  </Typography>
-
-                  <TableContainer>
-                    <Table size="small">
-                      <TableHead>
-                        <TableRow>
-                          <TableCell>포지션</TableCell>
-                          <TableCell align="right">필요 인원수</TableCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {Object.entries(
-                          newTemplate.requiredPositions || {}
-                        ).map(([position]) => (
-                          <TableRow key={`${selectedDay}-${position}`}>
-                            <TableCell>{position}</TableCell>
-                            <TableCell align="right">
-              <TextField
-                                type="number"
-                                size="small"
-                                value={
-                                  newTemplate.dayVariations?.[selectedDay]
-                                    ?.requiredPositions?.[position] ||
-                                  newTemplate.requiredPositions?.[position] ||
-                                  0
-                                }
-                onChange={(e) =>
-                                  handleDayPositionChange(
-                                    selectedDay,
-                                    position,
-                                    parseInt(e.target.value) || 0
-                                  )
-                                }
-                                InputProps={{ inputProps: { min: 0 } }}
-                              />
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </TableContainer>
-            </Grid>
-          </Grid>
-          </Box>
-          </Paper>
-        )}
+        <Box
+          sx={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 1,
+            p: 2,
+            bgcolor: alpha(theme.palette.background.default, 0.5),
+            borderRadius: 1,
+            border: `1px solid ${theme.palette.divider}`,
+          }}
+        >
+          {DAYS_OF_WEEK.map((day) => (
+            <Chip
+              key={day.id}
+              label={day.name}
+              color={selectedDays.includes(day.id) ? "primary" : "default"}
+              variant={selectedDays.includes(day.id) ? "filled" : "outlined"}
+              onClick={() => {
+                if (selectedDays.includes(day.id)) {
+                  setSelectedDays(selectedDays.filter((id) => id !== day.id));
+                } else {
+                  setSelectedDays([...selectedDays, day.id]);
+                }
+              }}
+              sx={{
+                minWidth: "90px",
+                justifyContent: "center",
+                color:
+                  day.id === 0 || day.id === 6
+                    ? selectedDays.includes(day.id)
+                      ? "white"
+                      : "error.main"
+                    : undefined,
+                bgcolor:
+                  (day.id === 0 || day.id === 6) &&
+                  selectedDays.includes(day.id)
+                    ? "error.main"
+                    : undefined,
+              }}
+            />
+          ))}
+        </Box>
+        <Typography
+          variant="caption"
+          color="text.secondary"
+          sx={{ display: "block", mt: 1 }}
+        >
+          선택한 요일에만 이 템플릿이 적용됩니다. 다른 요일에는 다른 템플릿을
+          적용할 수 있습니다.
+        </Typography>
       </Grid>
     );
   };
@@ -817,12 +777,138 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                         </MenuItem>
                       </Select>
                     </FormControl>
-          </Box>
+                  </Box>
                 </TableCell>
               </TableRow>
             </TableBody>
           </Table>
         </TableContainer>
+      </Grid>
+    );
+  };
+
+  // 요일별 세부설정 포함
+  const renderDayVariationsDetails = () => {
+    return (
+      <Grid item xs={12} mt={2}>
+        <Accordion>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+            <Typography variant="subtitle1">
+              요일별 세부 설정 (선택사항)
+            </Typography>
+          </AccordionSummary>
+          <AccordionDetails>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              선택한 요일마다 필요 인원수와 포지션을 다르게 설정할 수 있습니다.
+            </Typography>
+
+            <Tabs
+              value={selectedDay}
+              onChange={(_, newValue) => setSelectedDay(newValue)}
+              variant="scrollable"
+              scrollButtons="auto"
+              sx={{ mb: 2 }}
+            >
+              {DAYS_OF_WEEK.filter((day) => selectedDays.includes(day.id)).map(
+                (day) => (
+                  <Tab
+                    key={day.id}
+                    label={day.name}
+                    sx={{
+                      color:
+                        day.id === 0 || day.id === 6
+                          ? "error.main"
+                          : "text.primary",
+                    }}
+                  />
+                )
+              )}
+            </Tabs>
+
+            {selectedDay !== null && selectedDays.includes(selectedDay) && (
+              <Paper sx={{ p: 2 }}>
+                <Box>
+                  <Typography variant="subtitle2" gutterBottom>
+                    {DAYS_OF_WEEK.find((d) => d.id === selectedDay)?.name} 설정
+                  </Typography>
+
+                  <Grid container spacing={2} mt={1}>
+                    <Grid item xs={12}>
+                      <TextField
+                        fullWidth
+                        label={`${
+                          DAYS_OF_WEEK.find((d) => d.id === selectedDay)?.name
+                        } 필요 인원수`}
+                        type="number"
+                        size="small"
+                        value={
+                          newTemplate.dayVariations?.[selectedDay]
+                            ?.requiredStaff || newTemplate.requiredStaff
+                        }
+                        onChange={(e) =>
+                          handleDayStaffChange(
+                            selectedDay,
+                            parseInt(e.target.value) || 1
+                          )
+                        }
+                      />
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <Typography variant="body2" sx={{ mb: 1 }}>
+                        {DAYS_OF_WEEK.find((d) => d.id === selectedDay)?.name}{" "}
+                        필요 포지션
+                      </Typography>
+
+                      <TableContainer component={Paper} variant="outlined">
+                        <Table size="small">
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>포지션</TableCell>
+                              <TableCell align="right">필요 인원수</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {Object.entries(
+                              newTemplate.requiredPositions || {}
+                            ).map(([position]) => (
+                              <TableRow key={`${selectedDay}-${position}`}>
+                                <TableCell>{position}</TableCell>
+                                <TableCell align="right">
+                                  <TextField
+                                    type="number"
+                                    size="small"
+                                    value={
+                                      newTemplate.dayVariations?.[selectedDay]
+                                        ?.requiredPositions?.[position] ||
+                                      newTemplate.requiredPositions?.[
+                                        position
+                                      ] ||
+                                      0
+                                    }
+                                    onChange={(e) =>
+                                      handleDayPositionChange(
+                                        selectedDay,
+                                        position,
+                                        parseInt(e.target.value) || 0
+                                      )
+                                    }
+                                    sx={{ width: "80px" }}
+                                    InputProps={{ inputProps: { min: 0 } }}
+                                  />
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Grid>
+                  </Grid>
+                </Box>
+              </Paper>
+            )}
+          </AccordionDetails>
+        </Accordion>
       </Grid>
     );
   };
@@ -837,17 +923,17 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           {newTemplate ? "새 템플릿 추가" : "템플릿 편집"}
         </Typography>
         <Grid container spacing={2}>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  fullWidth
+          <Grid item xs={12} sm={6}>
+            <TextField
+              fullWidth
               label="템플릿 이름"
               value={editingTemplate.name}
               onChange={(e) => updateEditingTemplate("name", e.target.value)}
               margin="normal"
-                />
-              </Grid>
+            />
+          </Grid>
           <Grid item xs={12} sm={6}>
-                <TextField
+            <TextField
               fullWidth
               label="근무 유형"
               value={editingTemplate.type}
@@ -859,7 +945,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           <Grid item xs={12} sm={6}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <TimePicker
-                  label="시작 시간"
+                label="시작 시간"
                 value={new Date(`2022-01-01T${editingTemplate.startTime}`)}
                 onChange={(date) => {
                   if (date) {
@@ -874,11 +960,11 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                 slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
               />
             </LocalizationProvider>
-              </Grid>
+          </Grid>
           <Grid item xs={12} sm={6}>
             <LocalizationProvider dateAdapter={AdapterDateFns}>
               <TimePicker
-                  label="종료 시간"
+                label="종료 시간"
                 value={new Date(`2022-01-01T${editingTemplate.endTime}`)}
                 onChange={(date) => {
                   if (date) {
@@ -893,14 +979,14 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                 slotProps={{ textField: { fullWidth: true, margin: "normal" } }}
               />
             </LocalizationProvider>
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <TextField
               fullWidth
-                  type="number"
+              type="number"
               label="기본 필요 인원"
               value={editingTemplate.requiredStaff}
-                  onChange={(e) =>
+              onChange={(e) =>
                 updateEditingTemplate(
                   "requiredStaff",
                   parseInt(e.target.value) || 1
@@ -908,25 +994,28 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
               }
               margin="normal"
               InputProps={{ inputProps: { min: 1 } }}
-                />
-              </Grid>
-              <Grid item xs={12} sm={6}>
+            />
+          </Grid>
+          <Grid item xs={12} sm={6}>
             <MuiColorInput
               format="hex"
               value={editingTemplate.color}
               onChange={(color) => updateEditingTemplate("color", color)}
-                  label="색상"
-                  fullWidth
+              label="색상"
+              fullWidth
               margin="normal"
             />
           </Grid>
         </Grid>
 
+        {/* 적용 요일 선택 UI 추가 */}
+        {renderDayVariations()}
+
         {/* 포지션별 필요 인원수 설정 UI */}
         {renderPositionRequirements()}
 
-        {/* 요일별 설정 UI */}
-        {renderDayVariations()}
+        {/* 요일별 세부설정 포함 */}
+        {renderDayVariationsDetails()}
 
         <Grid item xs={12} mt={2}>
           <Box display="flex" justifyContent="flex-end">
@@ -972,15 +1061,15 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
         <Table size="small">
           <TableHead>
             <TableRow sx={{ backgroundColor: theme.palette.action.hover }}>
-              <TableCell width="30%">템플릿 이름</TableCell>
+              <TableCell width="25%">템플릿 이름</TableCell>
               <TableCell width="20%">시간</TableCell>
               <TableCell align="center" width="15%">
                 기본 인원
               </TableCell>
               <TableCell align="center" width="20%">
-                포지션
+                적용 요일
               </TableCell>
-              <TableCell align="right" width="15%">
+              <TableCell align="right" width="20%">
                 관리
               </TableCell>
             </TableRow>
@@ -1018,18 +1107,52 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
                 </TableCell>
                 <TableCell>
                   <Box display="flex" flexWrap="wrap" gap={0.5}>
-                    {template.requiredPositions &&
-                      Object.entries(template.requiredPositions).map(
-                        ([position, count]) => (
+                    {template.applicableDays &&
+                    template.applicableDays.length > 0 ? (
+                      template.applicableDays.length === 7 ? (
+                        <Chip size="small" label="모든 요일" />
+                      ) : template.applicableDays.length === 5 &&
+                        [1, 2, 3, 4, 5].every((day) =>
+                          template.applicableDays?.includes(day)
+                        ) ? (
+                        <Chip
+                          size="small"
+                          label="평일"
+                          color="primary"
+                          variant="outlined"
+                        />
+                      ) : template.applicableDays.length === 2 &&
+                        [0, 6].every((day) =>
+                          template.applicableDays?.includes(day)
+                        ) ? (
+                        <Chip
+                          size="small"
+                          label="주말"
+                          color="error"
+                          variant="outlined"
+                        />
+                      ) : (
+                        <Tooltip
+                          title={template.applicableDays
+                            .map((day) => {
+                              const dayInfo = DAYS_OF_WEEK.find(
+                                (d) => d.id === day
+                              );
+                              return dayInfo ? dayInfo.name : "";
+                            })
+                            .filter((name) => name)
+                            .join(", ")}
+                        >
                           <Chip
-                            key={position}
-                            label={`${position} ${count}명`}
                             size="small"
+                            label={`${template.applicableDays.length}일 선택됨`}
                             variant="outlined"
-                            sx={{ fontSize: "0.7rem" }}
                           />
-                        )
-                      )}
+                        </Tooltip>
+                      )
+                    ) : (
+                      <Chip size="small" label="모든 요일" variant="outlined" />
+                    )}
                   </Box>
                 </TableCell>
                 <TableCell align="right">
@@ -1073,17 +1196,17 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
 
     return (
       <>
-            <Box
-              sx={{
-                display: "flex",
+        <Box
+          sx={{
+            display: "flex",
             justifyContent: "space-between",
             mb: 2,
-              }}
-            >
+          }}
+        >
           <Typography variant="subtitle1">
             {currentType.name} 근무 템플릿 목록
           </Typography>
-              <Button
+          <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
@@ -1091,7 +1214,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
             size="small"
           >
             새 {currentType.name} 템플릿
-              </Button>
+          </Button>
         </Box>
         <TemplateList templates={tabTemplates} />
       </>
@@ -1124,7 +1247,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
         <Typography variant="h6">근무 템플릿 관리</Typography>
         <Box sx={{ display: "flex", alignItems: "center" }}>
           <Tooltip title="근무 파트 유형을 관리합니다. 새로운 파트를 추가하거나 기존 파트를 수정, 삭제할 수 있습니다.">
-              <Button
+            <Button
               size="small"
               variant="outlined"
               startIcon={<SettingsIcon />}
@@ -1132,14 +1255,14 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
               sx={{ mr: 1 }}
             >
               파트 관리
-              </Button>
+            </Button>
           </Tooltip>
           <Tooltip title="여기서 근무 템플릿을 생성하고 관리할 수 있습니다. 오픈/미들/마감 외에도 커스텀 근무 유형을 만들 수 있으며, 각 템플릿별로 요일마다 다른 포지션 및 필요 인원을 설정할 수 있습니다.">
             <IconButton size="small" sx={{ ml: 1 }}>
               <HelpIcon />
             </IconButton>
           </Tooltip>
-            </Box>
+        </Box>
       </DialogTitle>
 
       <DialogContent
@@ -1180,7 +1303,7 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
               />
             ))}
           </Tabs>
-          </Box>
+        </Box>
 
         <Box sx={{ flexGrow: 1, overflow: "auto" }}>
           {/* 동적으로 탭 패널 생성 */}
@@ -1227,52 +1350,52 @@ const TemplateManagerDialog: React.FC<TemplateManagerDialogProps> = ({
           </Typography>
 
           <TableContainer component={Paper} variant="outlined" sx={{ mb: 2 }}>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
                   <TableCell>파트 ID</TableCell>
-            <TableCell>이름</TableCell>
+                  <TableCell>이름</TableCell>
                   <TableCell>색상</TableCell>
                   <TableCell align="right">관리</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {shiftTypes.map((type) => (
                   <TableRow key={type.id}>
                     <TableCell>{type.id}</TableCell>
                     <TableCell>{type.name}</TableCell>
                     <TableCell>
-                <Box
-                  sx={{
+                      <Box
+                        sx={{
                           width: 24,
                           height: 24,
                           borderRadius: 1,
                           bgcolor: type.color,
                         }}
                       />
-              </TableCell>
+                    </TableCell>
                     <TableCell align="right">
                       <IconButton
                         size="small"
                         onClick={() => setEditingShiftType({ ...type })}
                       >
-                  <EditIcon fontSize="small" />
-                </IconButton>
+                        <EditIcon fontSize="small" />
+                      </IconButton>
                       {!type.isDefault && (
-                <IconButton
-                  size="small"
-                  color="error"
+                        <IconButton
+                          size="small"
+                          color="error"
                           onClick={() => handleDeleteShiftType(type.id)}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
                       )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </TableContainer>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
 
           <Button
             variant="outlined"
