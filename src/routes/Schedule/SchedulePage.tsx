@@ -340,7 +340,7 @@ interface CalendarEvent {
   extendedProps?: any; // 필요한 추가 정보
 }
 
-const drawerWidth = 260; // 사이드바 너비 정의
+const drawerWidth = 260; // Drawer 너비 정의
 
 const SchedulePage: React.FC = () => {
   const navigate = useNavigate();
@@ -356,7 +356,7 @@ const SchedulePage: React.FC = () => {
   const [store, setStore] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployeeIds, setFilteredEmployeeIds] = useState<string[]>([]);
-  const [showSidePanel, setShowSidePanel] = useState(true); // 초기값 true로 변경 (기본 열림)
+  const [showSidePanel, setShowSidePanel] = useState(true); // 패널 상태 추가/복원
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [showInfoAlert, setShowInfoAlert] = useState(true);
@@ -938,20 +938,20 @@ const SchedulePage: React.FC = () => {
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
-      {/* 사이드바 (variant, sx 수정) */}
+      {/* 사이드바 (열고 닫기 로직 적용) */}
       <Drawer
-        variant={isMobile ? "temporary" : "persistent"} // 모바일에서는 temporary
+        variant={isMobile ? "temporary" : "persistent"} // 반응형 variant
         anchor="left"
-        open={showSidePanel}
-        onClose={() => setShowSidePanel(false)} // 모바일에서 배경 클릭 시 닫기
+        open={showSidePanel} // open 상태 연결
+        onClose={() => setShowSidePanel(false)} // 모바일 배경 클릭 시 닫힘
         sx={{
           width: drawerWidth,
           flexShrink: 0,
           [`& .MuiDrawer-paper`]: {
             width: drawerWidth,
             boxSizing: "border-box",
-            position: "relative", // relative로 변경하여 흐름 유지
-            borderRight: `1px solid ${theme.palette.divider}`, // 구분선 추가
+            position: "relative",
+            borderRight: `1px solid ${theme.palette.divider}`,
           },
         }}
       >
@@ -1049,43 +1049,47 @@ const SchedulePage: React.FC = () => {
         )}
       </Drawer>
 
-      {/* 메인 컨텐츠 영역 (marginLeft 조정) */}
+      {/* 메인 컨텐츠 영역 (marginLeft 및 transition 적용) */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 2, // 패딩 조정
+          p: 2,
           display: "flex",
           flexDirection: "column",
           height: "100vh",
           overflow: "hidden",
-          marginLeft: isMobile || !showSidePanel ? 0 : 0, // 기본 마진 0, 필요시 Drawer 너비만큼 조정 가능하나 persistent는 자동 조절
           transition: theme.transitions.create("margin", {
-            // 부드러운 전환 효과
+            // 전환 효과
             easing: theme.transitions.easing.sharp,
             duration: theme.transitions.duration.leavingScreen,
           }),
+          marginLeft: `-${drawerWidth}px`, // 기본적으로 닫힌 상태의 마진
           ...(showSidePanel &&
             !isMobile && {
+              // 열렸을 때 마진 조정 (persistent variant)
               transition: theme.transitions.create("margin", {
                 easing: theme.transitions.easing.easeOut,
                 duration: theme.transitions.duration.enteringScreen,
               }),
-              // marginLeft: `${drawerWidth}px`, // persistent variant는 자동 마진 조절
+              marginLeft: 0,
             }),
         }}
       >
         <Toolbar />
+        {/* 상단 컨트롤 영역 (버튼 추가 및 배치 조정) */}
         <Box
           sx={{
-            mb: 2,
+            mb: 1,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
             flexShrink: 0,
           }}
         >
-          <Box sx={{ display: "flex", gap: 1, mr: "auto" }}>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            {" "}
+            {/* 좌측 버튼 그룹: 주간/월간 */}
             <Button
               size="small"
               variant={viewType === "timeGridWeek" ? "contained" : "outlined"}
@@ -1102,26 +1106,52 @@ const SchedulePage: React.FC = () => {
             </Button>
           </Box>
           <Box sx={{ display: "flex", gap: 1 }}>
+            {" "}
+            {/* 우측 버튼 그룹 */}
+            {/* 정보 아이콘 (필요시 주석 해제) */}
+            {/* {showInfoIcon && ( 
+                     <IconButton size="small" color="primary" onClick={handleInfoIconClick} sx={{ mr: 0.2 }}><InfoIcon fontSize="small" /></IconButton>
+                 )} */}
+            {/* --- 지난 주 복사 버튼 --- */}
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<ContentCopyIcon fontSize="small" />}
+              onClick={handleCopyLastWeek}
+              sx={{ fontWeight: 500 }}
+            >
+              지난 주 복사
+            </Button>
+            {/* 저장, 초기화 버튼 (임시) */}
+            <Button
+              variant="outlined"
+              startIcon={<RefreshIcon />}
+              onClick={() => alert("초기화 기능 구현 필요")}
+            >
+              초기화
+            </Button>
             <Button
               variant="contained"
               color="primary"
               startIcon={<SaveIcon />}
-              onClick={() => {
-                handleSaveSchedule([]);
-                alert("저장 버튼 로직 연결 필요");
-              }}
+              onClick={() => alert("저장 기능 구현 필요")}
             >
               저장
             </Button>
+            {/* --- 패널 열기/닫기 버튼 --- */}
             <Button
+              size="small"
               variant="outlined"
-              startIcon={<RefreshIcon />}
-              onClick={() => alert("초기화 버튼 로직 연결 필요")}
+              color="primary"
+              onClick={() => setShowSidePanel(!showSidePanel)}
+              sx={{ fontWeight: 500 }}
+              startIcon={showSidePanel ? <ChevronLeft /> : <ChevronRight />}
             >
-              초기화
+              {showSidePanel ? "패널 닫기" : "패널 열기"}
             </Button>
           </Box>
         </Box>
+
         {showInfoAlert && (
           <Alert
             severity="info"
