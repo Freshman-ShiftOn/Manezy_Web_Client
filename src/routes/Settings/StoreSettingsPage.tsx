@@ -11,35 +11,13 @@ import {
   Snackbar,
   Alert,
   Divider,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  SelectChangeEvent,
   Card,
   CardContent,
   CardHeader,
 } from "@mui/material";
-import {
-  Save as SaveIcon,
-  Store as StoreIcon,
-  AccessTime as AccessTimeIcon,
-} from "@mui/icons-material";
+import { Save as SaveIcon, Store as StoreIcon } from "@mui/icons-material";
 import { getStoreInfo, updateStoreInfo } from "../../services/api";
 import { Store } from "../../lib/types";
-
-// 시간 옵션 생성 (30분 간격)
-const generateTimeOptions = () => {
-  const options = [];
-  for (let i = 0; i < 24; i++) {
-    const hour = i.toString().padStart(2, "0");
-    options.push(`${hour}:00`);
-    options.push(`${hour}:30`);
-  }
-  return options;
-};
-
-const timeOptions = generateTimeOptions();
 
 function StoreSettingsPage() {
   const [loading, setLoading] = useState(true);
@@ -79,25 +57,10 @@ function StoreSettingsPage() {
     const { name, value } = e.target;
     setStore((prev) => ({
       ...prev,
-      [name]: name === "baseHourlyRate" ? Number(value) : value,
-    }));
-
-    // 오류 상태 지우기
-    if (errors[name]) {
-      setErrors((prev) => {
-        const newErrors = { ...prev };
-        delete newErrors[name];
-        return newErrors;
-      });
-    }
-  };
-
-  // 시간 선택 핸들러
-  const handleTimeChange = (e: SelectChangeEvent) => {
-    const { name, value } = e.target;
-    setStore((prev) => ({
-      ...prev,
-      [name]: value,
+      [name]:
+        name === "baseHourlyRate" || name === "weeklyHolidayHoursThreshold"
+          ? Number(value) || 0
+          : value,
     }));
 
     // 오류 상태 지우기
@@ -130,21 +93,12 @@ function StoreSettingsPage() {
       newErrors.baseHourlyRate = "유효한 시급을 입력해주세요";
     }
 
-    if (!store.openingHour) {
-      newErrors.openingHour = "오픈 시간을 선택해주세요";
-    }
-
-    if (!store.closingHour) {
-      newErrors.closingHour = "마감 시간을 선택해주세요";
-    }
-
-    // 오픈 시간이 마감 시간보다 늦을 경우
     if (
-      store.openingHour &&
-      store.closingHour &&
-      store.openingHour >= store.closingHour
+      store.weeklyHolidayHoursThreshold &&
+      store.weeklyHolidayHoursThreshold < 0
     ) {
-      newErrors.closingHour = "마감 시간은 오픈 시간보다 늦어야 합니다";
+      newErrors.weeklyHolidayHoursThreshold =
+        "주휴수당 기준 시간은 0 이상이어야 합니다.";
     }
 
     setErrors(newErrors);
@@ -199,7 +153,7 @@ function StoreSettingsPage() {
 
       <Grid container spacing={3}>
         {/* 지점 기본 정보 */}
-        <Grid item xs={12} md={6}>
+        <Grid item xs={12} md={8} lg={6}>
           <Card elevation={2}>
             <CardHeader
               title="지점 기본 정보"
@@ -234,7 +188,7 @@ function StoreSettingsPage() {
                   />
                 </Grid>
 
-                <Grid item xs={12}>
+                <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
                     label="전화번호"
@@ -247,7 +201,7 @@ function StoreSettingsPage() {
                   />
                 </Grid>
 
-                <Grid item xs={12}>
+                <Grid item xs={12} sm={6}>
                   <TextField
                     fullWidth
                     label="기본 시급"
@@ -257,84 +211,36 @@ function StoreSettingsPage() {
                     onChange={handleTextChange}
                     error={!!errors.baseHourlyRate}
                     helperText={errors.baseHourlyRate}
+                    required
                     InputProps={{
                       startAdornment: (
                         <InputAdornment position="start">₩</InputAdornment>
                       ),
+                      inputProps: { min: 0 },
                     }}
-                    required
                   />
                 </Grid>
-              </Grid>
-            </CardContent>
-          </Card>
-        </Grid>
 
-        {/* 영업 시간 설정 */}
-        <Grid item xs={12} md={6}>
-          <Card elevation={2}>
-            <CardHeader
-              title="영업 시간 설정"
-              avatar={<AccessTimeIcon color="primary" />}
-            />
-            <Divider />
-            <CardContent>
-              <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth error={!!errors.openingHour} required>
-                    <InputLabel id="opening-hour-label">오픈 시간</InputLabel>
-                    <Select
-                      labelId="opening-hour-label"
-                      name="openingHour"
-                      value={store.openingHour || ""}
-                      label="오픈 시간"
-                      onChange={handleTimeChange}
-                    >
-                      {timeOptions.map((time) => (
-                        <MenuItem key={`open-${time}`} value={time}>
-                          {time}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {errors.openingHour && (
-                      <Typography color="error" variant="caption">
-                        {errors.openingHour}
-                      </Typography>
-                    )}
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                  <FormControl fullWidth error={!!errors.closingHour} required>
-                    <InputLabel id="closing-hour-label">마감 시간</InputLabel>
-                    <Select
-                      labelId="closing-hour-label"
-                      name="closingHour"
-                      value={store.closingHour || ""}
-                      label="마감 시간"
-                      onChange={handleTimeChange}
-                    >
-                      {timeOptions.map((time) => (
-                        <MenuItem key={`close-${time}`} value={time}>
-                          {time}
-                        </MenuItem>
-                      ))}
-                    </Select>
-                    {errors.closingHour && (
-                      <Typography color="error" variant="caption">
-                        {errors.closingHour}
-                      </Typography>
-                    )}
-                  </FormControl>
-                </Grid>
-
-                <Grid item xs={12}>
-                  <Box sx={{ mt: 2 }}>
-                    <Alert severity="info">
-                      영업 시간은 근무 일정 관리 및 알바생 가능 시간 필터링에
-                      사용됩니다.
-                    </Alert>
-                  </Box>
+                <Grid item xs={12} sm={6}>
+                  <TextField
+                    fullWidth
+                    label="주휴수당 기준 시간 (주당)"
+                    name="weeklyHolidayHoursThreshold"
+                    type="number"
+                    value={store.weeklyHolidayHoursThreshold || ""}
+                    onChange={handleTextChange}
+                    error={!!errors.weeklyHolidayHoursThreshold}
+                    helperText={
+                      errors.weeklyHolidayHoursThreshold ||
+                      "주 15시간 이상 근무 시 주휴수당 지급 (일반적)"
+                    }
+                    InputProps={{
+                      endAdornment: (
+                        <InputAdornment position="end">시간</InputAdornment>
+                      ),
+                      inputProps: { min: 0 },
+                    }}
+                  />
                 </Grid>
               </Grid>
             </CardContent>
@@ -346,12 +252,17 @@ function StoreSettingsPage() {
         <Button
           variant="contained"
           color="primary"
-          size="large"
+          startIcon={
+            saving ? (
+              <CircularProgress size={20} color="inherit" />
+            ) : (
+              <SaveIcon />
+            )
+          }
           onClick={handleSave}
-          startIcon={<SaveIcon />}
           disabled={saving}
         >
-          {saving ? "저장 중..." : "설정 저장"}
+          {saving ? "저장 중..." : "변경사항 저장"}
         </Button>
       </Box>
 

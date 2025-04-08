@@ -36,6 +36,8 @@ import {
   ListItemText,
   ListItemIcon,
   Badge,
+  TableContainer,
+  ChipProps,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -51,6 +53,7 @@ import {
   ArrowUpward as ArrowUpwardIcon,
   ArrowDownward as ArrowDownwardIcon,
   FilterList as FilterListIcon,
+  Close as CloseIcon,
 } from "@mui/icons-material";
 import { getEmployees, getShifts, getStoreInfo } from "../../services/api";
 import { Employee, Shift, Store } from "../../lib/types";
@@ -82,16 +85,11 @@ function EmployeePage() {
     status: "active",
   });
 
-  // 필터 상태 추가
-  const [roleFilter, setRoleFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-
   // 상세 정보 팝업 상태
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
     null
   );
-  const [detailsTabValue, setDetailsTabValue] = useState(0);
 
   // 데이터 로드
   useEffect(() => {
@@ -222,8 +220,6 @@ function EmployeePage() {
       role: newEmployee.role || "알바생",
       status:
         (newEmployee.status as "active" | "inactive" | "pending") || "active",
-      bankAccount: newEmployee.bankAccount || "",
-      birthDate: newEmployee.birthDate || "",
     };
 
     const updatedEmployees = [...employees, employee];
@@ -241,8 +237,8 @@ function EmployeePage() {
     });
   };
 
-  // 알바생 상태에 따른 색상 반환
-  const getStatusColor = (status: string): string => {
+  // 알바생 상태에 따른 색상 반환 (반환 타입 명시)
+  const getStatusColor = (status: string): ChipProps["color"] => {
     switch (status) {
       case "active":
         return "success";
@@ -338,13 +334,8 @@ function EmployeePage() {
 
   // 필터링된 직원 목록
   const filteredEmployees = useMemo(() => {
-    return employees.filter((employee) => {
-      const roleMatch = roleFilter === "all" || employee.role === roleFilter;
-      const statusMatch =
-        statusFilter === "all" || employee.status === statusFilter;
-      return roleMatch && statusMatch;
-    });
-  }, [employees, roleFilter, statusFilter]);
+    return employees; // 필터링 없이 전체 반환
+  }, [employees]);
 
   // 역할별 색상 가져오기
   const getRoleColor = (
@@ -368,29 +359,6 @@ function EmployeePage() {
   const handleOpenDetails = (employee: Employee) => {
     setSelectedEmployee(employee);
     setDetailsOpen(true);
-  };
-
-  // 탭 변경 핸들러
-  const handleTabChange = (_event: React.SyntheticEvent, newValue: number) => {
-    setDetailsTabValue(newValue);
-  };
-
-  // 주간 근무 시간 변화율 계산
-  const calculateWeeklyHoursChange = (employeeId: string) => {
-    const currentWeekHours = calculateWeeklyHours(employeeId);
-    const previousWeekHours = calculatePreviousWeekHours(employeeId);
-
-    if (previousWeekHours === 0)
-      return { hours: currentWeekHours, percentage: 0, direction: "none" };
-
-    const change = currentWeekHours - previousWeekHours;
-    const percentage = Math.round((change / previousWeekHours) * 100);
-
-    return {
-      hours: currentWeekHours,
-      percentage: Math.abs(percentage),
-      direction: change >= 0 ? "up" : "down",
-    };
   };
 
   // 수정 핸들러 함수
@@ -422,293 +390,102 @@ function EmployeePage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom>
+      <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
         알바생 관리
       </Typography>
 
-      {/* 요약 카드 */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                등록된 알바생
-              </Typography>
-              <Typography variant="h4">{employees.length}명</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                평균 시급
-              </Typography>
-              <Typography variant="h4">
-                {employees.length > 0
-                  ? `₩${Math.round(
-                      employees.reduce((sum, emp) => sum + emp.hourlyRate, 0) /
-                        employees.length
-                    ).toLocaleString()}`
-                  : "₩0"}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                이번 달 예상 급여
-              </Typography>
-              <Typography variant="h4">
-                {`₩${employees
-                  .reduce((sum, emp) => sum + calculateMonthlyPay(emp), 0)
-                  .toLocaleString()}`}
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent>
-              <Typography variant="h6" color="text.secondary" gutterBottom>
-                이번 주 총 근무시간
-              </Typography>
-              <Typography
-                variant="h4"
-                style={{ display: "flex", alignItems: "center" }}
-              >
-                {`${employees.reduce(
-                  (sum, emp) => sum + calculateWeeklyHours(emp.id),
-                  0
-                )}시간`}
-                <Tooltip title="지난주 대비 5% 증가">
-                  <ArrowUpwardIcon color="success" sx={{ ml: 1 }} />
-                </Tooltip>
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* 필터 및 액션 버튼 */}
-      <Box
-        sx={{
-          mb: 3,
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <Box sx={{ display: "flex", gap: 2 }}>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel id="role-filter-label">역할</InputLabel>
-            <Select
-              labelId="role-filter-label"
-              value={roleFilter}
-              label="역할"
-              onChange={(e) => setRoleFilter(e.target.value)}
-              startAdornment={
-                <FilterListIcon fontSize="small" sx={{ mr: 0.5 }} />
-              }
-            >
-              <MenuItem value="all">전체</MenuItem>
-              <MenuItem value="바리스타">바리스타</MenuItem>
-              <MenuItem value="주방">주방</MenuItem>
-              <MenuItem value="서빙">서빙</MenuItem>
-              <MenuItem value="매니저">매니저</MenuItem>
-              <MenuItem value="알바생">알바생</MenuItem>
-            </Select>
-          </FormControl>
-          <FormControl size="small" sx={{ minWidth: 120 }}>
-            <InputLabel id="status-filter-label">상태</InputLabel>
-            <Select
-              labelId="status-filter-label"
-              value={statusFilter}
-              label="상태"
-              onChange={(e) => setStatusFilter(e.target.value)}
-              startAdornment={
-                <FilterListIcon fontSize="small" sx={{ mr: 0.5 }} />
-              }
-            >
-              <MenuItem value="all">전체</MenuItem>
-              <MenuItem value="active">재직중</MenuItem>
-              <MenuItem value="inactive">퇴사</MenuItem>
-              <MenuItem value="vacation">휴가중</MenuItem>
-            </Select>
-          </FormControl>
-        </Box>
-        <Button
-          variant="contained"
-          color="primary"
-          startIcon={<AddIcon />}
-          onClick={handleOpenDialog}
+      <Paper sx={{ mb: 3, p: 2 }}>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
         >
-          알바생 추가
-        </Button>
-      </Box>
+          <Typography variant="h6">직원 목록</Typography>
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleOpenDialog}
+          >
+            알바생 추가
+          </Button>
+        </Box>
+      </Paper>
 
-      {/* 알바생 목록 테이블 */}
-      <Paper sx={{ width: "100%", overflow: "hidden" }}>
-        <Table stickyHeader>
+      {/* 직원 테이블 (기본 정보 위주) */}
+      <TableContainer component={Paper}>
+        <Table>
           <TableHead>
             <TableRow>
               <TableCell>이름</TableCell>
               <TableCell>역할</TableCell>
+              <TableCell>연락처</TableCell>
               <TableCell>시급</TableCell>
               <TableCell>상태</TableCell>
-              <TableCell>연락처</TableCell>
-              <TableCell>근무 시간</TableCell>
-              <TableCell>예상 급여</TableCell>
-              <TableCell align="center">액션</TableCell>
+              <TableCell align="right">관리</TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
-            {loading ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">
-                  <CircularProgress size={24} />
+            {filteredEmployees.map((employee) => (
+              <TableRow
+                key={employee.id}
+                hover
+                sx={{ cursor: "pointer" }}
+                onClick={() => handleOpenDetails(employee)}
+              >
+                <TableCell>{employee.name}</TableCell>
+                <TableCell>{employee.role || "-"}</TableCell>
+                <TableCell>{employee.phoneNumber || "-"}</TableCell>
+                <TableCell>{employee.hourlyRate.toLocaleString()}원</TableCell>
+                <TableCell>
+                  <Chip
+                    label={getStatusLabel(employee.status)}
+                    color={getStatusColor(employee.status)}
+                    size="small"
+                  />
                 </TableCell>
-              </TableRow>
-            ) : filteredEmployees.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={8} align="center">
-                  등록된 알바생이 없습니다
-                </TableCell>
-              </TableRow>
-            ) : (
-              filteredEmployees.map((employee) => {
-                const weeklyHoursChange = calculateWeeklyHoursChange(
-                  employee.id
-                );
-
-                return (
-                  <TableRow
-                    key={employee.id}
-                    hover
-                    onClick={() => handleOpenDetails(employee)}
+                <TableCell align="right">
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleEditEmployee(employee);
+                    }}
                   >
-                    <TableCell>
-                      <Box
-                        sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                      >
-                        <Avatar
-                          sx={{
-                            width: 32,
-                            height: 32,
-                            bgcolor: "primary.main",
-                          }}
-                        >
-                          {employee.name.charAt(0)}
-                        </Avatar>
-                        <Typography>{employee.name}</Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={employee.role}
-                        color={getRoleColor(employee.role)}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>{`₩${employee.hourlyRate.toLocaleString()}`}</TableCell>
-                    <TableCell>
-                      <Chip
-                        label={getStatusLabel(employee.status)}
-                        sx={{
-                          bgcolor: getStatusColor(employee.status),
-                          color: "#fff",
-                        }}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {employee.phoneNumber}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {employee.email}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        주간: {weeklyHoursChange.hours}시간
-                        {weeklyHoursChange.direction !== "none" && (
-                          <Tooltip
-                            title={`지난주 대비 ${
-                              weeklyHoursChange.percentage
-                            }% ${
-                              weeklyHoursChange.direction === "up"
-                                ? "증가"
-                                : "감소"
-                            }`}
-                          >
-                            <Box component="span" sx={{ ml: 0.5 }}>
-                              {weeklyHoursChange.direction === "up" ? (
-                                <TrendingUpIcon
-                                  fontSize="small"
-                                  color="success"
-                                />
-                              ) : (
-                                <TrendingDownIcon
-                                  fontSize="small"
-                                  color="error"
-                                />
-                              )}
-                            </Box>
-                          </Tooltip>
-                        )}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        월간: {calculateMonthlyHours(employee.id)}시간
-                      </Typography>
-                    </TableCell>
-                    <TableCell>{`₩${calculateMonthlyPay(
-                      employee
-                    ).toLocaleString()}`}</TableCell>
-                    <TableCell align="center">
-                      <Tooltip title="수정">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleEditEmployee(employee);
-                          }}
-                        >
-                          <EditIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="삭제">
-                        <IconButton
-                          size="small"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteEmployee(employee.id);
-                          }}
-                        >
-                          <DeleteIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            )}
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteEmployee(employee.id);
+                    }}
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
-      </Paper>
+      </TableContainer>
 
-      {/* 알바생 등록/수정 다이얼로그 */}
+      {/* 직원 추가/수정 다이얼로그 JSX 수정 */}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         maxWidth="sm"
         fullWidth
       >
-        <DialogTitle>알바생 등록</DialogTitle>
-        <DialogContent dividers>
-          <Grid container spacing={2}>
+        <DialogTitle>
+          {newEmployee.id ? "알바생 수정" : "알바생 추가"}
+        </DialogTitle>{" "}
+        {/* 수정 시 제목 변경 */}
+        <DialogContent>
+          <Grid container spacing={2} sx={{ pt: 1 }}>
+            {" "}
+            {/* 상단 패딩 추가 */}
             <Grid item xs={12} sm={6}>
               <TextField
                 label="이름"
@@ -761,15 +538,15 @@ function EmployeePage() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
-                <InputLabel id="role-label">역할</InputLabel>
+                <InputLabel>역할</InputLabel>
                 <Select
-                  labelId="role-label"
-                  value={newEmployee.role}
                   label="역할"
+                  value={newEmployee.role}
                   onChange={(e) =>
                     setNewEmployee({ ...newEmployee, role: e.target.value })
                   }
                 >
+                  {/* 역할 목록 (필요시 수정) */}
                   <MenuItem value="매니저">매니저</MenuItem>
                   <MenuItem value="바리스타">바리스타</MenuItem>
                   <MenuItem value="홀 서빙">홀 서빙</MenuItem>
@@ -780,11 +557,10 @@ function EmployeePage() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth>
-                <InputLabel id="status-label">상태</InputLabel>
+                <InputLabel>상태</InputLabel>
                 <Select
-                  labelId="status-label"
-                  value={newEmployee.status}
                   label="상태"
+                  value={newEmployee.status}
                   onChange={(e) =>
                     setNewEmployee({
                       ...newEmployee,
@@ -793,35 +569,10 @@ function EmployeePage() {
                   }
                 >
                   <MenuItem value="active">재직 중</MenuItem>
-                  <MenuItem value="inactive">퇴직</MenuItem>
+                  <MenuItem value="inactive">퇴직/휴직</MenuItem>
                   <MenuItem value="pending">승인 대기</MenuItem>
                 </Select>
               </FormControl>
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="계좌 정보"
-                fullWidth
-                value={newEmployee.bankAccount}
-                onChange={(e) =>
-                  setNewEmployee({
-                    ...newEmployee,
-                    bankAccount: e.target.value,
-                  })
-                }
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <TextField
-                label="생년월일"
-                fullWidth
-                type="date"
-                InputLabelProps={{ shrink: true }}
-                value={newEmployee.birthDate}
-                onChange={(e) =>
-                  setNewEmployee({ ...newEmployee, birthDate: e.target.value })
-                }
-              />
             </Grid>
           </Grid>
         </DialogContent>
@@ -832,279 +583,80 @@ function EmployeePage() {
             color="primary"
             onClick={handleAddEmployee}
           >
-            등록
+            {" "}
+            {/* 핸들러 수정 필요 시 반영 */}
+            {newEmployee.id ? "수정" : "추가"} {/* 버튼 텍스트 변경 */}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* 알바생 상세 정보 팝업 */}
+      {/* 직원 상세 정보 다이얼로그 (단순화) */}
       <Dialog
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
-        maxWidth="md"
-        fullWidth
+        maxWidth="sm"
+        /* 크기 조정 */ fullWidth
       >
-        {selectedEmployee && (
-          <>
-            <DialogTitle>
-              <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                <Avatar sx={{ bgcolor: "primary.main" }}>
-                  {selectedEmployee.name.charAt(0)}
-                </Avatar>
-                <Typography variant="h6">{selectedEmployee.name}</Typography>
-                <Chip
-                  label={selectedEmployee.role}
-                  color={getRoleColor(selectedEmployee.role)}
-                  size="small"
-                  sx={{ ml: 1 }}
-                />
-              </Box>
-            </DialogTitle>
-            <Divider />
-            <DialogContent>
-              <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-                <Tabs
-                  value={detailsTabValue}
-                  onChange={handleTabChange}
-                  aria-label="employee details tabs"
-                >
-                  <Tab
-                    label="근무 일정"
-                    icon={<AccessTimeIcon />}
-                    iconPosition="start"
+        <DialogTitle>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <Avatar sx={{ mr: 2, bgcolor: "primary.main" }}>
+              <PersonIcon />
+            </Avatar>
+            <Typography variant="h6">
+              {selectedEmployee?.name} 상세 정보
+            </Typography>
+            <IconButton
+              sx={{ ml: "auto" }}
+              onClick={() => setDetailsOpen(false)}
+            >
+              <CloseIcon />
+            </IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {selectedEmployee ? (
+            <Grid container spacing={1}>
+              {" "}
+              {/* 간격 조정 */}
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>역할:</strong> {selectedEmployee.role || "-"}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>상태:</strong>{" "}
+                  <Chip
+                    label={getStatusLabel(selectedEmployee.status)}
+                    color={getStatusColor(selectedEmployee.status)}
+                    size="small"
                   />
-                  <Tab
-                    label="급여 내역"
-                    icon={<PaymentIcon />}
-                    iconPosition="start"
-                  />
-                  <Tab
-                    label="대타 요청"
-                    icon={<SwapHorizIcon />}
-                    iconPosition="start"
-                  />
-                  <Tab
-                    label="근무 변경 내역"
-                    icon={<HistoryIcon />}
-                    iconPosition="start"
-                  />
-                </Tabs>
-              </Box>
-
-              {/* 근무 일정 탭 */}
-              {detailsTabValue === 0 && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    근무 일정 요약
-                  </Typography>
-                  <Grid container spacing={2}>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="subtitle1">
-                          이번 주 근무 시간
-                        </Typography>
-                        <Typography variant="h4">
-                          {calculateWeeklyHours(selectedEmployee.id)}시간
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {format(startOfWeek(new Date()), "yyyy-MM-dd")} ~{" "}
-                          {format(endOfWeek(new Date()), "yyyy-MM-dd")}
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                    <Grid item xs={12} md={6}>
-                      <Paper sx={{ p: 2 }}>
-                        <Typography variant="subtitle1">
-                          이번 달 근무 시간
-                        </Typography>
-                        <Typography variant="h4">
-                          {calculateMonthlyHours(selectedEmployee.id)}시간
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary">
-                          {format(startOfMonth(new Date()), "yyyy-MM-dd")} ~{" "}
-                          {format(endOfMonth(new Date()), "yyyy-MM-dd")}
-                        </Typography>
-                      </Paper>
-                    </Grid>
-                  </Grid>
-
-                  <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>
-                    다가오는 근무 일정
-                  </Typography>
-                  <List>
-                    {shifts
-                      .filter(
-                        (shift) =>
-                          shift.employeeId === selectedEmployee.id &&
-                          new Date(shift.start) > new Date()
-                      )
-                      .sort(
-                        (a, b) =>
-                          new Date(a.start).getTime() -
-                          new Date(b.start).getTime()
-                      )
-                      .slice(0, 5)
-                      .map((shift) => (
-                        <ListItem key={shift.id} divider>
-                          <ListItemIcon>
-                            <AccessTimeIcon />
-                          </ListItemIcon>
-                          <ListItemText
-                            primary={format(
-                              new Date(shift.start),
-                              "yyyy-MM-dd (EEE)"
-                            )}
-                            secondary={`${format(
-                              new Date(shift.start),
-                              "HH:mm"
-                            )} ~ ${format(
-                              new Date(shift.end),
-                              "HH:mm"
-                            )} (${differenceInHours(
-                              new Date(shift.end),
-                              new Date(shift.start)
-                            )}시간)`}
-                          />
-                          {shift.isSubRequest && (
-                            <Chip
-                              label="대타 요청"
-                              color="warning"
-                              size="small"
-                            />
-                          )}
-                        </ListItem>
-                      ))}
-                    {shifts.filter(
-                      (shift) =>
-                        shift.employeeId === selectedEmployee.id &&
-                        new Date(shift.start) > new Date()
-                    ).length === 0 && (
-                      <ListItem>
-                        <ListItemText primary="예정된 근무 일정이 없습니다." />
-                      </ListItem>
-                    )}
-                  </List>
-                </Box>
-              )}
-
-              {/* 급여 내역 탭 */}
-              {detailsTabValue === 1 && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    급여 내역
-                  </Typography>
-                  <Paper sx={{ p: 2, mb: 3 }}>
-                    <Typography variant="subtitle1">
-                      이번 달 예상 급여
-                    </Typography>
-                    <Typography variant="h4">
-                      ₩{calculateMonthlyPay(selectedEmployee).toLocaleString()}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary">
-                      시급: ₩{selectedEmployee.hourlyRate.toLocaleString()} ×{" "}
-                      {calculateMonthlyHours(selectedEmployee.id)}시간
-                    </Typography>
-                  </Paper>
-
-                  <Typography variant="subtitle1" sx={{ mt: 3, mb: 1 }}>
-                    최근 급여 내역
-                  </Typography>
-                  <Alert severity="info" sx={{ mb: 2 }}>
-                    급여 내역은 급여 관리 화면에서 확인 및 관리할 수 있습니다.
-                  </Alert>
-                </Box>
-              )}
-
-              {/* 대타 요청 탭 */}
-              {detailsTabValue === 2 && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    대타 요청 내역
-                  </Typography>
-                  <List>
-                    {getSubstituteRequests(selectedEmployee.id).length > 0 ? (
-                      getSubstituteRequests(selectedEmployee.id).map(
-                        (request) => (
-                          <ListItem key={request.id} divider>
-                            <ListItemIcon>
-                              <SwapHorizIcon />
-                            </ListItemIcon>
-                            <ListItemText
-                              primary={format(
-                                new Date(request.start),
-                                "yyyy-MM-dd (EEE)"
-                              )}
-                              secondary={`${format(
-                                new Date(request.start),
-                                "HH:mm"
-                              )} ~ ${format(
-                                new Date(request.end),
-                                "HH:mm"
-                              )} (${differenceInHours(
-                                new Date(request.end),
-                                new Date(request.start)
-                              )}시간)`}
-                            />
-                            {request.isHighPriority && (
-                              <Chip
-                                label="우선순위 높음"
-                                color="error"
-                                size="small"
-                              />
-                            )}
-                          </ListItem>
-                        )
-                      )
-                    ) : (
-                      <ListItem>
-                        <ListItemText primary="대타 요청 내역이 없습니다." />
-                      </ListItem>
-                    )}
-                  </List>
-                </Box>
-              )}
-
-              {/* 근무 변경 내역 탭 */}
-              {detailsTabValue === 3 && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>
-                    근무 변경 내역
-                  </Typography>
-                  <List>
-                    {getShiftChanges(selectedEmployee.id).map((change) => (
-                      <ListItem key={change.id} divider>
-                        <ListItemIcon>
-                          <HistoryIcon />
-                        </ListItemIcon>
-                        <ListItemText
-                          primary={`${change.type}: ${change.description}`}
-                          secondary={format(
-                            new Date(change.date),
-                            "yyyy-MM-dd HH:mm"
-                          )}
-                        />
-                      </ListItem>
-                    ))}
-                  </List>
-                </Box>
-              )}
-            </DialogContent>
-            <DialogActions>
-              <Button onClick={() => setDetailsOpen(false)}>닫기</Button>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditEmployee(selectedEmployee);
-                  setDetailsOpen(false);
-                }}
-              >
-                수정
-              </Button>
-            </DialogActions>
-          </>
-        )}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>연락처:</strong> {selectedEmployee.phoneNumber || "-"}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>이메일:</strong> {selectedEmployee.email || "-"}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>시급:</strong>{" "}
+                  {selectedEmployee.hourlyRate.toLocaleString()}원
+                </Typography>
+              </Grid>
+            </Grid>
+          ) : (
+            <Typography>선택된 직원이 없습니다.</Typography>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDetailsOpen(false)}>닫기</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

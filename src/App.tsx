@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Routes, Route, Navigate, useNavigate } from "react-router-dom";
 import Layout from "./components/Layout";
-import SetupWizard from "./routes/Wizard/SetupWizard";
 import DashboardPage from "./routes/Dashboard/DashboardPage";
 import SchedulePage from "./routes/Schedule/SchedulePage";
 import EmployeePage from "./routes/Employees/EmployeePage";
@@ -36,16 +35,15 @@ export const AuthContext = React.createContext<{
   setLoggedIn: () => {},
 });
 
-// 임시 로그인 페이지
+// 임시 로그인 페이지 (로그인 후 이동 경로 변경)
 const LoginPage = () => {
   const navigate = useNavigate();
   const { setLoggedIn } = React.useContext(AuthContext);
 
   const handleLogin = () => {
-    // 로그인 로직 (여기서는 단순화)
     localStorage.setItem("isLoggedIn", "true");
     setLoggedIn(true);
-    navigate("/setup-check");
+    navigate("/"); // 로그인 후 메인 페이지(/)로 이동
   };
 
   return (
@@ -341,62 +339,58 @@ const LoginPage = () => {
   );
 };
 
-// 초기 설정 확인 및 리디렉션 컴포넌트
+// 초기 설정 확인 컴포넌트 (마법사 경로 제거 및 리다이렉트 경로 변경)
 const SetupCheck = () => {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [isSetupComplete, setIsSetupComplete] = useState(false);
+  const { isLoggedIn } = React.useContext(AuthContext);
 
   useEffect(() => {
+    if (!isLoggedIn) return; // 로그인 안됐으면 체크 안함
+
     const checkSetup = async () => {
       try {
-        setLoading(true);
-        const isSetup = await hasInitialSetup();
-
-        if (isSetup) {
-          // 지점 정보 재확인
-          const storeInfo = await getStoreInfo();
-          if (storeInfo && storeInfo.id) {
-            console.log("지점 정보 확인됨:", storeInfo);
-            navigate("/dashboard");
-          } else {
-            console.log("지점 ID가 없음, 설정 마법사로 이동");
-            navigate("/setup");
-          }
-        } else {
-          console.log("초기 설정 필요, 더미 데이터 생성");
-          generateDummyData(); // 메가커피 서울대점 더미 데이터 자동 생성
-          navigate("/dashboard");
-        }
+        const setupNeeded = await hasInitialSetup();
+        setIsSetupComplete(!setupNeeded);
       } catch (error) {
-        console.error("설정 확인 오류:", error);
-        navigate("/setup");
+        console.error("초기 설정 확인 오류:", error);
+        // 오류 발생 시 우선 설정 완료된 것으로 간주하고 메인으로 보냄
+        setIsSetupComplete(true);
       } finally {
         setLoading(false);
       }
     };
-
     checkSetup();
-  }, [navigate]);
+  }, [isLoggedIn]);
 
   if (loading) {
     return (
-      <Container maxWidth="sm">
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            height: "100vh",
-          }}
-        >
-          <CircularProgress color="primary" />
-          <Box ml={2}>환영합니다! 설정을 확인하는 중...</Box>
-        </Box>
-      </Container>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "100vh",
+        }}
+      >
+        <CircularProgress />
+        <Typography sx={{ ml: 2 }}>초기 설정을 확인하는 중...</Typography>
+      </Box>
     );
   }
 
-  return null;
+  // 설정 필요 시 (MVP에서는 사용 안함, 메인으로 리다이렉트)
+  if (!isSetupComplete) {
+    // return <Navigate to="/wizard" replace />; // 제거
+    console.warn(
+      "초기 설정이 필요하지만 마법사 기능이 제거되었습니다. 메인 페이지로 이동합니다."
+    );
+    // 필요시 여기에 간단한 안내 메시지 추가 가능
+    return <Navigate to="/" replace />; // 메인 페이지로 리다이렉트
+  }
+
+  // 설정 완료 시 메인 페이지로 리다이렉트
+  return <Navigate to="/" replace />;
 };
 
 // 인증 필요한 라우트를 위한 보호 컴포넌트
@@ -411,7 +405,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
 };
 
 function App() {
-  const [isLoggedIn, setLoggedIn] = useState(() => {
+  const [isLoggedIn, setLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem("isLoggedIn") === "true";
   });
 
@@ -420,56 +414,34 @@ function App() {
       <CssBaseline />
       <AuthContext.Provider value={{ isLoggedIn, setLoggedIn }}>
         <Routes>
-          {/* 로그인 페이지 */}
           <Route path="/login" element={<LoginPage />} />
-
-          {/* 설정 확인 */}
+          {/* 초기 설정 확인 라우트 */}
           <Route
             path="/setup-check"
-            element={
-              <ProtectedRoute>
-                <SetupCheck />
-              </ProtectedRoute>
-            }
+            element={isLoggedIn ? <SetupCheck /> : <Navigate to="/login" />}
           />
+          {/* 마법사 라우트 제거 */}
+          {/* <Route path="/wizard" element={isLoggedIn ? <SetupWizard /> : <Navigate to="/login" />} /> */}
 
-          {/* 마법사 (초기 설정) */}
-          <Route
-            path="/setup/*"
-            element={
-              <ProtectedRoute>
-                <SetupWizard />
-              </ProtectedRoute>
-            }
-          />
-
-          {/* 메인 레이아웃 안에 들어가는 페이지들 */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <Layout />
-              </ProtectedRoute>
-            }
-          >
-            <Route path="/dashboard" element={<DashboardPage />} />
-            <Route path="/schedule" element={<SchedulePage />} />
-            <Route path="/employees" element={<EmployeePage />} />
-            <Route path="/payroll" element={<PayrollPage />} />
-            <Route path="/settings" element={<StoreSettingsPage />} />
-          </Route>
-
-          {/* 기본 리디렉션 */}
+          {/* 메인 레이아웃 */}
           <Route
             path="/"
-            element={
-              isLoggedIn ? (
-                <Navigate to="/setup-check" />
-              ) : (
-                <Navigate to="/login" />
-              )
-            }
+            element={isLoggedIn ? <Layout /> : <Navigate to="/login" />}
+          >
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="schedule" element={<SchedulePage />} />
+            <Route path="employees" element={<EmployeePage />} />
+            <Route path="payroll" element={<PayrollPage />} />
+            <Route path="settings" element={<StoreSettingsPage />} />
+            {/* 다른 보호된 라우트들 */}
+          </Route>
+
+          {/* 로그인 안했을 때 기본 리다이렉트 */}
+          <Route
+            path="*"
+            element={<Navigate to={isLoggedIn ? "/" : "/login"} />}
           />
-          <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </AuthContext.Provider>
     </ThemeProvider>

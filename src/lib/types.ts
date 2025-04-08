@@ -7,6 +7,7 @@ export interface Store {
   baseHourlyRate: number; // 기본 시급
   openingHour: string; // '09:00'
   closingHour: string; // '22:00'
+  weeklyHolidayHoursThreshold?: number; // 주휴수당 계산 기준 시간 (주당) - Optional 추가
   // 추가 정보는 필요에 따라 확장
 }
 

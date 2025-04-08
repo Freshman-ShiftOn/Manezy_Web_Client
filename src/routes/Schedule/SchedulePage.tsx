@@ -83,6 +83,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Info as InfoIcon,
+  Edit as EditIcon,
 } from "@mui/icons-material";
 import ShiftDialog from "./ShiftDialog";
 import Schedule from "./Schedule";
@@ -292,8 +293,8 @@ const DEFAULT_SHIFT_TEMPLATES: ShiftTemplate[] = [
   },
 ];
 
-// 페이지 탭 타입
-type SchedulePageTab = "calendar" | "requests" | "optimal";
+// SchedulePage의 탭 타입 정의
+type SchedulePageTab = "calendar" | "planner" | "optimal"; // "requests" 제거, "planner" 추가
 
 // ShiftEvent와 SimpleShiftEvent 간 변환 유틸리티 함수
 const toShiftEvent = (event: SimpleShiftEvent): any => {
@@ -1354,10 +1355,10 @@ const SchedulePage: React.FC = () => {
             value="calendar"
           />
           <Tab
-            icon={<InboxIcon />}
+            icon={<EditIcon />}
             iconPosition="start"
-            label="대타 요청 관리"
-            value="requests"
+            label="스케줄 짜기"
+            value="planner"
           />
           <Tab
             icon={<AutoAwesomeIcon />}
@@ -1991,14 +1992,7 @@ const SchedulePage: React.FC = () => {
       )}
 
       {/* 요청 관리 탭 */}
-      {activeTab === "requests" && (
-        <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
-          {/* RequestManagement 컴포넌트 제거 */}
-        </Box>
-      )}
-
-      {/* 주간 스케줄 탭 */}
-      {activeTab === "optimal" && (
+      {activeTab === "planner" && (
         <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
           <Schedule
             onAssignEmployee={handleAssignEmployee}

@@ -269,7 +269,7 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
     });
   }, [employeesByRole]);
 
-  // createEmptySchedule 함수 내부 수정 (옵셔널 타입 반영)
+  // 빈 스케줄 생성 함수 (useCallback 유지)
   const createEmptySchedule = useCallback(
     (currentTimeslots: TimeSlot[]): ScheduleShift[] => {
       const newSchedule: ScheduleShift[] = [];
@@ -294,6 +294,92 @@ const DragDropScheduler: React.FC<DragDropSchedulerProps> = ({
     },
     []
   );
+
+  // 초기 스케줄 설정 및 변환 로직 수정
+  useEffect(() => {
+    const emptySchedule = createEmptySchedule(timeSlots);
+
+    if (initialSchedule && initialSchedule.length > 0 && employees.length > 0) {
+      const scheduleMap = new Map<string, ScheduleShift>();
+      emptySchedule.forEach((shift) =>
+        scheduleMap.set(shift.id, { ...shift, employees: [] })
+      );
+
+      initialSchedule.forEach((shiftData) => {
+        const startDate = new Date(shiftData.start);
+        const dayKey = getDayKeyFromNumber(startDate.getDay());
+
+        let timeSlotId: string | undefined = undefined; // 타입 명시 및 초기화
+
+        // 1. shiftType (open | middle | close) 확인
+        if (
+          shiftData.shiftType &&
+          timeSlots.some((ts) => ts.id === shiftData.shiftType)
+        ) {
+          timeSlotId = shiftData.shiftType;
+        }
+        // 2. shiftType 없으면 시작 시간으로 시간대 ID 추정
+        else {
+          const startTimeStr = startDate.toLocaleTimeString("en-GB", {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+          const matchedSlot = timeSlots.find(
+            (ts) => ts.startTime === startTimeStr
+          );
+          if (matchedSlot) {
+            timeSlotId = matchedSlot.id;
+          }
+        }
+
+        // 시간대 ID를 찾은 경우에만 처리
+        if (timeSlotId) {
+          const shiftId = `${dayKey}-${timeSlotId}`;
+
+          if (scheduleMap.has(shiftId)) {
+            const existingShift = scheduleMap.get(shiftId)!;
+            const shiftEmployees: ScheduleShiftEmployee[] = [];
+
+            shiftData.employeeIds.forEach((empId) => {
+              const employee = employees.find((e) => e.id === empId);
+              if (employee) {
+                shiftEmployees.push({
+                  id: employee.id,
+                  name: employee.name,
+                  role: employee.role || "일반",
+                  avatarColor: getAvatarColor(employee.name),
+                });
+              }
+            });
+
+            const currentEmployeeIds = new Set(
+              existingShift.employees.map((e) => e.id)
+            );
+            shiftEmployees.forEach((newEmp) => {
+              if (!currentEmployeeIds.has(newEmp.id)) {
+                existingShift.employees.push(newEmp);
+              }
+            });
+
+            existingShift.maxEmployees =
+              shiftData.requiredStaff || existingShift.maxEmployees;
+            scheduleMap.set(shiftId, existingShift);
+          } else {
+            console.warn(
+              `Shift with id ${shiftId} not found in base schedule map`
+            );
+          }
+        } else {
+          console.warn(
+            `Could not determine valid timeSlotId for shift: ${shiftData.id}, start: ${shiftData.start}`
+          );
+        }
+      });
+      setSchedule(Array.from(scheduleMap.values()));
+    } else {
+      setSchedule(emptySchedule);
+    }
+  }, [initialSchedule, employees, timeSlots, createEmptySchedule]);
 
   // 드래그 종료 핸들러
   const handleDragEnd = (result: DropResult) => {
