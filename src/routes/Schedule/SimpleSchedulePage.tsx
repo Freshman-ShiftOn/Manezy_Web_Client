@@ -1404,11 +1404,10 @@ const SimpleSchedulePage: React.FC = () => {
       {isDialogOpen && selectedEvent && (
         <ShiftDialog
           eventData={selectedEvent}
-          isNew={isNewEvent}
+          isNew={!selectedEvent.id}
           employees={employees}
           onClose={handleCloseDialog}
           onSave={handleSaveShift}
-          onSubstituteRequest={handleSubstituteRequest}
         />
       )}
 

@@ -10,104 +10,11 @@ import {
   Tabs,
 } from "@mui/material";
 import { getEmployees } from "../../services/api";
-import { Employee } from "../../lib/types";
+import { Employee, Shift, Store } from "../../lib/types";
 import WeeklyScheduleManager from "./components/WeeklyScheduleManager";
 import DragDropScheduler from "./components/DragDropScheduler";
-import TemplateManagerDialog from "./TemplateManagerDialog";
-import {
-  Settings as SettingsIcon,
-  Restore as RestoreIcon,
-  ViewWeek as ViewWeekIcon,
-  CalendarViewWeek as CalendarViewWeekIcon,
-  Add as AddIcon,
-} from "@mui/icons-material";
 import ShiftDialog from "./ShiftDialog";
 import mockData from "../../lib/mockData";
-
-// 모의 직원 데이터
-const MOCK_EMPLOYEES: Employee[] = [
-  {
-    id: "emp-1",
-    name: "김지은",
-    email: "jieun.kim@example.com",
-    phoneNumber: "010-1234-5678",
-    role: "매니저",
-    status: "active",
-    hourlyRate: 12000,
-  },
-  {
-    id: "emp-2",
-    name: "박민우",
-    email: "minwoo.park@example.com",
-    phoneNumber: "010-2345-6789",
-    role: "바리스타",
-    status: "active",
-    hourlyRate: 10000,
-  },
-  {
-    id: "emp-3",
-    name: "정도윤",
-    email: "doyoon.jung@example.com",
-    phoneNumber: "010-3456-7890",
-    role: "매니저",
-    status: "active",
-    hourlyRate: 12000,
-  },
-  {
-    id: "emp-4",
-    name: "한수정",
-    email: "sujeong.han@example.com",
-    phoneNumber: "010-4567-8901",
-    role: "바리스타",
-    status: "active",
-    hourlyRate: 10000,
-  },
-  {
-    id: "emp-5",
-    name: "이지원",
-    email: "jiwon.lee@example.com",
-    phoneNumber: "010-5678-9012",
-    role: "캐셔",
-    status: "active",
-    hourlyRate: 9500,
-  },
-  {
-    id: "emp-6",
-    name: "최서연",
-    email: "seoyeon.choi@example.com",
-    phoneNumber: "010-6789-0123",
-    role: "서빙",
-    status: "active",
-    hourlyRate: 9500,
-  },
-  {
-    id: "emp-7",
-    name: "윤하은",
-    email: "haeun.yoon@example.com",
-    phoneNumber: "010-7890-1234",
-    role: "주방",
-    status: "active",
-    hourlyRate: 10000,
-  },
-  {
-    id: "emp-8",
-    name: "강태현",
-    email: "taehyun.kang@example.com",
-    phoneNumber: "010-8901-2345",
-    role: "주방",
-    status: "active",
-    hourlyRate: 10000,
-  },
-  {
-    id: "emp-9",
-    name: "임지현",
-    email: "jihyun.im@example.com",
-    phoneNumber: "010-9012-3456",
-    role: "서빙",
-    status: "active",
-    hourlyRate: 9500,
-  },
-];
 
 // 시간대 템플릿 타입 정의
 interface ShiftTemplate {
@@ -172,134 +79,29 @@ const DEFAULT_SHIFT_TEMPLATES: ShiftTemplate[] = [
   },
 ];
 
-// 샘플 스케줄 생성 타입
+// 모의 직원 데이터 제거 (useEffect에서 설정)
+/*
+const MOCK_EMPLOYEES: Employee[] = [
+  // ...
+];
+*/
+
+// ScheduleItem 타입 정의 제거
+/*
 interface ScheduleItem {
-  id: string;
-  day: number; // 0-6 (일요일-토요일)
+  employeeId: string;
+  day: number;
   shiftType: string;
-  position: string;
-  employeeId: string | null;
 }
+*/
 
-// 시간대별 배정된 직원들의 초기 스케줄
-const generateInitialSchedule = (employees: Employee[]): ScheduleItem[] => {
-  if (!employees || employees.length === 0) return [];
-
-  // 직원 ID를 역할별로 그룹화
-  const roleMap: Record<string, string[]> = {};
-
-  employees.forEach((emp) => {
-    if (!emp.role) return;
-
-    if (!roleMap[emp.role]) {
-      roleMap[emp.role] = [];
-    }
-    roleMap[emp.role].push(emp.id);
-  });
-
-  const schedule: ScheduleItem[] = [];
-  const days = [0, 1, 2, 3, 4, 5, 6]; // 일~토
-
-  // 각 요일, 각 시간대에 대해 샘플 스케줄 생성
-  days.forEach((day) => {
-    // 오픈 (매니저 1명, 바리스타 1명, 서빙 1명)
-    if (roleMap["매니저"] && roleMap["매니저"].length > 0) {
-      schedule.push({
-        id: `${day}-open-매니저-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "open",
-        position: "매니저",
-        employeeId: roleMap["매니저"][day % roleMap["매니저"].length],
-      });
-    }
-
-    if (roleMap["바리스타"] && roleMap["바리스타"].length > 0) {
-      schedule.push({
-        id: `${day}-open-바리스타-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "open",
-        position: "바리스타",
-        employeeId: roleMap["바리스타"][day % roleMap["바리스타"].length],
-      });
-    }
-
-    if (roleMap["서빙"] && roleMap["서빙"].length > 0) {
-      schedule.push({
-        id: `${day}-open-서빙-0-${Math.random().toString(36).substring(2, 9)}`,
-        day,
-        shiftType: "open",
-        position: "서빙",
-        employeeId: roleMap["서빙"][day % roleMap["서빙"].length],
-      });
-    }
-
-    // 미들 (바리스타 1명, 캐셔 1명)
-    if (roleMap["바리스타"] && roleMap["바리스타"].length > 0) {
-      schedule.push({
-        id: `${day}-middle-바리스타-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "middle",
-        position: "바리스타",
-        employeeId: roleMap["바리스타"][(day + 1) % roleMap["바리스타"].length],
-      });
-    }
-
-    if (roleMap["캐셔"] && roleMap["캐셔"].length > 0) {
-      schedule.push({
-        id: `${day}-middle-캐셔-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "middle",
-        position: "캐셔",
-        employeeId: roleMap["캐셔"][day % roleMap["캐셔"].length],
-      });
-    }
-
-    // 마감 (매니저 1명, 바리스타 1명, 주방 1명)
-    if (roleMap["매니저"] && roleMap["매니저"].length > 0) {
-      schedule.push({
-        id: `${day}-close-매니저-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "close",
-        position: "매니저",
-        employeeId: roleMap["매니저"][(day + 1) % roleMap["매니저"].length],
-      });
-    }
-
-    if (roleMap["바리스타"] && roleMap["바리스타"].length > 0) {
-      schedule.push({
-        id: `${day}-close-바리스타-0-${Math.random()
-          .toString(36)
-          .substring(2, 9)}`,
-        day,
-        shiftType: "close",
-        position: "바리스타",
-        employeeId: roleMap["바리스타"][(day + 2) % roleMap["바리스타"].length],
-      });
-    }
-
-    if (roleMap["주방"] && roleMap["주방"].length > 0) {
-      schedule.push({
-        id: `${day}-close-주방-0-${Math.random().toString(36).substring(2, 9)}`,
-        day,
-        shiftType: "close",
-        position: "주방",
-        employeeId: roleMap["주방"][day % roleMap["주방"].length],
-      });
-    }
-  });
-
-  return schedule;
+// generateInitialSchedule 함수 제거 또는 수정 (여기서는 제거)
+/*
+const generateInitialSchedule = (employees: Employee[]): Shift[] => { // 타입을 Shift[]로 변경
+  // ... Shift 객체를 생성하여 반환하는 로직 ...
+  return []; // 예시
 };
+*/
 
 interface ScheduleProps {
   onAssignEmployee?: (shiftId: string, employeeId: string) => void;
@@ -312,61 +114,49 @@ const Schedule: React.FC<ScheduleProps> = ({
 }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
-  const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>(
-    DEFAULT_SHIFT_TEMPLATES
-  );
-  const [initialSchedule, setInitialSchedule] = useState<ScheduleItem[]>([]);
+  const [initialSchedule, setInitialSchedule] = useState<Shift[]>([]); // 타입을 Shift[]로 변경
   const [showShiftDialog, setShowShiftDialog] = useState(false);
   const [currentShift, setCurrentShift] = useState<any>(null);
-  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
-  const [schedule, setSchedule] = useState(mockData.schedules);
+  const [schedule, setSchedule] = useState<Shift[]>(mockData.schedules); // 타입 명시
 
-  // 초기 데이터 로딩
   useEffect(() => {
     const loadEmployees = async () => {
       setLoading(true);
       try {
-        // API 호출 대신 모의 데이터 사용
-        //const employeesData = await getEmployees();
-        setEmployees(MOCK_EMPLOYEES);
-        // 초기 스케줄 생성
-        setInitialSchedule(generateInitialSchedule(MOCK_EMPLOYEES));
+        // API 호출 대신 실제 데이터 로딩 로직 구현 필요
+        // 예시: const employeesData = await getEmployees();
+        // setEmployees(employeesData);
+
+        // 모의 데이터 사용 (임시)
+        const mockEmployees: Employee[] = [
+          {
+            id: "emp-1",
+            name: "김지은",
+            phoneNumber: "010-1234-5678",
+            role: "매니저",
+            status: "active",
+            hourlyRate: 12000,
+          },
+          {
+            id: "emp-2",
+            name: "박민우",
+            phoneNumber: "010-2345-6789",
+            role: "바리스타",
+            status: "active",
+            hourlyRate: 10000,
+          },
+          // ... 다른 직원들 ...
+        ];
+        setEmployees(mockEmployees);
+        setInitialSchedule([]); // 초기 스케줄은 빈 배열
       } catch (err) {
         console.error("직원 데이터 로딩 오류:", err);
       } finally {
         setLoading(false);
       }
     };
-
     loadEmployees();
-    loadTemplatesFromStorage();
   }, []);
-
-  // 템플릿 로딩 함수
-  const loadTemplatesFromStorage = () => {
-    try {
-      const savedTemplates = localStorage.getItem("shiftTemplates");
-      if (savedTemplates) {
-        setShiftTemplates(JSON.parse(savedTemplates));
-      }
-    } catch (error) {
-      console.error("템플릿 로딩 오류:", error);
-      // 오류 발생시 기본 템플릿 사용
-      setShiftTemplates(DEFAULT_SHIFT_TEMPLATES);
-    }
-  };
-
-  // 템플릿 저장 함수
-  const handleSaveTemplates = (updatedTemplates: ShiftTemplate[]) => {
-    setShiftTemplates(updatedTemplates);
-
-    // 로컬 스토리지에 템플릿 저장
-    try {
-      localStorage.setItem("shiftTemplates", JSON.stringify(updatedTemplates));
-    } catch (error) {
-      console.error("템플릿 저장 오류:", error);
-    }
-  };
 
   // 드래그 앤 드롭 스케줄 저장
   const handleDragDropScheduleSave = (dragDropSchedule: any) => {
@@ -375,40 +165,8 @@ const Schedule: React.FC<ScheduleProps> = ({
     // TODO: 스케줄을 저장하는 API 호출 구현
   };
 
-  // 초기 샘플 스케줄 재생성
-  const regenerateInitialSchedule = () => {
-    if (
-      window.confirm(
-        "샘플 스케줄을 새로 생성하시겠습니까? 현재 진행 중인 스케줄 작업은 저장되지 않습니다."
-      )
-    ) {
-      const newSchedule = generateInitialSchedule(employees);
-      setInitialSchedule(newSchedule);
-    }
-  };
-
-  const handleShiftClick = (shift) => {
+  const handleShiftClick = (shift: Shift) => {
     setCurrentShift(shift);
-    setShowShiftDialog(true);
-  };
-
-  const handleAddShift = () => {
-    // 새 근무 생성을 위한 기본값 설정
-    const now = new Date();
-    const oneHourLater = new Date(now.getTime() + 3600000);
-
-    setCurrentShift({
-      id: `shift-${Date.now()}`,
-      title: "",
-      start: now.toISOString(),
-      end: oneHourLater.toISOString(),
-      extendedProps: {
-        employeeIds: [],
-        employeeNames: [],
-        shiftType: "middle",
-        requiredStaff: 1,
-      },
-    });
     setShowShiftDialog(true);
   };
 
@@ -421,16 +179,8 @@ const Schedule: React.FC<ScheduleProps> = ({
     // TODO: API로 근무 일정 저장 구현
     setShowShiftDialog(false);
 
-    // DragDropScheduler에 반영할 수 있도록 스케줄 업데이트
-    // 실제 구현에서는 API 응답으로 업데이트
-  };
-
-  const handleTemplateManagerOpen = () => {
-    setShowTemplateDialog(true);
-  };
-
-  const handleTemplateManagerClose = () => {
-    setShowTemplateDialog(false);
+    // DragDropScheduler에 반영할 수 있도록 스케줄 업데이트 (실제 구현에서는 API 응답 활용)
+    // 예시: 현재 로컬 schedule 상태 업데이트 로직 추가 필요
   };
 
   // 로딩 상태 표시
@@ -461,40 +211,43 @@ const Schedule: React.FC<ScheduleProps> = ({
       >
         <Typography variant="h6">주간 스케줄 관리</Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <Button
+          {/* "샘플 직원 배정" 버튼 제거 */}
+          {/* <Button
             variant="outlined"
             color="secondary"
             startIcon={<RestoreIcon />}
             onClick={regenerateInitialSchedule}
           >
             샘플 직원 배정
-          </Button>
-          <Button
+          </Button> */}
+          {/* "근무 템플릿 관리" 버튼 제거 */}
+          {/* <Button
             variant="outlined"
             color="primary"
             startIcon={<SettingsIcon />}
             onClick={handleTemplateManagerOpen}
           >
             근무 템플릿 관리
-          </Button>
-          <Button
+          </Button> */}
+          {/* "시간대 추가" 버튼 제거 */}
+          {/* <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
             onClick={handleAddShift}
           >
             시간대 추가
-          </Button>
+          </Button> */}
         </Box>
       </Box>
       <Divider />
       <Box
         sx={{
-          height: "calc(100% - 60px)",
+          height: "calc(100% - 60px)", // 높이 조절
           display: "flex",
           flexDirection: "column",
           p: 2,
-          overflowY: "auto", // 스크롤 추가
+          overflow: "hidden", // 스크롤은 DragDropScheduler 내부에서 처리하도록 변경
         }}
       >
         {loading ? (
@@ -512,21 +265,13 @@ const Schedule: React.FC<ScheduleProps> = ({
           <DragDropScheduler
             employees={employees}
             onSaveSchedule={handleDragDropScheduleSave}
-            initialSchedule={[]}
-            templates={shiftTemplates}
+            initialSchedule={initialSchedule}
           />
         )}
       </Box>
 
-      {/* 템플릿 관리 대화상자 */}
-      {showTemplateDialog && (
-        <TemplateManagerDialog
-          open={showTemplateDialog}
-          onClose={handleTemplateManagerClose}
-          templates={shiftTemplates}
-          onSaveTemplates={handleSaveTemplates}
-        />
-      )}
+      {/* 템플릿 관리 대화상자 제거 */}
+      {/* {showTemplateDialog && (...)} */}
 
       {/* ShiftDialog */}
       {showShiftDialog && currentShift && (
@@ -536,7 +281,7 @@ const Schedule: React.FC<ScheduleProps> = ({
           employees={employees}
           onClose={handleShiftDialogClose}
           onSave={handleShiftSave}
-          onOpenTemplateManager={handleTemplateManagerOpen}
+          // onOpenTemplateManager={handleTemplateManagerOpen} // 제거
         />
       )}
     </Paper>
