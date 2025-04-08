@@ -340,10 +340,12 @@ interface CalendarEvent {
   extendedProps?: any; // 필요한 추가 정보
 }
 
+const drawerWidth = 260; // 사이드바 너비 정의
+
 const SchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
-  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const isMobile = useMediaQuery(theme.breakpoints.down("md")); // md 브레이크포인트 사용
 
   const [selectedShiftId, setSelectedShiftId] = useState<string | undefined>(
     undefined
@@ -354,7 +356,7 @@ const SchedulePage: React.FC = () => {
   const [store, setStore] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [filteredEmployeeIds, setFilteredEmployeeIds] = useState<string[]>([]);
-  const [showSidePanel, setShowSidePanel] = useState(true);
+  const [showSidePanel, setShowSidePanel] = useState(true); // 초기값 true로 변경 (기본 열림)
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [showInfoAlert, setShowInfoAlert] = useState(true);
@@ -374,7 +376,7 @@ const SchedulePage: React.FC = () => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isNewEvent, setIsNewEvent] = useState(false);
 
-  // *** getEmployeeColor 함수 정의 (컴포넌트 내부로 이동) ***
+  // 알바생 색상 결정 로직 (useCallback 사용)
   const getEmployeeColor = useCallback(
     (employeeId: string | undefined): string => {
       if (!employeeId) return "#888888";
@@ -384,18 +386,68 @@ const SchedulePage: React.FC = () => {
     [employees] // employees 의존성 유지
   );
 
-  // *** processShiftsToEvents 함수 정의 ***
+  // *** processShiftsToEvents: CalendarEvent 객체 생성 로직 상세 복원 ***
   const processShiftsToEvents = useCallback(
     (shiftsData: Shift[], employeesData: Employee[]) => {
-      // ... (이벤트 변환 로직)
+      if (!employeesData || employeesData.length === 0) {
+        console.warn("processShiftsToEvents: employeesData is empty or null.");
+        setEvents([]); // 직원이 없으면 이벤트 비움
+        return;
+      }
+      const colorMap = new Map<string, string>();
+      employeesData.forEach((emp) =>
+        colorMap.set(emp.id, getEmployeeColor(emp.id))
+      );
+
+      const mappedEvents = shiftsData.map((shift): CalendarEvent => {
+        const assignedEmployees = employeesData.filter((emp) =>
+          shift.employeeIds?.includes(emp.id)
+        );
+        const employeeNames = assignedEmployees.map((emp) => emp.name);
+
+        // 제목 설정 (첫 직원 이름 + 인원 수 또는 근무 타입)
+        let title = shift.shiftType || "근무"; // 기본값
+        if (assignedEmployees.length > 0) {
+          title = employeeNames[0];
+          if (employeeNames.length > 1)
+            title += ` 외 ${employeeNames.length - 1}명`;
+        }
+
+        // 색상 설정 (첫 직원 색상 또는 미배정 회색)
+        const eventColor =
+          assignedEmployees.length > 0
+            ? colorMap.get(assignedEmployees[0].id)
+            : "#AAAAAA";
+
+        return {
+          id: shift.id,
+          title: title, // FullCalendar 내부 title prop으로 사용될 수 있음
+          start: shift.start,
+          end: shift.end,
+          backgroundColor: eventColor,
+          borderColor: eventColor,
+          textColor: "#ffffff",
+          extendedProps: {
+            // 렌더링에 필요한 추가 정보 전달
+            employeeIds: shift.employeeIds || [],
+            employeeNames: employeeNames, // renderEventContent에서 사용
+            note: shift.note,
+            shiftType: shift.shiftType || "middle", // renderEventContent에서 사용
+            requiredStaff: shift.requiredStaff || 1, // renderEventContent에서 사용
+          },
+        };
+      });
+      setEvents(mappedEvents);
+      console.log("Shifts processed to events:", mappedEvents?.length);
     },
     [employees, getEmployeeColor]
   );
 
-  // *** renderEventContent 함수 정의 ***
+  // *** renderEventContent 함수 상세 복원 ***
   const renderEventContent = (eventInfo: EventContentArg): React.ReactNode => {
     const extendedProps = eventInfo.event.extendedProps || {};
     const employeeIds = extendedProps.employeeIds || [];
+    const employeeNames = extendedProps.employeeNames || []; // employeeNames 사용
     const requiredStaff = extendedProps.requiredStaff || 1;
     const shiftType = extendedProps.shiftType || "middle";
     const view = calendarRef.current?.getApi()?.view?.type;
@@ -407,10 +459,224 @@ const SchedulePage: React.FC = () => {
 
     // 주간 뷰 렌더링
     if (view === "timeGridWeek") {
-      return <Box>{/* ... 상세 JSX ... */}</Box>;
+      return (
+        <Box
+          sx={{
+            p: "4px 6px",
+            height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              mb: "2px",
+            }}
+          >
+            <Typography
+              component="span"
+              sx={{
+                fontSize: "0.8rem",
+                fontWeight: "bold",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {shiftLabel}
+            </Typography>
+            <Typography
+              component="span"
+              sx={{
+                bgcolor: "rgba(255,255,255,0.3)",
+                px: "4px",
+                borderRadius: "4px",
+                fontSize: "0.7rem",
+                whiteSpace: "nowrap",
+                fontWeight: "bold",
+              }}
+            >
+              {employeeIds.length}/{requiredStaff}
+            </Typography>
+          </Box>
+          <Typography sx={{ fontSize: "0.75rem", opacity: 0.9, mb: "3px" }}>
+            {eventInfo.timeText}
+          </Typography>
+          {employeeNames.length > 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "2px",
+                overflow: "hidden",
+                flex: 1,
+                mt: "2px",
+              }}
+            >
+              {employeeNames.slice(0, 3).map((name: string, index: number) => {
+                const empId = employeeIds[index]; // ID 가져오기
+                return (
+                  <Box
+                    key={empId || index}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      fontSize: "0.75rem",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    <Box
+                      component="span"
+                      sx={{
+                        width: "8px",
+                        height: "8px",
+                        borderRadius: "50%",
+                        bgcolor: getEmployeeColor(empId),
+                        display: "inline-block",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      sx={{ lineHeight: 1.2 }}
+                    >
+                      {name}
+                    </Typography>
+                  </Box>
+                );
+              })}
+              {employeeNames.length > 3 && (
+                <Typography
+                  sx={{
+                    fontSize: "0.7rem",
+                    opacity: 0.9,
+                    fontStyle: "italic",
+                    textAlign: "center",
+                    mt: "auto",
+                    pt: "1px",
+                  }}
+                >
+                  외 {employeeNames.length - 3}명...
+                </Typography>
+              )}
+            </Box>
+          )}
+        </Box>
+      );
     }
+
     // 월간 뷰 렌더링
-    return <Box>{/* ... 상세 JSX ... */}</Box>;
+    return (
+      <Box
+        sx={{
+          p: "1px 3px",
+          height: "100%",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Typography
+            component="span"
+            sx={{
+              fontSize: "0.7rem",
+              fontWeight: "bold",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {shiftLabel}
+          </Typography>
+          <Typography
+            component="span"
+            sx={{
+              bgcolor: "rgba(0,0,0,0.1)",
+              color: "#333",
+              px: "3px",
+              borderRadius: "3px",
+              fontSize: "0.6rem",
+              fontWeight: "bold",
+            }}
+          >
+            {employeeIds.length}/{requiredStaff}
+          </Typography>
+        </Box>
+        <Typography
+          sx={{
+            fontSize: "0.65rem",
+            color: "text.secondary",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {format(new Date(eventInfo.event.start), "HH:mm")}-
+          {format(new Date(eventInfo.event.end), "HH:mm")}
+        </Typography>
+        {employeeNames.length > 0 && (
+          <Box
+            sx={{
+              fontSize: "0.7rem",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              opacity: 0.9,
+              mt: "1px",
+            }}
+          >
+            {employeeNames.slice(0, 1).map((name: string, index: number) => {
+              const empId = employeeIds[index];
+              return (
+                <Typography
+                  component="span"
+                  key={empId || index}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "2px",
+                    fontSize: "0.65rem",
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      bgcolor: getEmployeeColor(empId),
+                      display: "inline-block",
+                      flexShrink: 0,
+                    }}
+                  />
+                  {name}
+                </Typography>
+              );
+            })}
+            {employeeNames.length > 1 && (
+              <Typography
+                sx={{ fontSize: "0.6rem", opacity: 0.8, fontStyle: "italic" }}
+              >
+                외 {employeeNames.length - 1}명...
+              </Typography>
+            )}
+          </Box>
+        )}
+      </Box>
+    );
   };
 
   // *** handleEventClick 함수 정의 ***
@@ -478,8 +744,13 @@ const SchedulePage: React.FC = () => {
     };
   }, []);
 
+  // 모바일에서는 기본적으로 패널 닫기
   useEffect(() => {
-    setShowSidePanel(false);
+    if (isMobile) {
+      setShowSidePanel(false);
+    } else {
+      setShowSidePanel(true);
+    }
   }, [isMobile]);
 
   const handleEmployeeFilter = (employeeId: string) => {
@@ -667,15 +938,20 @@ const SchedulePage: React.FC = () => {
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
+      {/* 사이드바 (variant, sx 수정) */}
       <Drawer
-        variant="permanent"
+        variant={isMobile ? "temporary" : "persistent"} // 모바일에서는 temporary
+        anchor="left"
+        open={showSidePanel}
+        onClose={() => setShowSidePanel(false)} // 모바일에서 배경 클릭 시 닫기
         sx={{
-          width: 260,
+          width: drawerWidth,
           flexShrink: 0,
           [`& .MuiDrawer-paper`]: {
-            width: 260,
+            width: drawerWidth,
             boxSizing: "border-box",
-            position: "relative",
+            position: "relative", // relative로 변경하여 흐름 유지
+            borderRight: `1px solid ${theme.palette.divider}`, // 구분선 추가
           },
         }}
       >
@@ -762,17 +1038,41 @@ const SchedulePage: React.FC = () => {
             </ListItem>
           ))}
         </List>
+        {/* 모바일 닫기 버튼 (Optional) */}
+        {isMobile && (
+          <IconButton
+            onClick={() => setShowSidePanel(false)}
+            sx={{ position: "absolute", top: 8, right: 8 }}
+          >
+            <ChevronLeft />
+          </IconButton>
+        )}
       </Drawer>
 
+      {/* 메인 컨텐츠 영역 (marginLeft 조정) */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
+          p: 2, // 패딩 조정
           display: "flex",
           flexDirection: "column",
           height: "100vh",
           overflow: "hidden",
+          marginLeft: isMobile || !showSidePanel ? 0 : 0, // 기본 마진 0, 필요시 Drawer 너비만큼 조정 가능하나 persistent는 자동 조절
+          transition: theme.transitions.create("margin", {
+            // 부드러운 전환 효과
+            easing: theme.transitions.easing.sharp,
+            duration: theme.transitions.duration.leavingScreen,
+          }),
+          ...(showSidePanel &&
+            !isMobile && {
+              transition: theme.transitions.create("margin", {
+                easing: theme.transitions.easing.easeOut,
+                duration: theme.transitions.duration.enteringScreen,
+              }),
+              // marginLeft: `${drawerWidth}px`, // persistent variant는 자동 마진 조절
+            }),
         }}
       >
         <Toolbar />
