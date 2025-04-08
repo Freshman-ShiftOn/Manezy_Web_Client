@@ -85,8 +85,6 @@ import {
   Info as InfoIcon,
 } from "@mui/icons-material";
 import ShiftDialog from "./ShiftDialog";
-import RequestManagement from "./RequestManagement";
-import TemplateManagerDialog from "./TemplateManagerDialog";
 import Schedule from "./Schedule";
 import { v4 as uuidv4 } from "uuid";
 
@@ -346,20 +344,15 @@ const SchedulePage: React.FC = () => {
   const [showInfoIcon, setShowInfoIcon] = useState(false); // 정보 아이콘 표시 상태 추가
 
   // 이벤트 관련 상태 추가
-  const [selectedEvent, setSelectedEvent] = useState<SimpleShiftEvent | null>(
-    null
-  );
+  const [selectedEvent, setSelectedEvent] = useState<any>(null); // 타입 확인 필요
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isNewEvent, setIsNewEvent] = useState(false);
 
   // 템플릿 관련 상태 추가
-  const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>(
-    DEFAULT_SHIFT_TEMPLATES
-  );
-  const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] =
-    useState<ShiftTemplate | null>(null);
-  const [isEditingTemplate, setIsEditingTemplate] = useState(false);
+  // const [shiftTemplates, setShiftTemplates] = useState<ShiftTemplate[]>([]); // 제거
+  // const [isTemplateManagerOpen, setIsTemplateManagerOpen] = useState(false); // 제거
+  // const [selectedTemplate, setSelectedTemplate] = useState<ShiftTemplate | null>(null); // 제거
+  // const [isEditingTemplate, setIsEditingTemplate] = useState(false); // 제거
 
   // 간소화된 알바생 색상 변환 함수
   const getEmployeeColor = useCallback(
@@ -396,7 +389,7 @@ const SchedulePage: React.FC = () => {
             setLoading(false);
             return;
           }
-        setStore(storeData);
+          setStore(storeData);
         } catch (err) {
           console.error("Store data error:", err);
           if (!isMounted) return;
@@ -415,7 +408,7 @@ const SchedulePage: React.FC = () => {
 
           setEmployees(employeesData || []);
           if (employeesData && employeesData.length > 0) {
-        setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
+            setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
           }
         } catch (err) {
           console.error("Employee data error:", err);
@@ -515,26 +508,26 @@ const SchedulePage: React.FC = () => {
         else if (shift.shiftType === "close") defaultRequiredStaff = 2;
 
         return {
-            id: shift.id,
+          id: shift.id,
           title: displayTitle,
-            start: shift.start,
-            end: shift.end,
+          start: shift.start,
+          end: shift.end,
           backgroundColor: getEmployeeColor(shift.employeeIds?.[0]),
           borderColor: getEmployeeColor(shift.employeeIds?.[0]),
           textColor: "#FFFFFF",
-            extendedProps: {
+          extendedProps: {
             employeeIds: shift.employeeIds || [],
             employeeNames: employeeNames,
-              note: shift.note,
+            note: shift.note,
             requiredStaff: shift.requiredStaff || defaultRequiredStaff,
             shiftType: shift.shiftType || "middle",
-              recurring: shift.isRecurring
-                ? {
+            recurring: shift.isRecurring
+              ? {
                   frequency: "weekly" as const,
-                    daysOfWeek: [new Date(shift.start).getDay()],
-                  }
-                : undefined,
-            },
+                  daysOfWeek: [new Date(shift.start).getDay()],
+                }
+              : undefined,
+          },
         };
       });
 
@@ -941,7 +934,7 @@ const SchedulePage: React.FC = () => {
 
     // 주간 뷰에서 이벤트 렌더링
     if (view === "timeGridWeek") {
-    return (
+      return (
         <>
           <div
             className="fc-event-main-wrapper"
@@ -1188,327 +1181,13 @@ const SchedulePage: React.FC = () => {
   }, [calendarRef]);
 
   // 템플릿 저장 함수
-  const handleSaveTemplates = (updatedTemplates: ShiftTemplate[]) => {
-    setShiftTemplates(updatedTemplates);
-
-    // 로컬 스토리지에 템플릿 저장
-    try {
-      localStorage.setItem("shiftTemplates", JSON.stringify(updatedTemplates));
-    } catch (error) {
-      console.error("템플릿 저장 오류:", error);
-    }
-
-    setIsTemplateManagerOpen(false);
-  };
+  // const handleSaveTemplates = (updatedTemplates: ShiftTemplate[]) => { ... };
 
   // 템플릿 로딩 함수
-  const loadTemplatesFromStorage = useCallback(() => {
-    try {
-      const savedTemplates = localStorage.getItem("shiftTemplates");
-      if (savedTemplates) {
-        setShiftTemplates(JSON.parse(savedTemplates));
-      }
-    } catch (error) {
-      console.error("템플릿 로딩 오류:", error);
-      // 오류 발생시 기본 템플릿 사용
-      setShiftTemplates(DEFAULT_SHIFT_TEMPLATES);
-    }
-  }, []);
-
-  // 템플릿 로딩
-  useEffect(() => {
-    loadTemplatesFromStorage();
-  }, [loadTemplatesFromStorage]);
+  // const loadTemplatesFromStorage = useCallback(() => { ... };
 
   // 템플릿 관리 다이얼로그 컴포넌트
-  const TemplateManagerDialog = () => {
-    const [templates, setTemplates] = useState<ShiftTemplate[]>([
-      ...shiftTemplates,
-    ]);
-    const [editingIndex, setEditingIndex] = useState<number | null>(null);
-    const [editingTemplate, setEditingTemplate] =
-      useState<ShiftTemplate | null>(null);
-
-    const handleEditTemplate = (index: number) => {
-      setEditingIndex(index);
-      setEditingTemplate({ ...templates[index] });
-    };
-
-    const handleUpdateTemplate = () => {
-      if (editingIndex !== null && editingTemplate) {
-        const updatedTemplates = [...templates];
-        updatedTemplates[editingIndex] = editingTemplate;
-        setTemplates(updatedTemplates);
-        setEditingIndex(null);
-        setEditingTemplate(null);
-      }
-    };
-
-    const handleAddTemplate = () => {
-      const newTemplate: ShiftTemplate = {
-        id: `template-${Date.now()}`,
-        name: "새 템플릿",
-        type: "middle",
-        startTime: "12:00",
-        endTime: "17:00",
-        requiredStaff: 1,
-        color: "#2196F3",
-      };
-
-      setTemplates([...templates, newTemplate]);
-      setEditingIndex(templates.length);
-      setEditingTemplate(newTemplate);
-    };
-
-    const handleDeleteTemplate = (index: number) => {
-      const updatedTemplates = [...templates];
-      updatedTemplates.splice(index, 1);
-      setTemplates(updatedTemplates);
-
-      if (editingIndex === index) {
-        setEditingIndex(null);
-        setEditingTemplate(null);
-      }
-    };
-
-    const handleTemplateFieldChange = (
-      field: keyof ShiftTemplate,
-      value: any
-    ) => {
-      if (editingTemplate) {
-        setEditingTemplate({
-          ...editingTemplate,
-          [field]: value,
-        });
-      }
-    };
-
-    return (
-      <Dialog
-        open={isTemplateManagerOpen}
-        onClose={() => setIsTemplateManagerOpen(false)}
-        maxWidth="md"
-        fullWidth
-      >
-        <DialogTitle>
-          근무 템플릿 관리
-          <IconButton
-            aria-label="close"
-            onClick={() => setIsTemplateManagerOpen(false)}
-            sx={{ position: "absolute", right: 8, top: 8 }}
-          >
-            <CloseIcon />
-          </IconButton>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: "flex", gap: 2, height: "450px" }}>
-            {/* 왼쪽: 템플릿 목록 */}
-            <Box sx={{ width: "40%", borderRight: "1px solid #eee", pr: 2 }}>
-              <Box
-                sx={{ display: "flex", justifyContent: "space-between", mb: 2 }}
-              >
-                <Typography variant="subtitle1">템플릿 목록</Typography>
-                <Button
-                  startIcon={<AddIcon />}
-                  size="small"
-                  onClick={handleAddTemplate}
-                >
-                  추가
-                </Button>
-              </Box>
-
-              <List sx={{ overflow: "auto", maxHeight: "370px" }}>
-                {templates.map((template, index) => (
-                  <ListItemButton
-                    key={template.id}
-                    selected={editingIndex === index}
-                    onClick={() => handleEditTemplate(index)}
-                    sx={{ position: "relative", pr: 6 }}
-                  >
-                    <ListItemText
-                      primary={template.name}
-                      secondary={`${template.startTime} - ${template.endTime}`}
-                    />
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTemplate(index);
-                      }}
-                      sx={{ position: "absolute", right: 8 }}
-                    >
-                      <CloseIcon fontSize="small" />
-                    </IconButton>
-                  </ListItemButton>
-                ))}
-              </List>
-            </Box>
-
-            {/* 오른쪽: 템플릿 편집 */}
-            <Box sx={{ width: "60%", pl: 2 }}>
-              {editingTemplate ? (
-                <Box>
-                  <Typography variant="subtitle1" sx={{ mb: 2 }}>
-                    템플릿 편집
-                  </Typography>
-
-                  <TextField
-                    label="템플릿 이름"
-                    fullWidth
-                    margin="normal"
-                    value={editingTemplate.name}
-                    onChange={(e) =>
-                      handleTemplateFieldChange("name", e.target.value)
-                    }
-                  />
-
-                  <Box sx={{ display: "flex", gap: 2, mt: 2 }}>
-                    <TextField
-                      label="시작 시간"
-                      type="time"
-                      value={editingTemplate.startTime}
-                      onChange={(e) =>
-                        handleTemplateFieldChange("startTime", e.target.value)
-                      }
-                      InputLabelProps={{ shrink: true }}
-                    />
-                    <TextField
-                      label="종료 시간"
-                      type="time"
-                      value={editingTemplate.endTime}
-                      onChange={(e) =>
-                        handleTemplateFieldChange("endTime", e.target.value)
-                      }
-                      InputLabelProps={{ shrink: true }}
-                    />
-                  </Box>
-
-                  <TextField
-                    label="필요 인원"
-                    type="number"
-                    margin="normal"
-                    value={editingTemplate.requiredStaff}
-                    onChange={(e) =>
-                      handleTemplateFieldChange(
-                        "requiredStaff",
-                        parseInt(e.target.value)
-                      )
-                    }
-                    InputLabelProps={{ shrink: true }}
-                  />
-
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="body2">템플릿 유형</Typography>
-                    <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
-                      <Button
-                        variant={
-                          editingTemplate.type === "open"
-                            ? "contained"
-                            : "outlined"
-                        }
-                        onClick={() =>
-                          handleTemplateFieldChange("type", "open")
-                        }
-                        sx={{
-                          bgcolor:
-                            editingTemplate.type === "open"
-                              ? "#4CAF50"
-                              : "transparent",
-                          color:
-                            editingTemplate.type === "open"
-                              ? "white"
-                              : "inherit",
-                        }}
-                      >
-                        오픈
-                      </Button>
-                      <Button
-                        variant={
-                          editingTemplate.type === "middle"
-                            ? "contained"
-                            : "outlined"
-                        }
-                        onClick={() =>
-                          handleTemplateFieldChange("type", "middle")
-                        }
-                        sx={{
-                          bgcolor:
-                            editingTemplate.type === "middle"
-                              ? "#2196F3"
-                              : "transparent",
-                          color:
-                            editingTemplate.type === "middle"
-                              ? "white"
-                              : "inherit",
-                        }}
-                      >
-                        미들
-                      </Button>
-                      <Button
-                        variant={
-                          editingTemplate.type === "close"
-                            ? "contained"
-                            : "outlined"
-                        }
-                        onClick={() =>
-                          handleTemplateFieldChange("type", "close")
-                        }
-                        sx={{
-                          bgcolor:
-                            editingTemplate.type === "close"
-                              ? "#9C27B0"
-                              : "transparent",
-                          color:
-                            editingTemplate.type === "close"
-                              ? "white"
-                              : "inherit",
-                        }}
-                      >
-                        마감
-                      </Button>
-                    </Box>
-                  </Box>
-
-        <Button
-          variant="contained"
-          color="primary"
-                    sx={{ mt: 3 }}
-                    onClick={handleUpdateTemplate}
-        >
-                    적용
-        </Button>
-      </Box>
-              ) : (
-                <Box
-                  sx={{
-                    display: "flex",
-                    height: "100%",
-                    alignItems: "center",
-                    justifyContent: "center",
-                  }}
-                >
-                  <Typography color="textSecondary">
-                    왼쪽에서 템플릿을 선택하거나 새 템플릿을 추가하세요
-                  </Typography>
-                </Box>
-              )}
-            </Box>
-          </Box>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setIsTemplateManagerOpen(false)}>취소</Button>
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => handleSaveTemplates(templates)}
-          >
-            저장
-          </Button>
-        </DialogActions>
-      </Dialog>
-    );
-  };
+  // const TemplateManagerDialog = () => { ... };
 
   // 탭 변경 핸들러
   const handleTabChange = (
@@ -1579,14 +1258,14 @@ const SchedulePage: React.FC = () => {
         <Typography variant="h6">스케줄 정보를 불러오는 중입니다...</Typography>
         <Typography variant="body2" color="text.secondary">
           잠시만 기다려주세요. 첫 로딩은 시간이 조금 더 걸릴 수 있습니다.
-                </Typography>
-          </Box>
+        </Typography>
+      </Box>
     );
   }
 
   // 에러 상태 표시
   if (error) {
-              return (
+    return (
       <Box sx={{ p: 3 }}>
         <Alert severity="error" sx={{ mb: 2 }}>
           {error}
@@ -1594,7 +1273,7 @@ const SchedulePage: React.FC = () => {
         <Typography variant="body1" sx={{ mb: 2 }}>
           스케줄 페이지 로딩 중 오류가 발생했습니다. 다음 중 하나를
           시도해보세요:
-                  </Typography>
+        </Typography>
         <List>
           <ListItem>
             <ListItemText
@@ -1626,8 +1305,8 @@ const SchedulePage: React.FC = () => {
             </ListItem>
           )}
         </List>
-                </Box>
-              );
+      </Box>
+    );
   }
 
   // 알림창 닫기 핸들러 (정보 아이콘 표시)
@@ -1687,7 +1366,7 @@ const SchedulePage: React.FC = () => {
             value="optimal"
           />
         </Tabs>
-        </Paper>
+      </Paper>
 
       {/* 탭 콘텐츠 */}
       {activeTab === "calendar" && (
@@ -1702,7 +1381,7 @@ const SchedulePage: React.FC = () => {
             px: 0.15, // 0.25에서 0.15로 줄이기
           }}
         >
-      {/* 사이드 패널 */}
+          {/* 사이드 패널 */}
           {showSidePanel && (
             <Paper
               sx={{
@@ -1719,7 +1398,7 @@ const SchedulePage: React.FC = () => {
               }}
             >
               <Box
-        sx={{
+                sx={{
                   p: 2,
                   borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
                   bgcolor: "rgba(0, 0, 0, 0.02)",
@@ -1727,33 +1406,33 @@ const SchedulePage: React.FC = () => {
               >
                 <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
                   알바생 필터
-          </Typography>
+                </Typography>
                 <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-              <Button
-                size="small"
+                  <Button
+                    size="small"
                     variant="outlined"
-                onClick={() =>
-                  setFilteredEmployeeIds(employees.map((e) => e.id))
-                }
+                    onClick={() =>
+                      setFilteredEmployeeIds(employees.map((e) => e.id))
+                    }
                     sx={{ fontSize: "0.75rem" }}
-              >
-                전체 선택
-              </Button>
-              <Button
-                size="small"
+                  >
+                    전체 선택
+                  </Button>
+                  <Button
+                    size="small"
                     variant="outlined"
-                onClick={() => setFilteredEmployeeIds([])}
+                    onClick={() => setFilteredEmployeeIds([])}
                     sx={{ fontSize: "0.75rem" }}
-              >
-                전체 해제
-              </Button>
+                  >
+                    전체 해제
+                  </Button>
                 </Box>
                 <FormControlLabel
                   control={
                     <Checkbox
                       checked={showUnassignedOnly}
                       onChange={(e) => setShowUnassignedOnly(e.target.checked)}
-                size="small"
+                      size="small"
                     />
                   }
                   label={
@@ -1767,7 +1446,7 @@ const SchedulePage: React.FC = () => {
                 >
                   * 알바생을 클릭하면 해당 알바생의 근무만 표시됩니다
                 </Typography>
-            </Box>
+              </Box>
 
               <List
                 sx={{
@@ -1779,19 +1458,19 @@ const SchedulePage: React.FC = () => {
               >
                 {employees.map((employee) => (
                   <ListItem key={employee.id} disablePadding sx={{ mb: 0.5 }}>
-                  <ListItemButton
-                    dense
+                    <ListItemButton
+                      dense
                       draggable
                       onDragStart={(e) =>
                         handleEmployeeDragStart(e, employee.id)
                       }
-                    onClick={() => handleEmployeeFilter(employee.id)}
-                    sx={{
-                      borderRadius: 1,
+                      onClick={() => handleEmployeeFilter(employee.id)}
+                      sx={{
+                        borderRadius: 1,
                         py: 1,
                         bgcolor: filteredEmployeeIds.includes(employee.id)
                           ? `${getEmployeeColor(employee.id)}22`
-                        : "transparent",
+                          : "transparent",
                         cursor: "pointer",
                         "&:hover": {
                           boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
@@ -1814,9 +1493,9 @@ const SchedulePage: React.FC = () => {
                             height: 18,
                             bgcolor: getEmployeeColor(employee.id),
                             borderRadius: "50%",
-                        }}
-                      />
-                    </ListItemIcon>
+                          }}
+                        />
+                      </ListItemIcon>
                       <ListItemText
                         primary={employee.name}
                         secondary={
@@ -1928,8 +1607,8 @@ const SchedulePage: React.FC = () => {
                             borderLeft: "3px solid #AAAAAA",
                           }}
                         >
-                    <ListItemText
-                      primary={
+                          <ListItemText
+                            primary={
                               <Box
                                 sx={{
                                   display: "flex",
@@ -1939,7 +1618,7 @@ const SchedulePage: React.FC = () => {
                               >
                                 <Typography variant="body2" fontWeight={500}>
                                   {formattedDate}
-                        </Typography>
+                                </Typography>
                                 <Typography
                                   variant="caption"
                                   sx={{
@@ -1951,19 +1630,19 @@ const SchedulePage: React.FC = () => {
                                   {shiftTypeText}
                                 </Typography>
                               </Box>
-                      }
-                      secondary={
+                            }
+                            secondary={
                               <Typography variant="caption" display="block">
                                 {formattedTime}
-                        </Typography>
-                      }
-                    />
-                  </ListItemButton>
+                              </Typography>
+                            }
+                          />
+                        </ListItemButton>
                       </ListItem>
                     );
                   })
-              )}
-            </List>
+                )}
+              </List>
             </Paper>
           )}
 
@@ -2018,7 +1697,7 @@ const SchedulePage: React.FC = () => {
                 >
                   월간
                 </Button>
-        </Box>
+              </Box>
 
               <Box sx={{ display: "flex", gap: 1 }}>
                 {/* 정보 아이콘 - 알림창이 닫혔을 때만 표시 */}
@@ -2079,7 +1758,7 @@ const SchedulePage: React.FC = () => {
                 적게 배정된 근무 시간입니다.
                 <br />• <strong>배정 완료 근무(초록색):</strong> 필요 인원이
                 모두 채워진 근무 시간입니다.
-          </Typography>
+              </Typography>
             </Alert>
 
             <Paper
@@ -2184,7 +1863,7 @@ const SchedulePage: React.FC = () => {
                   >
                     <CloseIcon fontSize="small" />
                   </IconButton>
-        </Box>
+                </Box>
               )}
 
               <FullCalendar
@@ -2307,14 +1986,14 @@ const SchedulePage: React.FC = () => {
                 }}
               />
             </Paper>
-      </Box>
+          </Box>
         </Box>
       )}
 
       {/* 요청 관리 탭 */}
       {activeTab === "requests" && (
         <Box sx={{ height: "calc(100% - 49px)", p: 0 }}>
-          <RequestManagement />
+          {/* RequestManagement 컴포넌트 제거 */}
         </Box>
       )}
 
@@ -2331,23 +2010,18 @@ const SchedulePage: React.FC = () => {
       {/* 근무 일정 수정 다이얼로그 */}
       {isDialogOpen && selectedEvent && (
         <ShiftDialog
-          eventData={toShiftEvent(selectedEvent)}
+          eventData={selectedEvent}
           isNew={isNewEvent}
           employees={employees}
           onClose={handleCloseDialog}
           onSave={(event) => handleSaveShift(toSimpleShiftEvent(event))}
-          onSubstituteRequest={(event, isHighPriority) =>
-            handleSubstituteRequest(toSimpleShiftEvent(event), isHighPriority)
-          }
-          onOpenTemplateManager={() => setIsTemplateManagerOpen(true)}
-          onDelete={
-            isNewEvent ? undefined : () => handleDeleteShift(selectedEvent.id)
-          } // 삭제 핸들러 추가
         />
       )}
 
-      {/* 템플릿 관리 다이얼로그 렌더링 */}
-      <TemplateManagerDialog />
+      {/* TemplateManagerDialog 호출 부분 제거 */}
+      {/* {isTemplateManagerOpen && (...)} */}
+
+      {/* Request Management Dialog 제거 */}
     </Box>
   );
 };

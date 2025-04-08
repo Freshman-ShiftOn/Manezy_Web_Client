@@ -64,70 +64,32 @@ import {
   isWithinInterval,
   format,
   differenceInHours,
+  isToday,
 } from "date-fns";
 import { Employee, Shift, Store } from "../../lib/types";
 
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-
-  return (
-    <div
-      role="tabpanel"
-      hidden={value !== index}
-      id={`simple-tabpanel-${index}`}
-      aria-labelledby={`simple-tab-${index}`}
-      {...other}
-    >
-      {value === index && <Box sx={{ py: 2 }}>{children}</Box>}
-    </div>
-  );
-}
-
 function DashboardPage() {
-  const theme = useTheme();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [store, setStore] = useState<Store | null>(null);
-  const [tabValue, setTabValue] = useState(0);
 
-  // 색상 팔레트
-  const COLORS = [
-    theme.palette.primary.main,
-    theme.palette.success.main,
-    theme.palette.info.main,
-    theme.palette.warning.main,
-    theme.palette.error.main,
-  ];
+  // 오늘 근무자 목록 계산
+  const todaysWorkers = useMemo(() => {
+    if (!shifts.length || !employees.length) return [];
 
-  // 알림 데이터
-  const notifications = [
-    {
-      id: 1,
-      message: "민수 알바생의 대타 요청이 있습니다",
-      time: new Date(Date.now() - 1000 * 60 * 30),
-      type: "warning",
-    },
-    {
-      id: 2,
-      message: "이번 주 근무표가 완성되었습니다",
-      time: new Date(Date.now() - 1000 * 60 * 60 * 3),
-      type: "info",
-    },
-    {
-      id: 3,
-      message: "하은 알바생의 급여 이체가 완료되었습니다",
-      time: new Date(Date.now() - 1000 * 60 * 60 * 24),
-      type: "success",
-    },
-  ];
+    const todayShifts = shifts.filter((shift) =>
+      isToday(new Date(shift.start))
+    );
+
+    const workerIds = new Set<string>();
+    todayShifts.forEach((shift) => {
+      shift.employeeIds.forEach((id) => workerIds.add(id));
+    });
+
+    return employees.filter((emp) => workerIds.has(emp.id));
+  }, [shifts, employees]);
 
   // 데이터 로드
   useEffect(() => {
@@ -135,7 +97,7 @@ function DashboardPage() {
       try {
         setLoading(true);
 
-        // API에서 데이터 가져오기
+        // API에서 데이터 가져오기 (store, employees, shifts 정보 필요)
         const storeData = await getStoreInfo();
         const employeesData = await getEmployees();
         const shiftsData = await getShifts();
@@ -154,108 +116,6 @@ function DashboardPage() {
 
     loadData();
   }, []);
-
-  // 탭 변경 처리
-  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
-    setTabValue(newValue);
-  };
-
-  // 이번 주 근무 시간 계산
-  const weeklyScheduleSummary = useMemo(() => {
-    if (!shifts.length || !employees.length) return [];
-
-    const now = new Date();
-    const weekStart = startOfWeek(now, { weekStartsOn: 1 }); // 월요일부터 시작
-    const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-
-    return employees
-      .map((employee) => {
-        // 이번 주 근무 필터링
-        const employeeShifts = shifts.filter((shift) => {
-          const shiftStart = new Date(shift.start);
-          return (
-            shift.employeeIds.includes(employee.id) &&
-            isWithinInterval(shiftStart, { start: weekStart, end: weekEnd })
-          );
-        });
-
-        // 총 근무 시간 계산
-        const totalHours = employeeShifts.reduce((sum, shift) => {
-          return (
-            sum + differenceInHours(new Date(shift.end), new Date(shift.start))
-          );
-        }, 0);
-
-        return {
-          employee,
-          totalHours,
-          shiftsCount: employeeShifts.length,
-        };
-      })
-      .sort((a, b) => b.totalHours - a.totalHours); // 많은 시간순으로 정렬
-  }, [shifts, employees]);
-
-  // 이번 달 근무 시간 계산
-  const monthlyScheduleSummary = useMemo(() => {
-    if (!shifts.length || !employees.length) return [];
-
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-
-    return employees
-      .map((employee) => {
-        // 이번 달 근무 필터링
-        const employeeShifts = shifts.filter((shift) => {
-          const shiftStart = new Date(shift.start);
-          return (
-            shift.employeeIds.includes(employee.id) &&
-            isWithinInterval(shiftStart, { start: monthStart, end: monthEnd })
-          );
-        });
-
-        // 총 근무 시간 계산
-        const totalHours = employeeShifts.reduce((sum, shift) => {
-          return (
-            sum + differenceInHours(new Date(shift.end), new Date(shift.start))
-          );
-        }, 0);
-
-        return {
-          employee,
-          totalHours,
-          shiftsCount: employeeShifts.length,
-        };
-      })
-      .sort((a, b) => b.totalHours - a.totalHours); // 많은 시간순으로 정렬
-  }, [shifts, employees]);
-
-  // 총 예정 근무 시간 (이번 주)
-  const totalWeeklyHours = weeklyScheduleSummary.reduce(
-    (sum, item) => sum + item.totalHours,
-    0
-  );
-
-  // 총 예정 근무 시간 (이번 달)
-  const totalMonthlyHours = monthlyScheduleSummary.reduce(
-    (sum, item) => sum + item.totalHours,
-    0
-  );
-
-  // 이번 주 배정률 계산
-  const calculateScheduleCompletionRate = () => {
-    if (!shifts || shifts.length === 0) return 0;
-
-    const totalSlots = 7 * 12; // 일주일 * 영업시간(12시간)
-    const filledSlots = shifts.reduce((acc: number, shift: Shift) => {
-      const hours =
-        (new Date(shift.end).getTime() - new Date(shift.start).getTime()) /
-        (1000 * 60 * 60);
-      return acc + hours;
-    }, 0);
-
-    return Math.min(100, Math.round((filledSlots / totalSlots) * 100));
-  };
 
   // 로딩 상태 표시
   if (loading) {
@@ -293,7 +153,7 @@ function DashboardPage() {
         }}
       >
         <Typography variant="h4" component="h1">
-          안녕하세요, {store?.name || "매장"} 대시보드입니다
+          안녕하세요, {store?.name || "매장"}입니다
         </Typography>
         <Box>
           <Chip
@@ -310,327 +170,37 @@ function DashboardPage() {
         </Box>
       </Box>
 
-      {/* 주요 지표 카드들 */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ position: "relative" }}>
-              <Box sx={{ position: "absolute", top: 16, right: 16 }}>
-                <Avatar sx={{ bgcolor: "primary.main" }}>
-                  <PersonIcon />
-                </Avatar>
-              </Box>
-              <Typography
-                variant="subtitle2"
-                color="textSecondary"
-                gutterBottom
-              >
-                알바생 등록 현황
-              </Typography>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                {employees.length}명
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                <Chip
-                  size="small"
-                  label={`재직 중: ${
-                    employees.filter((e: Employee) => e.status === "active")
-                      .length
-                  }명`}
-                  color="success"
-                />
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ position: "relative" }}>
-              <Box sx={{ position: "absolute", top: 16, right: 16 }}>
-                <Avatar sx={{ bgcolor: "info.main" }}>
-                  <ScheduleIcon />
-                </Avatar>
-              </Box>
-              <Typography
-                variant="subtitle2"
-                color="textSecondary"
-                gutterBottom
-              >
-                일정 배정 현황
-              </Typography>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                {calculateScheduleCompletionRate()}%
-              </Typography>
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <LinearProgress
-                  variant="determinate"
-                  value={calculateScheduleCompletionRate()}
-                  sx={{ flexGrow: 1, mr: 1, height: 8, borderRadius: 4 }}
-                />
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ position: "relative" }}>
-              <Box sx={{ position: "absolute", top: 16, right: 16 }}>
-                <Avatar sx={{ bgcolor: "success.main" }}>
-                  <TodayIcon />
-                </Avatar>
-              </Box>
-              <Typography
-                variant="subtitle2"
-                color="textSecondary"
-                gutterBottom
-              >
-                이번 주 총 근무시간
-              </Typography>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                {totalWeeklyHours}시간
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                <Chip
-                  size="small"
-                  label={`알바생 평균: ${
-                    employees.length
-                      ? Math.round(totalWeeklyHours / employees.length)
-                      : 0
-                  }시간`}
-                  color="info"
-                />
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={3}>
-          <Card>
-            <CardContent sx={{ position: "relative" }}>
-              <Box sx={{ position: "absolute", top: 16, right: 16 }}>
-                <Avatar sx={{ bgcolor: "warning.main" }}>
-                  <DateRangeIcon />
-                </Avatar>
-              </Box>
-              <Typography
-                variant="subtitle2"
-                color="textSecondary"
-                gutterBottom
-              >
-                이번 달 총 근무시간
-              </Typography>
-              <Typography variant="h4" sx={{ mb: 2 }}>
-                {totalMonthlyHours}시간
-              </Typography>
-              <Typography variant="body2" color="textSecondary">
-                <Chip
-                  size="small"
-                  label={`알바생 평균: ${
-                    employees.length
-                      ? Math.round(totalMonthlyHours / employees.length)
-                      : 0
-                  }시간`}
-                  color="warning"
-                />
-              </Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-      </Grid>
-
-      {/* 근무 시간 요약 */}
-      <Grid container spacing={3}>
-        {/* 알바생 근무 시간 */}
-        <Grid item xs={12} md={8}>
-          <Card>
-            <CardHeader
-              title="알바생 근무 시간"
-              action={
-                <Tabs
-                  value={tabValue}
-                  onChange={handleTabChange}
-                  indicatorColor="primary"
-                  textColor="primary"
-                  variant="standard"
-                >
-                  <Tab
-                    icon={<TodayIcon fontSize="small" />}
-                    label="이번 주"
-                    id="tab-weekly"
-                    aria-controls="tabpanel-weekly"
-                  />
-                  <Tab
-                    icon={<DateRangeIcon fontSize="small" />}
-                    label="이번 달"
-                    id="tab-monthly"
-                    aria-controls="tabpanel-monthly"
-                  />
-                </Tabs>
-              }
-            />
-            <Divider />
-            <CardContent>
-              <TabPanel value={tabValue} index={0}>
-                <TableContainer component={Paper} elevation={0}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>알바생</TableCell>
-                        <TableCell align="right">근무 시간</TableCell>
-                        <TableCell align="right">근무 횟수</TableCell>
-                        <TableCell align="right">시급</TableCell>
-                        <TableCell align="right">예상 급여</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {weeklyScheduleSummary.map((item) => (
-                        <TableRow key={item.employee.id}>
-                          <TableCell component="th" scope="row">
-                            {item.employee.name}
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.totalHours}시간
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.shiftsCount}회
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.employee.hourlyRate.toLocaleString()}원
-                          </TableCell>
-                          <TableCell align="right">
-                            {(
-                              item.totalHours * item.employee.hourlyRate
-                            ).toLocaleString()}
-                            원
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {weeklyScheduleSummary.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={5} align="center">
-                            이번 주 근무 데이터가 없습니다.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </TabPanel>
-
-              <TabPanel value={tabValue} index={1}>
-                <TableContainer component={Paper} elevation={0}>
-                  <Table size="small">
-                    <TableHead>
-                      <TableRow>
-                        <TableCell>알바생</TableCell>
-                        <TableCell align="right">근무 시간</TableCell>
-                        <TableCell align="right">근무 횟수</TableCell>
-                        <TableCell align="right">시급</TableCell>
-                        <TableCell align="right">예상 급여</TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {monthlyScheduleSummary.map((item) => (
-                        <TableRow key={item.employee.id}>
-                          <TableCell component="th" scope="row">
-                            {item.employee.name}
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.totalHours}시간
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.shiftsCount}회
-                          </TableCell>
-                          <TableCell align="right">
-                            {item.employee.hourlyRate.toLocaleString()}원
-                          </TableCell>
-                          <TableCell align="right">
-                            {(
-                              item.totalHours * item.employee.hourlyRate
-                            ).toLocaleString()}
-                            원
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                      {monthlyScheduleSummary.length === 0 && (
-                        <TableRow>
-                          <TableCell colSpan={5} align="center">
-                            이번 달 근무 데이터가 없습니다.
-                          </TableCell>
-                        </TableRow>
-                      )}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-              </TabPanel>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        {/* 알림 */}
-        <Grid item xs={12} md={4}>
-          <Card>
-            <CardHeader
-              title="최근 알림"
-              action={
-                <Button size="small" endIcon={<ArrowForwardIcon />}>
-                  전체보기
-                </Button>
-              }
-            />
-            <Divider />
-            <List sx={{ p: 0 }}>
-              {notifications.map((notification) => (
-                <React.Fragment key={notification.id}>
-                  <ListItem alignItems="flex-start">
-                    <ListItemIcon>
-                      <Avatar
-                        sx={{
-                          bgcolor:
-                            notification.type === "warning"
-                              ? "warning.main"
-                              : notification.type === "success"
-                              ? "success.main"
-                              : "info.main",
-                        }}
-                      >
-                        {notification.type === "warning" ? (
-                          <WarningIcon />
-                        ) : notification.type === "success" ? (
-                          <NotificationsIcon />
-                        ) : (
-                          <EventNoteIcon />
-                        )}
-                      </Avatar>
-                    </ListItemIcon>
-                    <ListItemText
-                      primary={notification.message}
-                      secondary={formatDistanceToNow(notification.time, {
-                        addSuffix: true,
-                        locale: {
-                          ...{},
-                          formatDistance: (token, count) => {
-                            const units: Record<string, string> = {
-                              xSeconds: `${count}초 전`,
-                              xMinutes: `${count}분 전`,
-                              xHours: `${count}시간 전`,
-                              xDays: `${count}일 전`,
-                            };
-                            return units[token] || `${count} ${token}`;
-                          },
-                        },
-                      })}
-                    />
-                  </ListItem>
-                  <Divider variant="inset" component="li" />
-                </React.Fragment>
-              ))}
-            </List>
-          </Card>
-        </Grid>
-      </Grid>
+      {/* 오늘 근무자 명단 표시 */}
+      <Box sx={{ mt: 4 }}>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          오늘 근무 예정 직원
+        </Typography>
+        {todaysWorkers.length > 0 ? (
+          <Grid container spacing={2}>
+            {todaysWorkers.map((employee) => (
+              <Grid item key={employee.id} xs={6} sm={4} md={3}>
+                <Paper sx={{ p: 2, display: "flex", alignItems: "center" }}>
+                  <Avatar sx={{ mr: 2, bgcolor: "primary.light" }}>
+                    {employee.name.charAt(0)}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="body1" sx={{ fontWeight: "medium" }}>
+                      {employee.name}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary">
+                      {employee.role || "일반"}
+                    </Typography>
+                  </Box>
+                </Paper>
+              </Grid>
+            ))}
+          </Grid>
+        ) : (
+          <Alert severity="info" sx={{ mt: 2 }}>
+            오늘 근무 예정인 직원이 없습니다.
+          </Alert>
+        )}
+      </Box>
     </Box>
   );
 }
