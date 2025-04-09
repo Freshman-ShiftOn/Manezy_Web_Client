@@ -246,7 +246,7 @@ function Layout() {
     navigate("/setup?mode=new-store");
   };
 
-  // 데이터 초기화 및 메가커피 서울대점 데이터 로드
+  // 데이터 초기화 및 메가커피 서울대점 데이터 리셋
   const handleResetAndLoadDummyData = () => {
     try {
       // 로컬 스토리지 초기화
@@ -306,98 +306,50 @@ function Layout() {
   ];
 
   return (
-    <Box sx={{ display: "flex", height: "100vh" }}>
+    <Box sx={{ display: "flex" }}>
       <CssBaseline />
 
-      {/* 상단 앱바 */}
+      {/* AppBar (로고 제거) */}
       <AppBar
         position="fixed"
-        color="default"
-        elevation={0}
         sx={{
-          zIndex: theme.zIndex.drawer + 1,
-          borderBottom: `1px solid ${theme.palette.divider}`,
-          backgroundColor: "background.paper",
+          width: { md: `calc(100% - ${drawerWidth}px)` },
+          ml: { md: `${drawerWidth}px` },
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          backgroundColor: "background.paper", // 이전 배경색
+          borderBottom: `1px solid ${theme.palette.divider}`, // 하단 경계선
+          color: "text.primary", // 이전 텍스트 색상
         }}
+        elevation={0} // 이전 그림자 설정
       >
         <Toolbar sx={{ justifyContent: "space-between" }}>
+          {/* 좌측: 메뉴 아이콘(모바일), 매장 선택 */}
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <IconButton
               color="inherit"
-              onClick={() => setDrawerOpen(!drawerOpen)}
+              aria-label="open drawer"
               edge="start"
-              sx={{ mr: 2, display: { sm: "none", xs: "block" } }}
+              onClick={() => setDrawerOpen(!drawerOpen)}
+              sx={{ mr: 2, display: { md: "none" } }}
             >
               <MenuIcon />
             </IconButton>
-
-            {/* 로고와 서비스명 */}
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Box
-                sx={{
-                  mr: 1,
-                  display: { xs: "none", sm: "block" },
-                  width: 36,
-                  height: 36,
-                }}
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 200 200"
-                  width="100%"
-                  height="100%"
-                >
-                  <circle cx="100" cy="100" r="90" fill="#f0f4ff" />
-                  <path
-                    d="M55 50 L55 150 L75 150 L75 90 L100 125 L125 90 L125 150 L145 150 L145 50 L125 50 L100 90 L75 50 Z"
-                    fill={colors.primary}
-                  />
-                  <rect
-                    x="50"
-                    y="160"
-                    width="100"
-                    height="8"
-                    rx="4"
-                    fill={colors.secondary}
-                  />
-                </svg>
-              </Box>
-              <Typography
-                variant="h6"
-                component="div"
-                sx={{
-                  fontWeight: 700,
-                  color: colors.primary,
-                  display: { xs: "none", sm: "block" },
-                }}
-              >
-                Manezy
-              </Typography>
-            </Box>
-
-            {/* 선택한 매장 이름 */}
-            <Box
+            {/* 매장 선택 버튼 (그림자 제거) */}
+            <Button
+              color="inherit"
+              onClick={handleStoreMenuOpen}
+              startIcon={<StoreIcon sx={{ color: "text.secondary" }} />}
               sx={{
-                display: "flex",
-                alignItems: "center",
-                ml: { xs: 0, sm: 3 },
-                cursor: "pointer",
-                px: 2,
-                py: 0.5,
-                borderRadius: "50px",
-                transition: "background-color 0.2s",
+                textTransform: "none", // 텍스트 변환 없음
+                boxShadow: "none", // *** 그림자 제거 ***
+                backgroundColor: "transparent", // 배경 투명하게
                 "&:hover": {
-                  backgroundColor: "rgba(0, 0, 0, 0.04)",
+                  backgroundColor: "rgba(0, 0, 0, 0.04)", // hover 효과 유지 (옵션)
                 },
               }}
-              onClick={handleStoreMenuOpen}
             >
-              <StoreIcon
-                sx={{ fontSize: 20, mr: 1, color: "text.secondary" }}
-              />
               <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-                {stores.find((store) => store.id === selectedStoreId)?.name ||
-                  "스토어 선택"}
+                {storeInfo?.name || "매장 선택"}
               </Typography>
               <ChevronRightIcon
                 sx={{
@@ -408,46 +360,25 @@ function Layout() {
                   transition: "transform 0.2s",
                 }}
               />
-            </Box>
+            </Button>
           </Box>
-
-          {/* 우측 아이콘들 */}
-          <Box sx={{ display: "flex", alignItems: "center" }}>
-            {/* 알림 아이콘 */}
+          {/* 우측: 알림, 사용자 아바타 */}
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
             <Tooltip title="알림">
-              <IconButton
-                size="large"
-                color="inherit"
-                onClick={handleNotificationOpen}
-                sx={{ ml: 1 }}
-              >
-                <Badge
-                  badgeContent={notificationCount}
-                  color="error"
-                  overlap="circular"
-                >
+              <IconButton color="inherit" onClick={handleNotificationOpen}>
+                <Badge badgeContent={notificationCount} color="error">
                   <NotificationsIcon />
                 </Badge>
               </IconButton>
             </Tooltip>
-
-            {/* 사용자 아바타 */}
             <Tooltip title="계정 설정">
               <IconButton
                 onClick={handleUserMenuOpen}
-                sx={{
-                  ml: 1.5,
-                  p: 0.5,
-                }}
+                size="small"
+                sx={{ p: 0 }}
               >
-                <Avatar
-                  sx={{
-                    bgcolor: colors.primary,
-                    width: 36,
-                    height: 36,
-                  }}
-                >
-                  <PersonIcon />
+                <Avatar sx={{ width: 32, height: 32, bgcolor: colors.primary }}>
+                  U
                 </Avatar>
               </IconButton>
             </Tooltip>
@@ -455,7 +386,7 @@ function Layout() {
         </Toolbar>
       </AppBar>
 
-      {/* 사이드바 */}
+      {/* 사이드바 (헤더에 로고 추가) */}
       <Drawer
         variant={isMobile ? "temporary" : "persistent"}
         open={drawerOpen}
@@ -475,9 +406,46 @@ function Layout() {
           },
         }}
       >
-        <Toolbar />
-
-        <Box sx={{ overflow: "auto", p: 2, height: "100%" }}>
+        {/* *** 사이드바 헤더 (Toolbar 안에 로고 추가) *** */}
+        <Toolbar>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 200 200"
+              width="36"
+              height="36"
+            >
+              <circle cx="100" cy="100" r="90" fill="#f0f4ff" />
+              <path
+                d="M55 50 L55 150 L75 150 L75 90 L100 125 L125 90 L125 150 L145 150 L145 50 L125 50 L100 90 L75 50 Z"
+                fill={colors.primary}
+              />
+              <rect
+                x="50"
+                y="160"
+                width="100"
+                height="8"
+                rx="4"
+                fill={colors.secondary}
+              />
+            </svg>
+            <Typography
+              variant="h6"
+              component="div"
+              sx={{ fontWeight: 700, color: colors.primary, ml: 1 }}
+            >
+              Manezy
+            </Typography>
+          </Box>
+        </Toolbar>
+        <Divider />
+        <Box
+          sx={{
+            overflow: "auto",
+            p: 2,
+            height: "calc(100% - 64px)" /* Toolbar 높이 제외 */,
+          }}
+        >
           {/* 메뉴 항목들 */}
           <List sx={{ pt: 0 }}>
             {menuItems.map((item) => (
@@ -511,9 +479,7 @@ function Layout() {
               </ListItem>
             ))}
           </List>
-
           <Divider sx={{ my: 2 }} />
-
           {/* 영업 시간 정보 */}
           {storeInfo && (
             <Paper
@@ -548,9 +514,10 @@ function Layout() {
               </Typography>
             </Paper>
           )}
-
           {/* 하단 로그아웃 버튼 */}
-          <Box sx={{ mt: "auto", pt: 4 }}>
+          <Box sx={{ mt: "auto", pt: 2 }}>
+            {" "}
+            {/* pt 조정 */}
             <Button
               variant="outlined"
               color="inherit"
@@ -572,23 +539,23 @@ function Layout() {
         </Box>
       </Drawer>
 
-      {/* 메인 컨텐츠 */}
+      {/* 메인 컨텐츠 영역 */}
       <Box
         component="main"
         sx={{
           flexGrow: 1,
-          p: 3,
-          width: { sm: `calc(100% - ${drawerOpen ? drawerWidth : 0}px)` },
-          transition: theme.transitions.create(["width", "margin"], {
-            easing: theme.transitions.easing.sharp,
-            duration: theme.transitions.duration.enteringScreen,
-          }),
-          backgroundColor: "background.default",
-          minHeight: "100vh",
+          bgcolor: "background.default",
+          p: 0, // *** 모든 패딩 제거 ***
+          height: "100vh",
+          overflow: "auto",
         }}
       >
         <Toolbar />
-        <Container maxWidth="xl" sx={{ py: 2 }}>
+        {/* Container 패딩 값 수정 */}
+        <Container
+          maxWidth="xl"
+          sx={{ pt: "15px", pb: 0, px: "6px" /* 상:15px, 하:0, 좌우:6px */ }}
+        >
           <Outlet />
         </Container>
       </Box>

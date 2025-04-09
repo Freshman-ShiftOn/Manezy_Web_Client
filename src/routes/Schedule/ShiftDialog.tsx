@@ -37,6 +37,7 @@ import {
   TableRow,
   TableCell,
   InputAdornment,
+  useTheme,
 } from "@mui/material";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
@@ -58,15 +59,18 @@ import {
   Edit as EditIcon,
 } from "@mui/icons-material";
 
-// 근무 이벤트 데이터 구조 단순화 (title, shiftType 제거 고려)
+// 근무 이벤트 데이터 구조 (backgroundColor, borderColor 추가)
 interface ShiftEvent {
   id: string;
   start: string;
   end: string;
   color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
   extendedProps?: {
     employeeIds?: string[];
-    requiredStaff?: number; // 유지
+    requiredStaff?: number;
+    shiftType?: "open" | "middle" | "close";
   };
 }
 
@@ -78,6 +82,13 @@ interface ShiftDialogProps {
   onSave: (event: ShiftEvent) => void;
 }
 
+// SHIFT_TYPES 상수 복원
+const SHIFT_TYPES = [
+  { value: "open", label: "오픈", color: "#4CAF50" },
+  { value: "middle", label: "미들", color: "#2196F3" },
+  { value: "close", label: "마감", color: "#9C27B0" },
+];
+
 function ShiftDialog({
   eventData,
   isNew,
@@ -85,6 +96,7 @@ function ShiftDialog({
   onClose,
   onSave,
 }: ShiftDialogProps) {
+  const theme = useTheme();
   const [startTime, setStartTime] = useState<Date | null>(
     eventData.start ? parseISO(eventData.start) : null
   );
@@ -102,6 +114,18 @@ function ShiftDialog({
     eventData.extendedProps?.requiredStaff || 1
   );
 
+  // shiftType 상태 복원
+  const [shiftType, setShiftType] = useState<"open" | "middle" | "close">(
+    (eventData.extendedProps?.shiftType as "open" | "middle" | "close") ||
+      "middle"
+  );
+
+  // 색상 업데이트 useEffect 복원 (shiftType 변경 시)
+  useEffect(() => {
+    // 색상 자동 설정 로직은 handleSave에서 처리하므로 주석 처리 또는 제거
+    // if (shiftType) { ... }
+  }, [shiftType, isNew]);
+
   const handleSave = () => {
     const newErrors: typeof errors = {};
     if (!startTime || !endTime) {
@@ -118,14 +142,21 @@ function ShiftDialog({
       return;
     }
 
+    const typeInfo = SHIFT_TYPES.find((t) => t.value === shiftType);
+    const eventColor = typeInfo?.color || eventData.color || "#AAAAAA";
+
     const updatedEvent: ShiftEvent = {
       ...eventData,
       start: startTime!.toISOString(),
       end: endTime!.toISOString(),
+      color: eventColor,
+      backgroundColor: eventColor,
+      borderColor: eventColor,
       extendedProps: {
         ...eventData.extendedProps,
         employeeIds: selectedEmployeeIds,
         requiredStaff: requiredStaff,
+        shiftType: shiftType,
       },
     };
     onSave(updatedEvent);
@@ -153,6 +184,16 @@ function ShiftDialog({
       return differenceInHours(endTime, startTime);
     }
     return 0;
+  };
+
+  // 근무 유형 변경 핸들러 복원
+  const handleShiftTypeChange = (
+    _: React.MouseEvent<HTMLElement>,
+    newType: "open" | "middle" | "close" | null
+  ) => {
+    if (newType !== null) {
+      setShiftType(newType);
+    }
   };
 
   return (
@@ -264,6 +305,45 @@ function ShiftDialog({
                 <AddIcon fontSize="small" />
               </IconButton>
             </Box>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Typography variant="body2" sx={{ mb: 1 }}>
+              근무 타입
+            </Typography>
+            <ToggleButtonGroup
+              value={shiftType}
+              exclusive
+              onChange={handleShiftTypeChange}
+              aria-label="shift type"
+              fullWidth
+            >
+              {SHIFT_TYPES.map((type) => (
+                <ToggleButton
+                  key={type.value}
+                  value={type.value}
+                  aria-label={type.label}
+                  sx={{
+                    flexGrow: 1,
+                    color: shiftType === type.value ? type.color : undefined,
+                    borderColor:
+                      shiftType === type.value
+                        ? alpha(type.color, 0.5)
+                        : undefined,
+                    "&.Mui-selected": {
+                      backgroundColor: alpha(type.color, 0.12),
+                      color: type.color,
+                      borderColor: alpha(type.color, 0.5),
+                      "&:hover": {
+                        backgroundColor: alpha(type.color, 0.2),
+                      },
+                    },
+                  }}
+                >
+                  {type.label}
+                </ToggleButton>
+              ))}
+            </ToggleButtonGroup>
           </Grid>
         </Grid>
       </DialogContent>

@@ -107,9 +107,11 @@ import {
   startOfWeek,
   endOfWeek,
   differenceInDays,
+  addHours,
 } from "date-fns";
+import { alpha } from "@mui/material/styles";
 
-// 사용자 정의 CSS 스타일 (상세 복원)
+// 사용자 정의 CSS 스타일 (시간 가시성 개선)
 const schedulerStyles = {
   ".fc-event": {
     borderWidth: "1px",
@@ -128,12 +130,23 @@ const schedulerStyles = {
   ".fully-staffed-shift": { borderLeft: "3px solid #4CAF50 !important" },
   ".week-view-event": { borderRadius: "4px !important", zIndex: 1 },
   ".month-view-event": { borderRadius: "3px !important", margin: "1px 0" },
-  ".fc-timegrid-slot": { height: "3.4em" },
-  ".fc-day-today": { backgroundColor: "rgba(66, 133, 244, 0.08) !important" },
+  ".fc-timegrid-slot": {
+    height: "2.4em", // 높이 미세 조정 (더 많은 시간 표시)
+    borderBottom: "1px solid #eaedf1", // *** 구분선 색상 변경 및 명확화 ***
+  },
+  ".fc-timegrid-slot.fc-timegrid-slot-minor": {
+    // 30분 단위 구분선
+    borderBottomStyle: "dotted", // 점선으로 변경
+  },
   ".fc-timegrid-slot-label": {
-    fontSize: "0.85rem",
-    color: "#555",
-    fontWeight: "500",
+    fontSize: "0.75rem",
+    color: "#333", // 색상 진하게
+    fontWeight: "500", // 굵기 유지
+    padding: "0 4px", // 좌우 패딩 추가
+    textAlign: "right", // 오른쪽 정렬
+  },
+  ".fc-timegrid-slot-label-frame": {
+    alignItems: "center", // 세로 중앙 정렬 (FullCalendar v6+)
   },
   ".fc-timegrid-event-harness": { margin: "0 !important" },
   ".fc-timegrid-col-events": { margin: "0 0.5%", width: "99% !important" },
@@ -219,7 +232,7 @@ const SchedulePage: React.FC = () => {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [filteredEmployeeIds, setFilteredEmployeeIds] = useState<string[]>([]);
-  const [showSidePanel, setShowSidePanel] = useState(!isMobile); // 데스크탑 기본 열림
+  const [showSidePanel, setShowSidePanel] = useState(false); // 초기값을 항상 false로 설정
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
     null
@@ -245,8 +258,7 @@ const SchedulePage: React.FC = () => {
 
   const processShiftsToEvents = useCallback(
     (shiftsData: Shift[], employeesData: Employee[]) => {
-      if (!employeesData || employeesData.length === 0) {
-        console.warn("processShiftsToEvents: employeesData is empty or null.");
+      if (!employeesData?.length) {
         setEvents([]);
         return;
       }
@@ -267,7 +279,6 @@ const SchedulePage: React.FC = () => {
           if (employeeNames.length > 1)
             title += ` 외 ${employeeNames.length - 1}명`;
         }
-
         const eventColor =
           assignedEmployees.length > 0
             ? colorMap.get(assignedEmployees[0].id)
@@ -291,7 +302,6 @@ const SchedulePage: React.FC = () => {
         };
       });
       setEvents(mappedEvents);
-      console.log("Shifts processed to events:", mappedEvents?.length);
     },
     [employees, getEmployeeColor]
   );
@@ -299,6 +309,7 @@ const SchedulePage: React.FC = () => {
   const renderEventContent = (eventInfo: EventContentArg): React.ReactNode => {
     const extendedProps = eventInfo.event.extendedProps || {};
     const employeeIds = extendedProps.employeeIds || [];
+    const employeeNames: string[] = extendedProps.employeeNames || [];
     const requiredStaff = extendedProps.requiredStaff || 1;
     const shiftType = extendedProps.shiftType || "middle";
     const view = calendarRef.current?.getApi()?.view?.type;
@@ -310,61 +321,128 @@ const SchedulePage: React.FC = () => {
 
     if (view === "timeGridWeek") {
       return (
-        <Box sx={{ p: "4px 6px", overflow: "hidden", height: "100%" }}>
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              mb: "2px",
-            }}
-          >
+        <Box
+          sx={{
+            p: "2px 4px",
+            /* 패딩 조정 */ height: "100%",
+            display: "flex",
+            flexDirection: "column",
+            overflow: "hidden",
+          }}
+        >
+          <Box sx={{ /* ... */ mb: "1px" /* 마진 조정 */ }}>
             <Typography
               component="span"
-              sx={{
-                fontSize: "0.8rem",
-                fontWeight: "bold",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-              }}
+              sx={{ fontSize: "0.75rem" /* 폰트 조정 */ /* ... */ }}
             >
               {shiftLabel}
             </Typography>
             <Typography
               component="span"
-              sx={{
-                fontSize: "0.7rem",
-                fontWeight: "bold",
-                whiteSpace: "nowrap",
-              }}
+              sx={{ fontSize: "0.65rem" /* 폰트 조정 */ /* ... */ }}
             >
-              {employeeIds.length > 0
-                ? `${employeeIds.length}/${requiredStaff}`
-                : "-"}{" "}
+              {employeeIds.length}/{requiredStaff}
             </Typography>
           </Box>
-          <Typography sx={{ fontSize: "0.75rem", opacity: 0.9 }}>
+          <Typography sx={{ fontSize: "0.7rem", /* 폰트 조정 */ opacity: 0.9 }}>
             {eventInfo.timeText}
           </Typography>
+          {employeeNames.length > 0 && (
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: "column",
+                gap: "1px",
+                overflow: "hidden",
+                flex: 1,
+                mt: "1px",
+              }}
+            >
+              {employeeNames.slice(0, 2).map((name: string, index: number) => {
+                // 표시 직원 수 조정 (예: 2명)
+                const empId = employeeIds[index];
+                return (
+                  <Box
+                    key={empId || index}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "3px",
+                      fontSize: "0.7rem" /* 폰트 조정 */,
+                    }}
+                  >
+                    <Box
+                      component="span"
+                      sx={{
+                        width: "7px",
+                        height: "7px" /* 크기 조정 */ /* ... */,
+                      }}
+                    />
+                    <Typography
+                      component="span"
+                      variant="caption"
+                      sx={{ lineHeight: 1.1 /* 줄간격 조정 */ }}
+                    >
+                      {name}
+                    </Typography>
+                  </Box>
+                );
+              })}
+              {employeeNames.length > 2 && ( // 직원 수 조건 변경
+                <Typography sx={{ fontSize: "0.65rem" /* ... */ }}>
+                  외 {employeeNames.length - 2}명...
+                </Typography>
+              )}
+            </Box>
+          )}
         </Box>
       );
     }
 
+    // 월간 뷰 렌더링 (상세 복원 및 오류 수정)
     return (
-      <Box sx={{ p: "1px 3px", overflow: "hidden" }}>
-        <Typography
-          component="div"
+      <Box
+        sx={{
+          p: "1px 2px",
+          height: "100%",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        <Box
           sx={{
-            fontSize: "0.7rem",
-            fontWeight: "bold",
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
           }}
         >
-          {shiftLabel}
-        </Typography>
+          <Typography
+            component="span"
+            sx={{
+              fontSize: "0.7rem",
+              fontWeight: "bold",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {shiftLabel}
+          </Typography>
+          <Typography
+            component="span"
+            sx={{
+              bgcolor: "rgba(0,0,0,0.1)",
+              color: "#333",
+              px: "3px",
+              borderRadius: "3px",
+              fontSize: "0.6rem",
+              fontWeight: "bold",
+            }}
+          >
+            {employeeIds.length}/{requiredStaff}
+          </Typography>
+        </Box>
         <Typography
           sx={{
             fontSize: "0.65rem",
@@ -372,8 +450,58 @@ const SchedulePage: React.FC = () => {
             whiteSpace: "nowrap",
           }}
         >
-          {format(new Date(eventInfo.event.start), "HH:mm")}
+          {format(new Date(eventInfo.event.start), "HH:mm")}-
+          {format(new Date(eventInfo.event.end), "HH:mm")}
         </Typography>
+        {employeeNames.length > 0 && (
+          <Box
+            sx={{
+              fontSize: "0.7rem",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              opacity: 0.9,
+              mt: "1px",
+            }}
+          >
+            {/* employeeNames 배열을 순회하며 이름 표시 */}
+            {employeeNames.slice(0, 1).map((name: string, index: number) => {
+              const empId = employeeIds[index]; // *** empId 변수 선언 확인 ***
+              return (
+                <Typography
+                  component="span"
+                  key={empId || index}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "2px",
+                    fontSize: "0.65rem",
+                  }}
+                >
+                  <Box
+                    component="span"
+                    sx={{
+                      width: "6px",
+                      height: "6px",
+                      borderRadius: "50%",
+                      bgcolor: getEmployeeColor(empId),
+                      display: "inline-block",
+                      flexShrink: 0,
+                    }}
+                  />
+                  {name} {/* *** name 변수 사용 확인 *** */}
+                </Typography>
+              );
+            })}
+            {employeeNames.length > 1 && (
+              <Typography
+                sx={{ fontSize: "0.6rem", opacity: 0.8, fontStyle: "italic" }}
+              >
+                외 {employeeNames.length - 1}명...
+              </Typography>
+            )}
+          </Box>
+        )}
       </Box>
     );
   };
@@ -523,16 +651,29 @@ const SchedulePage: React.FC = () => {
   };
 
   const handleDateSelect = (selectInfo: any) => {
-    console.log("Date selected:", selectInfo);
+    const startDate = new Date(selectInfo.startStr);
+    const endDate = new Date(selectInfo.endStr);
+    // ... (기존 시간 유효성 검사 등)
+
+    // 시작 시간 기준으로 자동 shiftType 결정
+    const startHour = startDate.getHours();
+    let autoShiftType: "open" | "middle" | "close" = "middle"; // 기본값 미들
+    if (startHour < 12) autoShiftType = "open";
+    else if (startHour >= 17) autoShiftType = "close";
+
     const newEvent: CalendarEvent = {
       id: uuidv4(),
       title: "새 근무",
-      start: selectInfo.startStr,
-      end: selectInfo.endStr,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
       backgroundColor: "#CCCCCC",
       borderColor: "#CCCCCC",
       textColor: "#000000",
-      extendedProps: { employeeIds: [], requiredStaff: 1, shiftType: "middle" },
+      extendedProps: {
+        employeeIds: [],
+        requiredStaff: 1,
+        shiftType: autoShiftType, // 자동 결정된 타입 사용
+      },
     };
     setSelectedEvent(newEvent);
     setIsNewEvent(true);
@@ -586,15 +727,111 @@ const SchedulePage: React.FC = () => {
     handleSaveShift(updatedEvent);
   };
 
+  const findNearestEvent = (date: Date): CalendarEvent | null => {
+    const targetTime = date.getTime();
+    let nearestEvent: CalendarEvent | null = null;
+    let minTimeDiff = 3 * 60 * 60 * 1000; // 3시간 범위 제한
+
+    for (const event of events) {
+      // filteredEvents 대신 전체 events 사용
+      const eventStart = new Date(event.start).getTime();
+      const eventEnd = new Date(event.end).getTime();
+
+      // 드롭된 시간이 이벤트 범위 내에 있는지 확인
+      if (targetTime >= eventStart && targetTime < eventEnd) {
+        // 범위 내 가장 가까운 이벤트보다 더 가까우면 업데이트 (동일 시간대 여러개 방지)
+        const diff = Math.min(targetTime - eventStart, eventEnd - targetTime);
+        if (diff < minTimeDiff) {
+          minTimeDiff = diff;
+          nearestEvent = event;
+        }
+      }
+    }
+    // 범위 내 이벤트가 없다면, 시간상 가장 가까운 이벤트 (주석 처리된 이전 로직 참고)
+    if (!nearestEvent) {
+      // 필요 시 시간차 계산 로직 추가
+    }
+    return nearestEvent;
+  };
+
   const handleCalendarDrop = (dropInfo: any) => {
-    console.log("Dropped onto calendar:", dropInfo);
     const employeeId = dropInfo.draggedEl.dataset.employeeId;
     const dropDate = dropInfo.date;
+    if (!employeeId || !dropDate) return;
 
-    if (!employeeId) return;
+    const targetEvent = findNearestEvent(dropDate);
 
-    console.log(`Assign employee ${employeeId} near ${dropDate}`);
-    alert("직원 드롭 기능 구현 필요");
+    if (targetEvent) {
+      const employee = employees.find((e) => e.id === employeeId);
+      if (!employee) return;
+
+      // 중복 및 최대 인원 체크
+      if (targetEvent.extendedProps?.employeeIds?.includes(employeeId)) {
+        alert("이미 배정된 직원입니다.");
+        return;
+      }
+      const maxEmployees = targetEvent.extendedProps?.requiredStaff || 1; // 필요 인원을 최대로 간주
+      if (targetEvent.extendedProps?.employeeIds?.length >= maxEmployees) {
+        alert(`최대 ${maxEmployees}명까지 배정 가능합니다.`);
+        return;
+      }
+
+      // 기존 이벤트 업데이트 (직원 추가)
+      const updatedEvent: CalendarEvent = {
+        ...targetEvent,
+        extendedProps: {
+          ...targetEvent.extendedProps,
+          employeeIds: [
+            ...(targetEvent.extendedProps?.employeeIds || []),
+            employeeId,
+          ],
+          employeeNames: [
+            ...(targetEvent.extendedProps?.employeeNames || []),
+            employee.name,
+          ],
+        },
+      };
+      // 색상 업데이트 (첫 번째 직원 기준)
+      if (updatedEvent.extendedProps.employeeIds.length === 1) {
+        updatedEvent.backgroundColor = getEmployeeColor(employeeId);
+        updatedEvent.borderColor = getEmployeeColor(employeeId);
+      }
+
+      handleSaveShift(updatedEvent); // 저장 로직 호출
+    } else {
+      // 새 이벤트 생성 (ShiftDialog 열기)
+      console.log("No nearby event found, creating new shift...");
+      const startDate = new Date(dropDate);
+      // 드롭된 시간을 기준으로 기본 근무 시간 설정 (예: 2시간)
+      const endDate = addHours(startDate, 2);
+
+      // *** 시간 기준으로 자동 shiftType 결정 (handleDateSelect와 동일 로직) ***
+      const startHour = startDate.getHours();
+      let autoShiftType: "open" | "middle" | "close" = "middle";
+      if (startHour < 12) autoShiftType = "open";
+      else if (startHour >= 17) autoShiftType = "close";
+
+      const newEvent: CalendarEvent = {
+        id: uuidv4(),
+        title: employees.find((e) => e.id === employeeId)?.name || "새 근무",
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        backgroundColor: getEmployeeColor(employeeId),
+        borderColor: getEmployeeColor(employeeId),
+        textColor: "#ffffff",
+        extendedProps: {
+          employeeIds: [employeeId],
+          employeeNames: [
+            employees.find((e) => e.id === employeeId)?.name || "",
+          ],
+          requiredStaff: 1,
+          shiftType: autoShiftType, // *** 자동 결정된 타입 사용 ***
+        },
+      };
+      setSelectedEvent(newEvent);
+      setIsNewEvent(true);
+      setIsDialogOpen(true);
+    }
   };
 
   // 필터링된 이벤트 계산
@@ -646,7 +883,6 @@ const SchedulePage: React.FC = () => {
           },
         }}
       >
-        <Toolbar />
         <Divider />
         <Box sx={{ p: 2, borderBottom: "1px solid rgba(0, 0, 0, 0.08)" }}>
           <Typography variant="subtitle1" sx={{ fontWeight: 600, mb: 1 }}>
@@ -699,15 +935,21 @@ const SchedulePage: React.FC = () => {
                 selected={filteredEmployeeIds.includes(employee.id)}
                 sx={{
                   borderRadius: 1,
-                  py: 1,
-                  "&:hover .drag-indicator": { opacity: 1 },
+                  py: 0.8,
+                  ...(filteredEmployeeIds.includes(employee.id) && {
+                    backgroundColor: alpha(theme.palette.primary.light, 0.15),
+                    "&:hover": {
+                      backgroundColor: alpha(theme.palette.primary.light, 0.25),
+                    },
+                  }),
+                  "&:hover .drag-indicator": { opacity: 0.7 },
                 }}
               >
-                <ListItemIcon sx={{ minWidth: 30 }}>
+                <ListItemIcon sx={{ minWidth: 28 }}>
                   <Box
                     sx={{
-                      width: 12,
-                      height: 12,
+                      width: 10,
+                      height: 10,
                       borderRadius: "50%",
                       bgcolor: getEmployeeColor(employee.id),
                     }}
@@ -719,7 +961,7 @@ const SchedulePage: React.FC = () => {
                   primaryTypographyProps={{
                     variant: "body2",
                     fontWeight: filteredEmployeeIds.includes(employee.id)
-                      ? 600
+                      ? 500
                       : 400,
                   }}
                   secondaryTypographyProps={{ variant: "caption" }}
@@ -772,10 +1014,10 @@ const SchedulePage: React.FC = () => {
             }),
         }}
       >
-        <Toolbar />
         <Box
           sx={{
-            mb: 1,
+            mb: 2,
+            px: 1,
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
@@ -853,12 +1095,23 @@ const SchedulePage: React.FC = () => {
             overflow: "hidden",
             p: 0,
             position: "relative",
-            boxShadow: 2,
+            boxShadow: "0 1px 3px rgba(0,0,0,0.1)",
+            border: `1px solid ${theme.palette.divider}`,
+            borderRadius: 2,
+            m: 1,
             "& .fc": { ...schedulerStyles, height: "100%", width: "100%" },
             "& .fc-view-harness": {
               height: "auto !important",
               flexGrow: 1,
               overflow: "auto",
+            },
+            [`& .fc-timegrid-event-harness > .fc-timegrid-event.fc-event-mirror .fc-event-main,
+              & .fc-daygrid-event.fc-event-mirror .fc-event-main`]: {
+              fontSize: 0,
+              color: "transparent",
+            },
+            "& .fc-timegrid-event.fc-event-mirror .fc-event-time": {
+              display: "none",
             },
           }}
         >
@@ -892,8 +1145,8 @@ const SchedulePage: React.FC = () => {
                 allDaySlot={false}
                 slotDuration="00:30:00"
                 slotLabelInterval="01:00"
-                slotMinTime={store?.openingHour || "08:00:00"}
-                slotMaxTime={store?.closingHour || "23:00:00"}
+                slotMinTime={"07:00:00"}
+                slotMaxTime={"24:00:00"}
                 events={filteredEvents}
                 selectable={true}
                 selectMirror={true}
@@ -937,6 +1190,8 @@ const SchedulePage: React.FC = () => {
                   hour: "numeric",
                   minute: "2-digit",
                   hour12: false,
+                  omitZeroMinute: false,
+                  meridiem: false,
                 }}
                 eventTimeFormat={{
                   hour: "2-digit",
