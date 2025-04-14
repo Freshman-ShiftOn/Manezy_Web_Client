@@ -117,6 +117,7 @@ const Schedule: React.FC<ScheduleProps> = ({
   const [initialSchedule, setInitialSchedule] = useState<Shift[]>([]); // 타입을 Shift[]로 변경
   const [showShiftDialog, setShowShiftDialog] = useState(false);
   const [currentShift, setCurrentShift] = useState<any>(null);
+  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [schedule, setSchedule] = useState<Shift[]>(mockData.schedules); // 타입 명시
 
   useEffect(() => {
@@ -158,6 +159,14 @@ const Schedule: React.FC<ScheduleProps> = ({
     loadEmployees();
   }, []);
 
+  // schedule이 변경될 때 DragDropScheduler 업데이트
+  useEffect(() => {
+    // initialSchedule 업데이트 (필요한 경우)
+    if (schedule.length > 0) {
+      setInitialSchedule(schedule);
+    }
+  }, [schedule]);
+
   // 드래그 앤 드롭 스케줄 저장
   const handleDragDropScheduleSave = (dragDropSchedule: any) => {
     console.log("드래그 앤 드롭 스케줄 저장:", dragDropSchedule);
@@ -179,8 +188,32 @@ const Schedule: React.FC<ScheduleProps> = ({
     // TODO: API로 근무 일정 저장 구현
     setShowShiftDialog(false);
 
-    // DragDropScheduler에 반영할 수 있도록 스케줄 업데이트 (실제 구현에서는 API 응답 활용)
-    // 예시: 현재 로컬 schedule 상태 업데이트 로직 추가 필요
+    // DragDropScheduler에 반영할 수 있도록 스케줄 업데이트
+    // 실제 구현에서는 API 응답으로 업데이트
+  };
+
+  const handleShiftDelete = (shiftId: string) => {
+    console.log("Deleting shift:", shiftId);
+
+    // UI에서 삭제된 근무 제거
+    setSchedule((prevSchedule) =>
+      prevSchedule.filter((shift) => shift.id !== shiftId)
+    );
+
+    // initialSchedule에서도 삭제
+    setInitialSchedule((prevSchedule) =>
+      prevSchedule.filter((shift) => shift.id !== shiftId)
+    );
+
+    // 대화상자 닫기
+    setShowShiftDialog(false);
+
+    // TODO: API로 근무 일정 삭제 구현
+    // 예시: await deleteShift(shiftId);
+  };
+
+  const handleTemplateManagerOpen = () => {
+    setShowTemplateDialog(true);
   };
 
   // 로딩 상태 표시
@@ -263,6 +296,7 @@ const Schedule: React.FC<ScheduleProps> = ({
           </Box>
         ) : (
           <DragDropScheduler
+            key={`schedule-${initialSchedule.length}`}
             employees={employees}
             onSaveSchedule={handleDragDropScheduleSave}
             initialSchedule={initialSchedule}
@@ -281,6 +315,7 @@ const Schedule: React.FC<ScheduleProps> = ({
           employees={employees}
           onClose={handleShiftDialogClose}
           onSave={handleShiftSave}
+          onDelete={handleShiftDelete}
           // onOpenTemplateManager={handleTemplateManagerOpen} // 제거
         />
       )}

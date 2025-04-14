@@ -53,6 +53,8 @@ import { useEffect } from "react";
 import { Store } from "../lib/types";
 import { colors } from "../theme";
 import { LS_KEYS } from "../services/api";
+import { alpha } from "@mui/material/styles";
+import { useAuth } from "../context/AuthContext";
 
 const drawerWidth = 260;
 
@@ -129,6 +131,7 @@ function Layout() {
   const location = useLocation();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { logout } = useAuth();
 
   // 자동으로 모바일에서는 드로어 닫기
   useEffect(() => {
@@ -172,6 +175,7 @@ function Layout() {
   }, []);
 
   const handleNavigation = (path: string) => {
+    console.log("Navigating to:", path);
     navigate(path);
     if (isMobile) {
       setDrawerOpen(false);
@@ -240,14 +244,16 @@ function Layout() {
     handleStoreMenuClose();
   };
 
-  // 새 스토어 등록
+  // 새 스토어 등록 (핸들러 수정 - 새 페이지 경로 사용)
   const handleAddNewStore = () => {
     handleStoreMenuClose();
-    navigate("/setup?mode=new-store");
+    // navigate("/settings/store"); // 이전 경로
+    navigate("/setup/new-store"); // 새 매장 생성 페이지로 이동
+    console.log("Navigating to /setup/new-store to create a new store.");
   };
 
-  // 데이터 초기화 및 메가커피 서울대점 데이터 리셋
-  const handleResetAndLoadDummyData = () => {
+  // 데이터 초기화 핸들러
+  const handleResetDummyData = () => {
     try {
       // 로컬 스토리지 초기화
       localStorage.removeItem(LS_KEYS.STORE);
@@ -271,10 +277,10 @@ function Layout() {
     handleStoreMenuClose();
   };
 
-  // 로그아웃 처리
+  // Logout Handler
   const handleLogout = () => {
-    localStorage.removeItem("isLoggedIn");
-    navigate("/login");
+    handleUserMenuClose();
+    logout();
   };
 
   const menuItems = [
@@ -289,24 +295,19 @@ function Layout() {
       path: "/schedule",
     },
     {
-      text: "직원 관리",
-      icon: <GroupIcon />,
-      path: "/employees",
-    },
-    {
       text: "급여 관리",
       icon: <PaymentIcon />,
       path: "/payroll",
     },
     {
-      text: "설정",
-      icon: <SettingsIcon />,
-      path: "/settings",
+      text: "직원 관리",
+      icon: <GroupIcon />,
+      path: "/employees",
     },
   ];
 
   return (
-    <Box sx={{ display: "flex" }}>
+    <Box sx={{ display: "flex", minHeight: "100vh" }}>
       <CssBaseline />
 
       {/* AppBar (로고 제거) */}
@@ -320,9 +321,14 @@ function Layout() {
           borderBottom: `1px solid ${theme.palette.divider}`, // 하단 경계선
           color: "text.primary", // 이전 텍스트 색상
         }}
-        elevation={0} // 이전 그림자 설정
+        elevation={1}
       >
-        <Toolbar sx={{ justifyContent: "space-between" }}>
+        <Toolbar
+          sx={{
+            justifyContent: "space-between",
+            paddingRight: { xs: 1, sm: 2 },
+          }}
+        >
           {/* 좌측: 메뉴 아이콘(모바일), 매장 선택 */}
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <IconButton
@@ -371,13 +377,12 @@ function Layout() {
                 </Badge>
               </IconButton>
             </Tooltip>
-            <Tooltip title="계정 설정">
-              <IconButton
-                onClick={handleUserMenuOpen}
-                size="small"
-                sx={{ p: 0 }}
-              >
-                <Avatar sx={{ width: 32, height: 32, bgcolor: colors.primary }}>
+            <Tooltip title="사용자 메뉴">
+              <IconButton onClick={handleUserMenuOpen} sx={{ p: 0, ml: 1.5 }}>
+                <Avatar
+                  alt="User Name"
+                  sx={{ bgcolor: colors.secondary, width: 36, height: 36 }}
+                >
                   U
                 </Avatar>
               </IconButton>
@@ -403,10 +408,10 @@ function Layout() {
               easing: theme.transitions.easing.sharp,
               duration: theme.transitions.duration.enteringScreen,
             }),
+            bgcolor: "background.paper", // 배경색 명시
           },
         }}
       >
-        {/* *** 사이드바 헤더 (Toolbar 안에 로고 추가) *** */}
         <Toolbar>
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <svg
@@ -442,99 +447,154 @@ function Layout() {
         <Box
           sx={{
             overflow: "auto",
-            p: 2,
-            height: "calc(100% - 64px)" /* Toolbar 높이 제외 */,
+            p: 1.5,
+            height: "calc(100% - 64px)",
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          {/* 메뉴 항목들 */}
-          <List sx={{ pt: 0 }}>
+          <List sx={{ pt: 1 }}>
             {menuItems.map((item) => (
-              <ListItem key={item.text} disablePadding sx={{ mb: 1 }}>
+              <ListItem key={item.text} disablePadding sx={{ mb: 0.8 }}>
                 <ListItemButton
                   selected={isActive(item.path)}
                   onClick={() => handleNavigation(item.path)}
                   sx={{
                     borderRadius: 2,
                     px: 2,
-                    py: 1,
+                    py: 1.2,
+                    mb: 0.5,
+                    color: isActive(item.path)
+                      ? theme.palette.primary.main
+                      : theme.palette.text.secondary,
+                    backgroundColor: isActive(item.path)
+                      ? alpha(theme.palette.primary.main, 0.08)
+                      : "transparent",
+                    "&:hover": {
+                      backgroundColor: isActive(item.path)
+                        ? alpha(theme.palette.primary.main, 0.12)
+                        : alpha(theme.palette.text.primary, 0.04),
+                    },
+                    transition: "background-color 0.2s ease-in-out",
                   }}
                 >
-                  <ListItemIcon
-                    sx={{
-                      minWidth: 40,
-                      color: isActive(item.path)
-                        ? colors.primary
-                        : "text.secondary",
-                    }}
-                  >
+                  <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
                     {item.icon}
                   </ListItemIcon>
                   <ListItemText
                     primary={item.text}
                     primaryTypographyProps={{
                       fontWeight: isActive(item.path) ? 600 : 500,
+                      fontSize: "0.9rem",
                     }}
                   />
                 </ListItemButton>
               </ListItem>
             ))}
           </List>
-          <Divider sx={{ my: 2 }} />
-          {/* 영업 시간 정보 */}
-          {storeInfo && (
-            <Paper
-              elevation={0}
-              sx={{
-                p: 2,
-                mt: 2,
-                borderRadius: 2,
-                backgroundColor: "background.default",
-              }}
-            >
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                영업 시간
-              </Typography>
-              <Box sx={{ display: "flex", alignItems: "center", mb: 0.5 }}>
-                <AccessTimeIcon
-                  fontSize="small"
-                  sx={{ mr: 1, color: "text.secondary", fontSize: 18 }}
-                />
-                <Typography variant="body2">
-                  {storeInfo.openingHour} - {storeInfo.closingHour}
+          <Box sx={{ mt: "auto", pt: 1 }}>
+            {storeInfo && (
+              <Paper
+                variant="outlined"
+                sx={{
+                  p: 1.5,
+                  mb: 1.5,
+                  borderRadius: 2,
+                  bgcolor: "grey.100",
+                  border: "none",
+                }}
+              >
+                <Typography
+                  variant="caption"
+                  display="block"
+                  sx={{ mb: 0.5, fontWeight: 500, color: "text.secondary" }}
+                >
+                  영업 시간
                 </Typography>
-              </Box>
-
-              <Divider sx={{ my: 1.5 }} />
-
-              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>
-                시급
-              </Typography>
-              <Typography variant="body2">
-                {storeInfo.baseHourlyRate.toLocaleString()}원
-              </Typography>
-            </Paper>
-          )}
-          {/* 하단 로그아웃 버튼 */}
-          <Box sx={{ mt: "auto", pt: 2 }}>
-            {" "}
-            {/* pt 조정 */}
-            <Button
-              variant="outlined"
-              color="inherit"
-              fullWidth
-              startIcon={<LogoutIcon />}
-              onClick={handleLogout}
-              sx={{
-                mt: 2,
-                borderColor: theme.palette.divider,
-                color: "text.secondary",
-                "&:hover": {
-                  backgroundColor: "rgba(0, 0, 0, 0.04)",
-                },
-              }}
-            >
-              로그아웃
-            </Button>
+                <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                  <AccessTimeIcon
+                    fontSize="small"
+                    sx={{ mr: 1, color: "text.secondary" }}
+                  />
+                  <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                    {storeInfo.openingHour} - {storeInfo.closingHour}
+                  </Typography>
+                </Box>
+                <Typography
+                  variant="caption"
+                  display="block"
+                  sx={{ mb: 0.5, fontWeight: 500, color: "text.secondary" }}
+                >
+                  기본 시급
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  ₩{storeInfo.baseHourlyRate.toLocaleString()}
+                </Typography>
+              </Paper>
+            )}
+            <List sx={{ pb: 1 }}>
+              <ListItem key="지점 설정" disablePadding sx={{ mb: 0.8 }}>
+                <ListItemButton
+                  selected={isActive("/settings/store")}
+                  onClick={() => handleNavigation("/settings/store")}
+                  sx={{
+                    borderRadius: 2,
+                    px: 2,
+                    py: 1.2,
+                    color: isActive("/settings/store")
+                      ? theme.palette.primary.main
+                      : theme.palette.text.secondary,
+                    backgroundColor: isActive("/settings/store")
+                      ? alpha(theme.palette.primary.main, 0.08)
+                      : "transparent",
+                    "&:hover": {
+                      backgroundColor: isActive("/settings/store")
+                        ? alpha(theme.palette.primary.main, 0.12)
+                        : alpha(theme.palette.text.primary, 0.04),
+                    },
+                    transition: "background-color 0.2s ease-in-out",
+                  }}
+                >
+                  <ListItemIcon sx={{ minWidth: 36, color: "inherit" }}>
+                    <StoreIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="지점 설정"
+                    primaryTypographyProps={{
+                      fontWeight: isActive("/settings/store") ? 600 : 500,
+                      fontSize: "0.9rem",
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding sx={{ mb: 1 }}>
+                <ListItemButton
+                  onClick={handleResetDummyData}
+                  sx={{
+                    borderRadius: 2,
+                    px: 2,
+                    py: 1.2,
+                    color: theme.palette.warning.dark,
+                    "&:hover": {
+                      backgroundColor: alpha(theme.palette.warning.main, 0.08),
+                    },
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{ minWidth: 36, color: theme.palette.warning.dark }}
+                  >
+                    <RefreshIcon />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="더미데이터 리셋"
+                    primaryTypographyProps={{
+                      fontWeight: 500,
+                      fontSize: "0.9rem",
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            </List>
           </Box>
         </Box>
       </Drawer>
@@ -746,59 +806,68 @@ function Layout() {
           </ListItemIcon>
           <ListItemText primary="새 매장 추가" />
         </MenuItem>
-
-        <MenuItem
-          onClick={handleResetAndLoadDummyData}
-          sx={{ color: colors.secondary, borderRadius: 1, mx: 1, mt: 0.5 }}
-        >
-          <ListItemIcon>
-            <RefreshIcon fontSize="small" sx={{ color: colors.secondary }} />
-          </ListItemIcon>
-          <ListItemText primary="메가커피 서울대점 데이터 리셋" />
-        </MenuItem>
       </Menu>
 
       {/* 사용자 메뉴 */}
       <Menu
-        id="user-menu"
+        sx={{ mt: "45px" }}
+        id="menu-appbar"
         anchorEl={userMenuAnchorEl}
+        anchorOrigin={{
+          vertical: "top",
+          horizontal: "right",
+        }}
+        keepMounted
+        transformOrigin={{
+          vertical: "top",
+          horizontal: "right",
+        }}
         open={userMenuOpen}
         onClose={handleUserMenuClose}
-        MenuListProps={{
-          "aria-labelledby": "user-button",
-        }}
         PaperProps={{
-          elevation: 3,
+          elevation: 0,
           sx: {
-            width: 200,
+            overflow: "visible",
+            filter: "drop-shadow(0px 2px 8px rgba(0,0,0,0.1))",
             mt: 1.5,
-            borderRadius: 2,
+            "& .MuiAvatar-root": {
+              width: 32,
+              height: 32,
+              ml: -0.5,
+              mr: 1,
+            },
+            "&:before": {
+              content: '""',
+              display: "block",
+              position: "absolute",
+              top: 0,
+              right: 14,
+              width: 10,
+              height: 10,
+              bgcolor: "background.paper",
+              transform: "translateY(-50%) rotate(45deg)",
+              zIndex: 0,
+            },
           },
         }}
       >
         <MenuItem
           onClick={() => {
             handleUserMenuClose();
-            navigate("/settings");
+            navigate("/settings/account");
           }}
-          sx={{ borderRadius: 1, mx: 1, my: 0.5 }}
         >
           <ListItemIcon>
             <SettingsIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary="계정 설정" />
+          계정 설정
         </MenuItem>
-
-        <Divider />
-
-        <MenuItem
-          onClick={handleLogout}
-          sx={{ borderRadius: 1, mx: 1, my: 0.5 }}
-        >
+        <Divider sx={{ my: 0.5 }} />
+        <MenuItem onClick={handleLogout}>
           <ListItemIcon>
             <LogoutIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary="로그아웃" />
+          로그아웃
         </MenuItem>
       </Menu>
     </Box>

@@ -48,7 +48,7 @@ import {
   setHours,
   setMinutes,
   addMinutes,
-  differenceInHours,
+  differenceInMinutes,
 } from "date-fns";
 import { Employee } from "../../lib/types";
 import {
@@ -57,6 +57,8 @@ import {
   Remove as RemoveIcon,
   Person as PersonIcon,
   Edit as EditIcon,
+  Close as CloseIcon,
+  Delete as DeleteIcon,
 } from "@mui/icons-material";
 
 // 근무 이벤트 데이터 구조 (backgroundColor, borderColor 추가)
@@ -80,6 +82,7 @@ interface ShiftDialogProps {
   employees: Employee[];
   onClose: () => void;
   onSave: (event: ShiftEvent) => void;
+  onDelete?: (id: string) => void;
 }
 
 // SHIFT_TYPES 상수 복원
@@ -95,6 +98,7 @@ function ShiftDialog({
   employees,
   onClose,
   onSave,
+  onDelete,
 }: ShiftDialogProps) {
   const theme = useTheme();
   const [startTime, setStartTime] = useState<Date | null>(
@@ -181,7 +185,12 @@ function ShiftDialog({
 
   const calculateWorkHours = () => {
     if (startTime && endTime) {
-      return differenceInHours(endTime, startTime);
+      const diffMinutes = differenceInMinutes(endTime, startTime);
+      const hours = diffMinutes / 60;
+      return hours.toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 1,
+      });
     }
     return 0;
   };
@@ -196,119 +205,47 @@ function ShiftDialog({
     }
   };
 
+  // Delete Confirmation Handler
+  const handleDelete = () => {
+    if (!isNew && window.confirm("정말로 이 근무를 삭제하시겠습니까?")) {
+      if (onDelete) {
+        onDelete(eventData.id);
+      } else {
+        console.log("삭제 기능이 구현되지 않았습니다.");
+        onClose(); // 대화상자 닫기
+      }
+    }
+  };
+
   return (
     <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle>
+      <Box
+        sx={{
+          px: 3,
+          py: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}
+      >
         <Typography variant="h6">
           {isNew ? "새 근무 생성" : "근무 수정"}
         </Typography>
-      </DialogTitle>
+        <IconButton
+          aria-label="close"
+          onClick={onClose}
+          sx={{
+            color: (theme) => theme.palette.grey[500],
+          }}
+        >
+          <CloseIcon />
+        </IconButton>
+      </Box>
 
-      <DialogContent dividers>
-        <Grid container spacing={2}>
-          <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <TimePicker
-                label="시작 시간"
-                value={startTime}
-                onChange={setStartTime}
-                slotProps={{
-                  textField: { fullWidth: true, error: !!errors.time },
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <TimePicker
-                label="종료 시간"
-                value={endTime}
-                onChange={setEndTime}
-                slotProps={{
-                  textField: { fullWidth: true, error: !!errors.time },
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-          {errors.time && (
-            <Grid item xs={12}>
-              <FormHelperText error>{errors.time}</FormHelperText>
-            </Grid>
-          )}
+      <DialogContent dividers sx={{ pt: 2 }}>
+        <Grid container spacing={2.5}>
           <Grid item xs={12}>
-            <Typography variant="body2" color="text.secondary">
-              총 근무 시간: {calculateWorkHours()} 시간
-            </Typography>
-          </Grid>
-
-          <Grid item xs={12}>
-            <FormControl fullWidth error={!!errors.employees}>
-              <InputLabel id="employee-select-label">직원 배정</InputLabel>
-              <Select
-                labelId="employee-select-label"
-                id="employee-select"
-                multiple
-                value={selectedEmployeeIds}
-                onChange={handleEmployeeChange}
-                input={<OutlinedInput label="직원 배정" />}
-                renderValue={(selected) => (
-                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
-                    {selected.map((value) => {
-                      const employee = employees.find(
-                        (emp) => emp.id === value
-                      );
-                      return (
-                        <Chip
-                          key={value}
-                          label={employee?.name || value}
-                          size="small"
-                        />
-                      );
-                    })}
-                  </Box>
-                )}
-              >
-                {employees.map((employee) => (
-                  <MenuItem key={employee.id} value={employee.id}>
-                    <Checkbox
-                      checked={selectedEmployeeIds.includes(employee.id)}
-                    />
-                    <ListItemText
-                      primary={employee.name}
-                      secondary={employee.role}
-                    />
-                  </MenuItem>
-                ))}
-              </Select>
-              {errors.employees && (
-                <FormHelperText>{errors.employees}</FormHelperText>
-              )}
-            </FormControl>
-          </Grid>
-
-          <Grid item xs={12}>
-            <Box sx={{ display: "flex", alignItems: "center" }}>
-              <Typography variant="body2" sx={{ mr: 2 }}>
-                필요 인원:
-              </Typography>
-              <IconButton
-                size="small"
-                onClick={() => adjustRequiredStaff(-1)}
-                disabled={requiredStaff <= 1}
-              >
-                <RemoveIcon fontSize="small" />
-              </IconButton>
-              <Typography sx={{ mx: 1, minWidth: "20px", textAlign: "center" }}>
-                {requiredStaff}
-              </Typography>
-              <IconButton size="small" onClick={() => adjustRequiredStaff(1)}>
-                <AddIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          </Grid>
-
-          <Grid item xs={12}>
-            <Typography variant="body2" sx={{ mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 500 }}>
               근무 타입
             </Typography>
             <ToggleButtonGroup
@@ -335,7 +272,7 @@ function ShiftDialog({
                       color: type.color,
                       borderColor: alpha(type.color, 0.5),
                       "&:hover": {
-                        backgroundColor: alpha(type.color, 0.2),
+                        backgroundColor: alpha(type.color, 0.15),
                       },
                     },
                   }}
@@ -345,21 +282,175 @@ function ShiftDialog({
               ))}
             </ToggleButtonGroup>
           </Grid>
+
+          <Grid item xs={12}>
+            <Divider sx={{ my: 1 }} />
+          </Grid>
+
+          <Grid item xs={12} sm={6}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <TimePicker
+                label="시작 시간"
+                value={startTime}
+                onChange={setStartTime}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    error: !!errors.time,
+                    size: "small",
+                    required: true,
+                  },
+                }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          <Grid item xs={12} sm={6}>
+            <LocalizationProvider dateAdapter={AdapterDateFns}>
+              <TimePicker
+                label="종료 시간"
+                value={endTime}
+                onChange={setEndTime}
+                slotProps={{
+                  textField: {
+                    fullWidth: true,
+                    error: !!errors.time,
+                    size: "small",
+                    required: true,
+                  },
+                }}
+              />
+            </LocalizationProvider>
+          </Grid>
+          {errors.time && (
+            <Grid item xs={12} sx={{ mt: -1 }}>
+              <FormHelperText error>{errors.time}</FormHelperText>
+            </Grid>
+          )}
+          <Grid item xs={12} sx={{ textAlign: "right" }}>
+            <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              총 근무 시간:{" "}
+              <Typography
+                component="span"
+                sx={{ color: "primary.main", fontWeight: "bold" }}
+              >
+                {calculateWorkHours()}
+              </Typography>{" "}
+              시간
+            </Typography>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Divider sx={{ my: 1 }} />
+          </Grid>
+
+          <Grid item xs={12}>
+            <FormControl fullWidth error={!!errors.employees} size="small">
+              <InputLabel id="employee-select-label">담당 직원</InputLabel>
+              <Select
+                labelId="employee-select-label"
+                multiple
+                value={selectedEmployeeIds}
+                onChange={handleEmployeeChange}
+                input={
+                  <OutlinedInput
+                    label="담당 직원"
+                    sx={{
+                      "& .MuiSelect-select .MuiBox-root": {
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: 0.5,
+                      },
+                    }}
+                  />
+                }
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((id) => {
+                      const employee = employees.find((e) => e.id === id);
+                      return (
+                        <Chip
+                          key={id}
+                          label={employee ? employee.name : "Unknown"}
+                          size="small"
+                        />
+                      );
+                    })}
+                  </Box>
+                )}
+                MenuProps={{
+                  PaperProps: {
+                    style: {
+                      maxHeight: 224,
+                    },
+                  },
+                }}
+              >
+                {employees.map((employee) => (
+                  <MenuItem key={employee.id} value={employee.id}>
+                    <Checkbox
+                      checked={selectedEmployeeIds.indexOf(employee.id) > -1}
+                    />
+                    <ListItemText primary={employee.name} />
+                  </MenuItem>
+                ))}
+              </Select>
+              {errors.employees && (
+                <FormHelperText>{errors.employees}</FormHelperText>
+              )}
+            </FormControl>
+          </Grid>
+          <Grid item xs={12}>
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                mt: 1,
+              }}
+            >
+              <Typography variant="body2">필요 인원:</Typography>
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <IconButton
+                  size="small"
+                  onClick={() => adjustRequiredStaff(-1)}
+                  disabled={requiredStaff <= 1}
+                >
+                  <RemoveIcon />
+                </IconButton>
+                <Typography sx={{ mx: 1.5, fontWeight: "bold" }}>
+                  {requiredStaff}
+                </Typography>
+                <IconButton size="small" onClick={() => adjustRequiredStaff(1)}>
+                  <AddIcon />
+                </IconButton>
+              </Box>
+            </Box>
+          </Grid>
         </Grid>
       </DialogContent>
 
-      <DialogActions sx={{ p: 2 }}>
-        <Button onClick={onClose} color="inherit">
-          취소
-        </Button>
-        <Button
-          onClick={handleSave}
-          variant="contained"
-          color="primary"
-          disabled={!startTime || !endTime || selectedEmployeeIds.length === 0}
-        >
-          저장
-        </Button>
+      <DialogActions sx={{ p: 2, justifyContent: "space-between" }}>
+        {!isNew ? (
+          <Button
+            onClick={handleDelete}
+            variant="outlined"
+            color="error"
+            startIcon={<DeleteIcon />}
+          >
+            삭제
+          </Button>
+        ) : (
+          <Box sx={{ width: 80 }} />
+        )}
+
+        <Box>
+          <Button onClick={onClose} color="inherit" sx={{ mr: 1 }}>
+            취소
+          </Button>
+          <Button onClick={handleSave} variant="contained" color="primary">
+            {isNew ? "생성" : "저장"}
+          </Button>
+        </Box>
       </DialogActions>
     </Dialog>
   );

@@ -707,574 +707,300 @@ export const getRecommendedEmployees = async (
   }
 };
 
-// 더미 데이터 생성
-export const generateDummyData = (): void => {
+// 더미 데이터 생성 함수
+export const generateDummyData = (forceReset = false): void => {
+  console.log("Generating dummy data with improved schedule...");
+  const now = new Date();
+
+  // --- 매장 정보 (기본값 또는 가져오기) ---
+  let storeInfo: Store = {
+    id: "s1",
+    name: "메가커피 서울대점",
+    address: "서울 관악구 관악로 1",
+    phoneNumber: "02-880-5114",
+    baseHourlyRate: 9860,
+    openingHour: "08:00",
+    closingHour: "22:00",
+  };
   try {
-    // 메가커피 서울대점 생성
-    const megacoffeeStore: Store = {
-      id: "s1",
-      name: "메가커피 서울대점",
-      address: "서울시 관악구 봉천동 123-45 1층",
-      phoneNumber: "02-1234-5678",
-      baseHourlyRate: 9860, // 2023년도 기준 최저시급
-      openingHour: "08:00",
-      closingHour: "22:00",
-    };
-    localStorage.setItem(LS_KEYS.STORE, JSON.stringify(megacoffeeStore));
-
-    // 설정 완료 표시
-    localStorage.setItem(LS_KEYS.SETUP_COMPLETE, "true");
-
-    // 알바생 9명 생성
-    const dummyEmployees: Employee[] = [
-      {
-        id: "emp-1",
-        name: "박민우",
-        phoneNumber: "010-1111-2222",
-        email: "minwoo@example.com",
-        hourlyRate: 9860,
-        role: "매니저",
-        status: "active",
-        bankAccount: "국민은행 123-456-789012",
-        birthDate: "1996-03-15",
-      },
-      {
-        id: "emp-2",
-        name: "이서연",
-        phoneNumber: "010-2222-3333",
-        email: "seoyeon@example.com",
-        hourlyRate: 9860,
-        role: "주간 알바",
-        status: "active",
-        bankAccount: "신한은행 123-456-789012",
-        birthDate: "2000-05-22",
-      },
-      {
-        id: "emp-3",
-        name: "최준영",
-        phoneNumber: "010-3333-4444",
-        email: "junyoung@example.com",
-        hourlyRate: 9860,
-        role: "주말 알바",
-        status: "active",
-        bankAccount: "우리은행 123-456-789012",
-        birthDate: "2001-11-10",
-      },
-      {
-        id: "emp-4",
-        name: "한수정",
-        phoneNumber: "010-4444-5555",
-        email: "sujeong@example.com",
-        hourlyRate: 10000, // 경력자라 시급 더 높음
-        role: "주간 알바",
-        status: "active",
-        bankAccount: "하나은행 123-456-789012",
-        birthDate: "1999-07-25",
-      },
-      {
-        id: "emp-5",
-        name: "정도윤",
-        phoneNumber: "010-5555-6666",
-        email: "doyoon@example.com",
-        hourlyRate: 9860,
-        role: "주말 알바",
-        status: "active",
-        bankAccount: "기업은행 123-456-789012",
-        birthDate: "2002-01-30",
-      },
-      {
-        id: "emp-6",
-        name: "강하은",
-        phoneNumber: "010-6666-7777",
-        email: "haeun@example.com",
-        hourlyRate: 9860,
-        role: "오픈 알바",
-        status: "active",
-        bankAccount: "농협 123-456-789012",
-        birthDate: "1997-09-12",
-      },
-      {
-        id: "emp-7",
-        name: "윤준호",
-        phoneNumber: "010-7777-8888",
-        email: "junho@example.com",
-        hourlyRate: 9860,
-        role: "마감 알바",
-        status: "active",
-        bankAccount: "신한은행 123-456-789012",
-        birthDate: "2000-12-05",
-      },
-      {
-        id: "emp-8",
-        name: "김지은",
-        phoneNumber: "010-8888-9999",
-        email: "jieun@example.com",
-        hourlyRate: 10200, // 경력 더 많음
-        role: "바리스타",
-        status: "active",
-        bankAccount: "국민은행 123-456-789012",
-        birthDate: "1998-04-18",
-      },
-      {
-        id: "emp-9",
-        name: "송민석",
-        phoneNumber: "010-9999-0000",
-        email: "minseok@example.com",
-        hourlyRate: 9860,
-        role: "주말 알바",
-        status: "active",
-        bankAccount: "우리은행 123-456-789012",
-        birthDate: "1998-10-20",
-      },
-    ];
-    localStorage.setItem(LS_KEYS.EMPLOYEES, JSON.stringify(dummyEmployees));
-
-    // 현재 날짜를 기준으로 이번 주 월요일 구하기
-    const today = new Date();
-    const currentDay = today.getDay(); // 0: 일요일, 1: 월요일, ...
-    const mondayOffset = currentDay === 0 ? -6 : 1 - currentDay; // 일요일이면 전주 월요일로
-    const thisMonday = new Date(today);
-    thisMonday.setDate(today.getDate() + mondayOffset);
-    thisMonday.setHours(0, 0, 0, 0);
-
-    // 더미 근무 일정 생성
-    const dummyShifts: Shift[] = [];
-
-    // 다음 2주 동안의 더미 근무 일정 생성
-    for (let dayOffset = 0; dayOffset < 14; dayOffset++) {
-      const shiftDate = new Date(thisMonday);
-      shiftDate.setDate(thisMonday.getDate() + dayOffset);
-      const isWeekend = dayOffset % 7 === 0 || dayOffset % 7 === 6;
-
-      // 오픈 시프트 (08:00 - 14:00)
-      const morningDate = new Date(shiftDate);
-      morningDate.setHours(8, 0, 0, 0);
-      const morningEndDate = new Date(shiftDate);
-      morningEndDate.setHours(14, 0, 0, 0);
-
-      dummyShifts.push({
-        id: `shift-morning-${dayOffset}`,
-        storeId: "s1",
-        title: "오픈 시프트",
-        start: morningDate.toISOString(),
-        end: morningEndDate.toISOString(),
-        // 오픈은 1-2명 (주말: 2명, 평일: 1명)
-        employeeIds: isWeekend ? ["emp-6", "emp-2"] : ["emp-6"], // 주말에는 두 명 배치
-        note: "오픈 준비 및 아침 피크타임 담당",
-        isRecurring: false,
-        requiredStaff: isWeekend ? 2 : 1,
-        shiftType: "open",
-      });
-
-      // 미들 시프트 1 (10:00 - 15:00)
-      const middle1Date = new Date(shiftDate);
-      middle1Date.setHours(10, 0, 0, 0);
-      const middle1EndDate = new Date(shiftDate);
-      middle1EndDate.setHours(15, 0, 0, 0);
-
-      dummyShifts.push({
-        id: `shift-middle1-${dayOffset}`,
-        storeId: "s1",
-        title: "미들 시프트 (오전-오후)",
-        start: middle1Date.toISOString(),
-        end: middle1EndDate.toISOString(),
-        employeeIds: isWeekend ? ["emp-3", "emp-9"] : ["emp-2", "emp-9"], // 미들1은 항상 2명
-        note: "점심 피크타임 담당",
-        isRecurring: false,
-        requiredStaff: 2,
-        shiftType: "middle",
-      });
-
-      // 미들 시프트 2 (12:00 - 17:00)
-      const middle2Date = new Date(shiftDate);
-      middle2Date.setHours(12, 0, 0, 0);
-      const middle2EndDate = new Date(shiftDate);
-      middle2EndDate.setHours(17, 0, 0, 0);
-
-      // 바쁜 요일(월/수/금/주말)에는 더 많은 인원 배치
-      const isBusyDay =
-        isWeekend ||
-        dayOffset % 7 === 1 ||
-        dayOffset % 7 === 3 ||
-        dayOffset % 7 === 5;
-
-      dummyShifts.push({
-        id: `shift-middle2-${dayOffset}`,
-        storeId: "s1",
-        title: "미들 시프트 (점심-저녁)",
-        start: middle2Date.toISOString(),
-        end: middle2EndDate.toISOString(),
-        employeeIds: isWeekend
-          ? ["emp-5", "emp-8", "emp-1"] // 주말: 정도윤, 김지은, 박민우(매니저)
-          : isBusyDay
-          ? ["emp-1", "emp-4", "emp-8"] // 바쁜 평일: 박민우(매니저), 한수정, 김지은
-          : ["emp-4", "emp-8"], // 일반 평일: 한수정, 김지은
-        note: "점심 및 오후 피크타임",
-        isRecurring: false,
-        requiredStaff: isWeekend || isBusyDay ? 3 : 2,
-        shiftType: "middle",
-      });
-
-      // 일부 요일에만 추가 단시간 직원 (15:00 - 17:00)
-      if (dayOffset % 7 === 2 || dayOffset % 7 === 4) {
-        // 화요일, 목요일
-        const shortShiftDate = new Date(shiftDate);
-        shortShiftDate.setHours(15, 0, 0, 0);
-        const shortShiftEndDate = new Date(shiftDate);
-        shortShiftEndDate.setHours(17, 0, 0, 0);
-
-        dummyShifts.push({
-          id: `shift-short-${dayOffset}`,
-          storeId: "s1",
-          title: "단시간 시프트",
-          start: shortShiftDate.toISOString(),
-          end: shortShiftEndDate.toISOString(),
-          employeeIds: ["emp-9"], // 송민석
-          note: "단시간 근무 (오후 보조)",
-          isRecurring: false,
-          requiredStaff: 1,
-          shiftType: "middle",
-        });
-      }
-
-      // 클로징 시프트 (17:00 - 22:00)
-      const eveningDate = new Date(shiftDate);
-      eveningDate.setHours(17, 0, 0, 0);
-      const eveningEndDate = new Date(shiftDate);
-      eveningEndDate.setHours(22, 0, 0, 0);
-
-      dummyShifts.push({
-        id: `shift-evening-${dayOffset}`,
-        storeId: "s1",
-        title: "마감 시프트",
-        start: eveningDate.toISOString(),
-        end: eveningEndDate.toISOString(),
-        // 마감은 2명 (주말: 주말알바 + 마감알바, 평일: 주간알바/바리스타 + 마감알바)
-        employeeIds: isWeekend
-          ? ["emp-5", "emp-7", "emp-1"] // 주말: 정도윤, 윤준호, 박민우(매니저)
-          : dayOffset % 2 === 0
-          ? ["emp-8", "emp-7"] // 짝수일: 김지은(바리스타), 윤준호(마감)
-          : ["emp-2", "emp-7"], // 홀수일: 이서연(주간), 윤준호(마감)
-        note: "저녁 피크타임 및 마감 담당",
-        isRecurring: false,
-        requiredStaff: isWeekend ? 3 : 2,
-        shiftType: "close",
-      });
+    const existingStore = localStorage.getItem(LS_KEYS.STORE);
+    if (existingStore && !forceReset) {
+      storeInfo = JSON.parse(existingStore);
+      console.log("Using existing store info:", storeInfo);
+    } else {
+      localStorage.setItem(LS_KEYS.STORE, JSON.stringify(storeInfo));
+      console.log("Setting default store info:", storeInfo);
     }
+  } catch (e) {
+    console.error("Error handling store info:", e);
+    localStorage.setItem(LS_KEYS.STORE, JSON.stringify(storeInfo));
+  }
 
-    localStorage.setItem(LS_KEYS.SHIFTS, JSON.stringify(dummyShifts));
-
-    // 더미 대타 요청 생성
-    const nextWeekMonday = new Date(thisMonday);
-    nextWeekMonday.setDate(thisMonday.getDate() + 7);
-
-    const dummySubRequests: SubstituteRequest[] = [
-      {
-        id: "sub-req-1",
-        shiftId: `shift-morning-7`,
-        requesterId: "emp-3", // 최준영
-        status: "pending",
-        reason: "가족 행사로 인해 근무가 어렵습니다.",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "sub-req-2",
-        shiftId: `shift-middle-8`,
-        requesterId: "emp-8", // 김지은
-        substituteId: "emp-4", // 한수정
-        status: "accepted",
-        reason: "병원 검진으로 인해 근무가 어렵습니다.",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "sub-req-3",
-        shiftId: `shift-evening-5`,
-        requesterId: "emp-2", // 이서연
-        status: "pending",
-        reason: "학교 시험으로 인해 근무가 어렵습니다.",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-    localStorage.setItem(
-      LS_KEYS.SUBSTITUTE_REQUESTS,
-      JSON.stringify(dummySubRequests)
-    );
-
-    // 더미 스케줄 변경 요청 생성
-    const nextSundayDate = new Date(thisMonday);
-    nextSundayDate.setDate(thisMonday.getDate() + 13);
-
-    const dummyScheduleRequests: ScheduleChangeRequest[] = [
-      {
-        id: "sch-req-1",
-        employeeId: "emp-4", // 한수정
-        shiftId: `shift-morning-3`,
-        requestType: "timeChange",
-        status: "pending",
-        currentStart: new Date(
-          thisMonday.getTime() + 3 * 24 * 60 * 60 * 1000 + 8 * 60 * 60 * 1000
-        ).toISOString(),
-        currentEnd: new Date(
-          thisMonday.getTime() + 3 * 24 * 60 * 60 * 1000 + 14 * 60 * 60 * 1000
-        ).toISOString(),
-        requestedStart: new Date(
-          thisMonday.getTime() + 3 * 24 * 60 * 60 * 1000 + 10 * 60 * 60 * 1000
-        ).toISOString(),
-        requestedEnd: new Date(
-          thisMonday.getTime() + 3 * 24 * 60 * 60 * 1000 + 16 * 60 * 60 * 1000
-        ).toISOString(),
-        reason: "오전에 병원 진료가 있어 시간을 조정하고 싶습니다.",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "sch-req-2",
-        employeeId: "emp-5", // 정도윤
-        shiftId: `shift-middle-12`,
-        requestType: "dateChange",
-        status: "pending",
-        currentStart: new Date(
-          thisMonday.getTime() + 12 * 24 * 60 * 60 * 1000 + 13 * 60 * 60 * 1000
-        ).toISOString(),
-        currentEnd: new Date(
-          thisMonday.getTime() + 12 * 24 * 60 * 60 * 1000 + 18 * 60 * 60 * 1000
-        ).toISOString(),
-        requestedStart: new Date(
-          thisMonday.getTime() + 11 * 24 * 60 * 60 * 1000 + 13 * 60 * 60 * 1000
-        ).toISOString(),
-        requestedEnd: new Date(
-          thisMonday.getTime() + 11 * 24 * 60 * 60 * 1000 + 18 * 60 * 60 * 1000
-        ).toISOString(),
-        reason: "주말에 집안 행사가 있어 금요일로 변경하고 싶습니다.",
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-    localStorage.setItem(
-      LS_KEYS.SCHEDULE_CHANGE_REQUESTS,
-      JSON.stringify(dummyScheduleRequests)
-    );
-
-    // 더미 근무 승인 요청 생성
-    const dummyApprovalRequests: ShiftApprovalRequest[] = [
-      {
-        id: "app-req-1",
-        employeeId: "emp-7", // 윤준호
-        shiftId: `shift-evening-1`,
-        status: "pending",
-        submittedTime: new Date().toISOString(),
-        actualStart: new Date(
-          thisMonday.getTime() +
-            1 * 24 * 60 * 60 * 1000 +
-            17 * 60 * 5 * 60 * 1000
-        ).toISOString(), // 5분 늦음
-        actualEnd: new Date(
-          thisMonday.getTime() +
-            1 * 24 * 60 * 60 * 1000 +
-            22 * 60 * 60 * 1000 +
-            10 * 60 * 1000
-        ).toISOString(), // 10분 늦음
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        id: "app-req-2",
-        employeeId: "emp-6", // 강하은
-        shiftId: `shift-morning-2`,
-        status: "pending",
-        submittedTime: new Date().toISOString(),
-        actualStart: new Date(
-          thisMonday.getTime() +
-            2 * 24 * 60 * 60 * 1000 +
-            7 * 60 * 55 * 60 * 1000
-        ).toISOString(), // 5분 일찍 옴
-        actualEnd: new Date(
-          thisMonday.getTime() + 2 * 24 * 60 * 60 * 1000 + 14 * 60 * 60 * 1000
-        ).toISOString(),
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
-    ];
-    localStorage.setItem(
-      LS_KEYS.SHIFT_APPROVAL_REQUESTS,
-      JSON.stringify(dummyApprovalRequests)
-    );
-
-    // 더미 알림 생성
-    const dummyNotifications: EmployeeNotification[] = [
-      {
-        id: "notif-1",
-        employeeId: "emp-8", // 김지은
-        type: "substituteRequest",
-        title: "대타 요청이 수락되었습니다",
-        message: "한수정님이 귀하의 대타 요청을 수락했습니다.",
-        read: false,
-        relatedEntityId: "sub-req-2",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "notif-2",
-        employeeId: "emp-4", // 한수정
-        type: "substituteRequest",
-        title: "대타 요청 수락 완료",
-        message: "김지은님의 대타 요청을 수락했습니다.",
-        read: true,
-        relatedEntityId: "sub-req-2",
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "notif-3",
-        employeeId: "emp-6", // 강하은
-        type: "scheduleChange",
-        title: "근무 일정이 변경되었습니다",
-        message: "다음 주 화요일 근무 일정이 업데이트 되었습니다.",
-        read: false,
-        relatedEntityId: `shift-morning-9`,
-        createdAt: new Date().toISOString(),
-      },
-      {
-        id: "notif-4",
-        employeeId: "emp-3", // 최준영
-        type: "announcement",
-        title: "주말 근무 알림",
-        message: "이번 주 일요일 오픈 시프트가 예정되어 있습니다.",
-        read: false,
-        relatedEntityId: `shift-morning-6`,
-        createdAt: new Date().toISOString(),
-      },
-    ];
-    localStorage.setItem(
-      LS_KEYS.EMPLOYEE_NOTIFICATIONS,
-      JSON.stringify(dummyNotifications)
-    );
-
-    // 더미 가능 시간 생성
-    const dummyAvailabilities: EmployeeAvailability[] = [];
-
-    // 각 직원별 가능 시간 설정
-    // 김지은 (바리스타) - 경력직, 오전/오후 선호
-    for (let day = 0; day <= 6; day++) {
-      // 주중
-      if (day >= 1 && day <= 5) {
-        dummyAvailabilities.push({
-          employeeId: "emp-8", // 김지은
-          dayOfWeek: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-          startTime: "10:00",
-          endTime: "19:00",
-          isRecurring: true,
-          preference: "preferred",
-          exceptionDates: [],
-        });
-      }
-      // 주말
-      else {
-        dummyAvailabilities.push({
-          employeeId: "emp-8", // 김지은
-          dayOfWeek: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-          startTime: "10:00",
-          endTime: "19:00",
-          isRecurring: true,
-          preference: "available",
-          exceptionDates: [],
-        });
-      }
+  // --- 직원 정보 (기본값 또는 가져오기) ---
+  let employees: Employee[] = [
+    {
+      id: "e1",
+      name: "박민우",
+      role: "매니저",
+      hourlyRate: 11000,
+      email: "parkmw@example.com",
+      phoneNumber: "010-1111-2222",
+      status: "active",
+      bankAccount: "카카오뱅크 3333-01-1234567",
+      birthDate: "1995-03-15",
+    },
+    {
+      id: "e2",
+      name: "이서연",
+      role: "주간 알바",
+      hourlyRate: 9860,
+      email: "leesy@example.com",
+      phoneNumber: "010-2222-3333",
+      status: "active",
+      bankAccount: "신한은행 110-123-456789",
+      birthDate: "2000-08-20",
+    },
+    {
+      id: "e3",
+      name: "최준영",
+      role: "주말 알바",
+      hourlyRate: 9860,
+      email: "choijy@example.com",
+      phoneNumber: "010-3333-4444",
+      status: "active",
+      bankAccount: "국민은행 123-45-678901",
+      birthDate: "2002-01-10",
+    },
+    {
+      id: "e4",
+      name: "김지은",
+      role: "바리스타",
+      hourlyRate: 10000,
+      email: "kimje@example.com",
+      phoneNumber: "010-4444-5555",
+      status: "active",
+      bankAccount: "우리은행 1002-123-456789",
+      birthDate: "1998-11-25",
+    },
+    {
+      id: "e5",
+      name: "정도윤",
+      role: "주말 알바",
+      hourlyRate: 9860,
+      email: "jungdy@example.com",
+      phoneNumber: "010-5555-6666",
+      status: "active",
+      bankAccount: "하나은행 456-789012-345",
+      birthDate: "2003-05-01",
+    },
+    {
+      id: "e6",
+      name: "강하은",
+      role: "오픈 알바",
+      hourlyRate: 9860,
+      email: "kanghe@example.com",
+      phoneNumber: "010-6666-7777",
+      status: "active",
+      bankAccount: "기업은행 012-345678-01-011",
+      birthDate: "2001-09-12",
+    },
+    {
+      id: "e7",
+      name: "윤준호",
+      role: "마감 알바",
+      hourlyRate: 9860,
+      email: "yoonjh@example.com",
+      phoneNumber: "010-7777-8888",
+      status: "active",
+      bankAccount: "농협 302-1234-5678-91",
+      birthDate: "1999-07-07",
+    },
+    {
+      id: "e8",
+      name: "송민석",
+      role: "주말 알바",
+      hourlyRate: 9860,
+      email: "songms@example.com",
+      phoneNumber: "010-8888-9999",
+      status: "active",
+      bankAccount: "새마을금고 9002-1234-5678-1",
+      birthDate: "2000-04-18",
+    },
+  ];
+  try {
+    const existingEmployees = localStorage.getItem(LS_KEYS.EMPLOYEES);
+    if (existingEmployees && !forceReset) {
+      employees = JSON.parse(existingEmployees);
+      console.log("Using existing employees:", employees.length);
+    } else {
+      localStorage.setItem(LS_KEYS.EMPLOYEES, JSON.stringify(employees));
+      console.log("Setting default employees:", employees.length);
     }
+  } catch (e) {
+    console.error("Error handling employees:", e);
+    localStorage.setItem(LS_KEYS.EMPLOYEES, JSON.stringify(employees));
+  }
 
-    // 한수정 (주간 알바) - 경력직, 주중 오전 선호
-    for (let day = 0; day <= 6; day++) {
-      // 주중
-      if (day >= 1 && day <= 5) {
-        dummyAvailabilities.push({
-          employeeId: "emp-4", // 한수정
-          dayOfWeek: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-          startTime: "08:00",
-          endTime: "17:00",
-          isRecurring: true,
-          preference: "preferred",
-          exceptionDates: [],
-        });
-      }
-      // 주말
-      else {
-        dummyAvailabilities.push({
-          employeeId: "emp-4", // 한수정
-          dayOfWeek: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-          startTime: "09:00",
-          endTime: "15:00",
-          isRecurring: true,
-          preference: "available",
-          exceptionDates: [],
-        });
-      }
-    }
+  // --- 근무 일정 생성 (현실적인 카페 스케줄 반영) ---
+  const shifts: Shift[] = [];
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
 
-    // 나머지 직원들 가능 시간 설정
-    dummyEmployees.forEach((emp) => {
-      // 이미 설정한 김지은, 한수정 제외
-      if (emp.id === "emp-8" || emp.id === "emp-4") {
-        return;
-      }
+  const parseTime = (timeStr: string): { hours: number; minutes: number } => {
+    const [hours, minutes] = (timeStr || "00:00").split(":").map(Number);
+    return { hours, minutes };
+  };
 
-      // 요일별 가능 시간 (0: 일요일, 1: 월요일, ...)
-      for (let day = 0; day <= 6; day++) {
-        // 주말(토, 일)과 평일 다르게 설정
-        let preference: "preferred" | "available" | "unavailable";
-        let startTime = "08:00";
-        let endTime = "22:00";
+  const openingTime = parseTime(storeInfo.openingHour || "08:00");
+  const closingTime = parseTime(storeInfo.closingHour || "22:00");
 
-        if (emp.role === "주말 알바") {
-          // 주말 알바는 주말에 preferred, 평일에 unavailable
-          preference = day === 0 || day === 6 ? "preferred" : "unavailable";
-        } else if (emp.role === "주간 알바") {
-          // 주간 알바는 평일 낮에 preferred
-          preference = day >= 1 && day <= 5 ? "preferred" : "available";
-          startTime = "08:00";
-          endTime = "17:00";
-        } else if (emp.role === "저녁 알바" || emp.role === "마감 알바") {
-          // 저녁/마감 알바는 저녁에 preferred
-          preference = day >= 1 && day <= 5 ? "preferred" : "available";
-          startTime = "17:00";
-          endTime = "22:00";
-        } else if (emp.role === "오픈 알바") {
-          // 오픈 알바는 아침에 preferred
-          preference = day >= 1 && day <= 5 ? "preferred" : "available";
-          startTime = "08:00";
-          endTime = "14:00";
-        } else if (emp.role === "매니저") {
-          // 매니저는 모든 시간대 available
-          preference = "available";
-        } else {
-          // 기본값
-          preference =
-            day >= 1 && day <= 5
-              ? "available"
-              : Math.random() > 0.5
-              ? "available"
-              : "unavailable";
-        }
+  let employeeRotationIndex = 0;
 
-        dummyAvailabilities.push({
-          employeeId: emp.id,
-          dayOfWeek: day as 0 | 1 | 2 | 3 | 4 | 5 | 6,
-          startTime,
-          endTime,
-          isRecurring: true,
-          preference,
-          exceptionDates: [],
-        });
-      }
+  for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+    const dayOfWeek = d.getDay(); // 0: Sun, 6: Sat
+    const dateStr = d.toISOString().split("T")[0];
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+
+    const todaysShifts: Partial<Shift>[] = []; // Use Partial<Shift> initially
+
+    // Define shift slots for the day
+    const slots: {
+      startH: number;
+      startM: number;
+      endH: number;
+      endM: number;
+      type: string;
+      title: string;
+      staffNeeded: number;
+    }[] = [];
+
+    // 1. Open Shift
+    slots.push({
+      startH: 8,
+      startM: 0,
+      endH: 15,
+      endM: 0,
+      type: "open",
+      title: "오픈조",
+      staffNeeded: 1,
     });
 
-    localStorage.setItem(
-      LS_KEYS.EMPLOYEE_AVAILABILITIES,
-      JSON.stringify(dummyAvailabilities)
-    );
+    // 2. Middle Shift
+    slots.push({
+      startH: 11,
+      startM: 0,
+      endH: 18,
+      endM: 0,
+      type: "middle",
+      title: "미들조",
+      staffNeeded: isWeekend ? 1 : 1,
+    }); // 평일 1, 주말 1 (스윙 별도 추가)
 
-    console.log("더미 데이터 생성 완료");
-  } catch (error) {
-    console.error("더미 데이터 생성 오류:", error);
+    // 3. Swing Shift (Weekends only for peak time)
+    if (isWeekend) {
+      slots.push({
+        startH: 12,
+        startM: 0,
+        endH: 17,
+        endM: 0,
+        type: "swing",
+        title: "스윙조 (주말 피크)",
+        staffNeeded: 1,
+      });
+    }
+
+    // 4. Close Shift
+    slots.push({
+      startH: 15,
+      startM: 0,
+      endH: 22,
+      endM: 0,
+      type: "close",
+      title: "마감조",
+      staffNeeded: 1,
+    });
+
+    // Assign employees to slots
+    const dailyAssigned = new Set<string>(); // Prevent assigning same person twice on the same day
+
+    for (const slot of slots) {
+      for (let i = 0; i < slot.staffNeeded; i++) {
+        let assigned = false;
+        let attempts = 0;
+        while (!assigned && attempts < employees.length) {
+          const currentEmployee =
+            employees[employeeRotationIndex % employees.length];
+          employeeRotationIndex++;
+          attempts++;
+
+          if (!dailyAssigned.has(currentEmployee.id)) {
+            const shiftStart = new Date(d);
+            shiftStart.setHours(slot.startH, slot.startM, 0, 0);
+            const shiftEnd = new Date(d);
+            shiftEnd.setHours(slot.endH, slot.endM, 0, 0);
+
+            // Create the shift object matching the Shift type
+            const newShift: Shift = {
+              id: `${dateStr}-${currentEmployee.id}-${
+                slot.type
+              }-${i}-${Math.random().toString(16).slice(2)}`,
+              storeId: storeInfo.id,
+              start: shiftStart.toISOString(),
+              end: shiftEnd.toISOString(),
+              employeeIds: [currentEmployee.id],
+              isRecurring: false,
+              // Optional fields:
+              title: `${currentEmployee.name} - ${slot.title}`,
+              shiftType: slot.type as "open" | "middle" | "close", // Assert type if needed or handle 'swing'
+              note: isWeekend ? "주말 근무" : "평일 근무",
+              // requiredStaff: slot.staffNeeded // Add if needed in Shift type
+            };
+
+            shifts.push(newShift);
+            dailyAssigned.add(currentEmployee.id);
+            assigned = true;
+          }
+        }
+        if (!assigned) {
+          console.warn(
+            `Could not find available employee for ${slot.title} on ${dateStr}`
+          );
+          // Optionally create an unassigned shift here if needed
+        }
+      }
+    }
   }
+
+  // --- Save generated shifts (Existing try-catch block) ---
+  try {
+    localStorage.setItem(LS_KEYS.SHIFTS, JSON.stringify(shifts));
+    console.log("Generated realistic shifts:", shifts.length);
+  } catch (e) {
+    console.error("Error saving generated shifts:", e);
+  }
+
+  // --- 설정 완료 플래그 (기존과 동일) ---
+  if (!localStorage.getItem(LS_KEYS.SETUP_COMPLETE) || forceReset) {
+    localStorage.setItem(LS_KEYS.SETUP_COMPLETE, "true");
+    console.log("Setup complete flag set.");
+  }
+
+  // --- 기타 더미 데이터 초기화 (기존과 동일) ---
+  if (!localStorage.getItem(LS_KEYS.SUBSTITUTE_REQUESTS) || forceReset) {
+    localStorage.setItem(LS_KEYS.SUBSTITUTE_REQUESTS, JSON.stringify([]));
+  }
+  if (!localStorage.getItem(LS_KEYS.SCHEDULE_CHANGE_REQUESTS) || forceReset) {
+    localStorage.setItem(LS_KEYS.SCHEDULE_CHANGE_REQUESTS, JSON.stringify([]));
+  }
+  if (!localStorage.getItem(LS_KEYS.SHIFT_APPROVAL_REQUESTS) || forceReset) {
+    localStorage.setItem(LS_KEYS.SHIFT_APPROVAL_REQUESTS, JSON.stringify([]));
+  }
+  if (!localStorage.getItem(LS_KEYS.EMPLOYEE_NOTIFICATIONS) || forceReset) {
+    localStorage.setItem(LS_KEYS.EMPLOYEE_NOTIFICATIONS, JSON.stringify([]));
+  }
+  if (!localStorage.getItem(LS_KEYS.EMPLOYEE_AVAILABILITIES) || forceReset) {
+    localStorage.setItem(LS_KEYS.EMPLOYEE_AVAILABILITIES, JSON.stringify([]));
+  }
+
+  console.log("Dummy data generation finished.");
 };
