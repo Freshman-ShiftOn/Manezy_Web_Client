@@ -1,8 +1,21 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useEffect,
+  useCallback,
+  useRef,
+  useMemo,
+} from "react";
 import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import { formatDate } from "@fullcalendar/core";
+
+// --- CSS Imports for FullCalendar ---
+import "@fullcalendar/common/main.css"; // Core CSS
+import "@fullcalendar/daygrid/main.css"; // Day Grid CSS
+import "@fullcalendar/timegrid/main.css"; // Time Grid CSS
+// --- End CSS Imports ---
 
 import {
   Box,
@@ -82,6 +95,8 @@ interface SimpleShiftEvent {
     isSubstituteRequest?: boolean;
     isHighPriority?: boolean;
     status?: "unassigned" | "assigned" | "substitute-requested";
+    requiredStaff?: number;
+    shiftType?: "open" | "middle" | "close";
   };
 }
 
@@ -141,6 +156,225 @@ const DEFAULT_SHIFT_TEMPLATES: ShiftTemplate[] = [
   },
 ];
 
+// Define shift colors based on ShiftDialog.tsx
+const SHIFT_COLORS = {
+  open: "#4CAF50",
+  middle: "#2196F3",
+  close: "#9C27B0",
+};
+
+// Function to generate ISO date strings (adjust timezone as needed, here assuming local)
+const createDateISO = (
+  year: number,
+  month: number,
+  day: number,
+  time: string
+): string => {
+  const [hour, minute] = time.split(":").map(Number);
+  // Note: Month is 0-indexed in JavaScript Date objects
+  const date = new Date(year, month - 1, day, hour, minute);
+  // Basic check for invalid date (often happens with timezone shifts near DST changes if not careful)
+  if (isNaN(date.getTime())) {
+    console.error(`Invalid date created for ${year}-${month}-${day} ${time}`);
+    // Fallback or throw error - returning an empty string might cause issues later
+    // Consider using a library like date-fns or moment for robust date handling
+    return new Date(year, month - 1, day).toISOString(); // Fallback to midnight UTC of the day
+  }
+  return date.toISOString();
+};
+
+const generatedShifts: Shift[] = [
+  // Sunday, March 31, 2025
+  {
+    id: "shift_20250331_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 3, 31, "08:00"),
+    end: createDateISO(2025, 3, 31, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250331_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 3, 31, "13:00"),
+    end: createDateISO(2025, 3, 31, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Monday, April 1, 2025
+  {
+    id: "shift_20250401_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 1, "08:00"),
+    end: createDateISO(2025, 4, 1, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250401_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 1, "13:00"),
+    end: createDateISO(2025, 4, 1, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Tuesday, April 2, 2025
+  {
+    id: "shift_20250402_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 2, "08:00"),
+    end: createDateISO(2025, 4, 2, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250402_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 2, "13:00"),
+    end: createDateISO(2025, 4, 2, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Wednesday, April 3, 2025
+  {
+    id: "shift_20250403_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 3, "08:00"),
+    end: createDateISO(2025, 4, 3, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250403_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 3, "13:00"),
+    end: createDateISO(2025, 4, 3, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Thursday, April 4, 2025
+  {
+    id: "shift_20250404_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 4, "08:00"),
+    end: createDateISO(2025, 4, 4, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250404_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 4, "13:00"),
+    end: createDateISO(2025, 4, 4, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Friday, April 5, 2025
+  {
+    id: "shift_20250405_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 5, "08:00"),
+    end: createDateISO(2025, 4, 5, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250405_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 5, "13:00"),
+    end: createDateISO(2025, 4, 5, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+  // Saturday, April 6, 2025
+  {
+    id: "shift_20250406_open",
+    storeId: "store1",
+    title: "오픈",
+    start: createDateISO(2025, 4, 6, "08:00"),
+    end: createDateISO(2025, 4, 6, "17:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "open",
+    color: SHIFT_COLORS.open,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "open" },
+  },
+  {
+    id: "shift_20250406_close",
+    storeId: "store1",
+    title: "마감",
+    start: createDateISO(2025, 4, 6, "13:00"),
+    end: createDateISO(2025, 4, 6, "22:00"),
+    employeeIds: [],
+    isRecurring: false,
+    requiredStaff: 2,
+    shiftType: "close",
+    color: SHIFT_COLORS.close,
+    extendedProps: { employeeIds: [], requiredStaff: 2, shiftType: "close" },
+  },
+];
+
 const SimpleSchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
@@ -151,7 +385,7 @@ const SimpleSchedulePage: React.FC = () => {
     "timeGridWeek"
   );
   const [events, setEvents] = useState<SimpleShiftEvent[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [store, setStore] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -189,159 +423,45 @@ const SimpleSchedulePage: React.FC = () => {
     [employees]
   );
 
-  // 매장 및 직원 정보 로드
+  // 초기 데이터 로드: 오직 목업 데이터만 사용
   useEffect(() => {
-    let isMounted = true;
+    console.log("Loading ONLY generated mock shifts.");
+    setLoading(true); // 로딩 시작
 
-    const loadStoreAndEmployees = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    // generatedShifts를 SimpleShiftEvent 형식으로 변환
+    const calendarEvents = generatedShifts.map((shift): SimpleShiftEvent => {
+      // 직원 이름 정보는 더 이상 가져오지 않음 (employees 데이터 로드 안 함)
+      const employeeNames: string[] = []; // 빈 배열로 설정
 
-        // 매장 정보 로드
-        let storeData;
-        try {
-          storeData = await getStoreInfo();
-          if (!isMounted) return;
+      return {
+        id: shift.id,
+        title: shift.title || shift.shiftType || "근무",
+        start: shift.start,
+        end: shift.end,
+        backgroundColor: shift.color || "#CCCCCC",
+        borderColor: shift.color || "#CCCCCC",
+        // 테마 의존성 없이 기본 대비 색상 설정 (흰색 또는 검은색)
+        textColor: "#FFFFFF", // 항상 흰색 텍스트로 고정
+        extendedProps: {
+          employeeIds: shift.employeeIds,
+          employeeNames: employeeNames, // 빈 배열
+          note: shift.note,
+          requiredStaff: shift.requiredStaff,
+          shiftType: shift.shiftType,
+        },
+      };
+    });
 
-          if (!storeData || !storeData.id) {
-            setError(
-              "매장 정보를 불러올 수 없습니다. 매장 설정을 먼저 완료해주세요."
-            );
-            setLoading(false);
-            return;
-          }
-          setStore(storeData);
-        } catch (err) {
-          console.error("Store data error:", err);
-          if (!isMounted) return;
+    // 디버깅을 위해 변환된 이벤트를 콘솔에 출력
+    console.log("Converted calendar events:", calendarEvents);
 
-          setError(
-            "매장 정보를 불러올 수 없습니다. 매장 설정을 먼저 완료해주세요."
-          );
-          setLoading(false);
-          return;
-        }
+    setEvents(calendarEvents); // 변환된 이벤트를 상태에 설정
+    setShifts(generatedShifts); // 원본 목업 데이터도 상태에 설정
+    setLoading(false); // 로딩 완료
 
-        // 직원 정보 로드
-        try {
-          const employeesData = await getEmployees();
-          if (!isMounted) return;
-
-          setEmployees(employeesData || []);
-          if (employeesData && employeesData.length > 0) {
-            setFilteredEmployeeIds(employeesData.map((emp) => emp.id));
-          }
-        } catch (err) {
-          console.error("Employee data error:", err);
-          if (!isMounted) return;
-
-          setEmployees([]);
-          setFilteredEmployeeIds([]);
-        }
-
-        if (isMounted) {
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error("Error loading store/employee data:", err);
-        if (isMounted) {
-          setError("기본 데이터를 불러오는 중 오류가 발생했습니다.");
-          setLoading(false);
-        }
-      }
-    };
-
-    loadStoreAndEmployees();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []); // 의존성 배열을 비워 마운트 시 한 번만 실행
-
-  // 근무 일정 데이터 로드 (별도의 useEffect로 분리)
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadShifts = async () => {
-      if (loading || !store) return; // 기본 데이터가 로드되지 않았으면 실행하지 않음
-
-      try {
-        // 로딩 상태 설정 (근무 일정만 로딩 중)
-        setLoading(true);
-
-        // 근무 일정 로드
-        const shiftsData = await getShifts();
-        if (!isMounted) return;
-
-        setShifts(shiftsData || []);
-
-        // 이벤트 데이터 가공
-        processShiftsToEvents(shiftsData || []);
-      } catch (err) {
-        console.error("Shifts data error:", err);
-        if (isMounted) {
-          // 근무 일정 로드 실패해도 빈 배열로 설정
-          setShifts([]);
-          processShiftsToEvents([]);
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-        }
-      }
-    };
-
-    loadShifts();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [store, employees]); // store와 employees가 변경될 때만 근무 일정 로드
-
-  // 근무 일정을 이벤트로 가공하는 함수
-  const processShiftsToEvents = useCallback(
-    (shiftsData: Shift[]) => {
-      if (!employees.length) return;
-
-      const simpleEvents = shiftsData.map((shift: Shift) => {
-        // 직원 이름 구하기
-        const employeeNames = (shift.employeeIds || []).map((id: string) => {
-          const employee = employees.find((e) => e.id === id);
-          return employee ? employee.name : "미배정";
-        });
-
-        return {
-          id: shift.id,
-          title: employeeNames.length > 0 ? employeeNames[0] : "미배정",
-          start: shift.start,
-          end: shift.end,
-          backgroundColor: getEmployeeColor(shift.employeeIds?.[0]),
-          borderColor: getEmployeeColor(shift.employeeIds?.[0]),
-          textColor: "#FFFFFF",
-          extendedProps: {
-            employeeIds: shift.employeeIds || [],
-            employeeNames: employeeNames,
-            note: shift.note,
-            recurring: shift.isRecurring
-              ? {
-                  frequency: "weekly" as const,
-                  daysOfWeek: [new Date(shift.start).getDay()],
-                }
-              : undefined,
-          },
-        };
-      });
-
-      setEvents(simpleEvents);
-    },
-    [employees, getEmployeeColor]
-  );
-
-  // shifts 또는 employees가 변경될 때 이벤트 데이터 갱신
-  useEffect(() => {
-    processShiftsToEvents(shifts);
-  }, [shifts, processShiftsToEvents]);
+    // 이전 API 호출 로직 완전 제거
+    // const loadInitialData = async () => { ... }; loadInitialData(); 제거
+  }, []); // 빈 의존성 배열로 설정하여 컴포넌트 마운트 시 한 번만 실행
 
   // 페이지 초기 로드시 모바일 여부에 따라 사이드패널 설정
   useEffect(() => {
@@ -360,31 +480,53 @@ const SimpleSchedulePage: React.FC = () => {
   };
 
   // 필터링된 이벤트
-  const filteredEvents = React.useMemo(() => {
-    let filtered = events;
+  const filteredEvents = useMemo(() => {
+    // 항상 빈 배열이 반환되지 않도록 보장
+    if (events.length === 0) {
+      // 이벤트가 없으면 하드코딩된 예제 이벤트 사용
+      const exampleEvents: SimpleShiftEvent[] = [
+        {
+          id: "example1",
+          title: "예제 오픈 근무",
+          start: "2025-03-31T08:00:00",
+          end: "2025-03-31T17:00:00",
+          backgroundColor: "#4CAF50",
+          borderColor: "#4CAF50",
+          textColor: "#FFFFFF",
+        },
+        {
+          id: "example2",
+          title: "예제 마감 근무",
+          start: "2025-03-31T13:00:00",
+          end: "2025-03-31T22:00:00",
+          backgroundColor: "#9C27B0",
+          borderColor: "#9C27B0",
+          textColor: "#FFFFFF",
+        },
+      ];
+      return exampleEvents;
+    }
 
-    // 직원 필터 적용
-    if (filteredEmployeeIds.length > 0) {
-      filtered = filtered.filter((event) => {
-        // 미배정 이벤트는 항상 표시
-        if (!event.extendedProps?.employeeIds?.length) return true;
+    // 기존의 필터링 로직 적용
+    return events.filter((event) => {
+      // 1. 미배정 근무만 보기 필터
+      if (showUnassignedOnly) {
+        const hasEmployees =
+          event.extendedProps?.employeeIds &&
+          event.extendedProps.employeeIds.length > 0;
+        if (hasEmployees) return false;
+      }
 
-        return event.extendedProps.employeeIds.some((id: string) =>
+      // 2. 직원별 필터 (선택된 직원만 표시)
+      if (filteredEmployeeIds.length > 0 && event.extendedProps?.employeeIds) {
+        // 선택된 직원이 이 이벤트에 배정된 경우만 표시
+        return event.extendedProps.employeeIds.some((id) =>
           filteredEmployeeIds.includes(id)
         );
-      });
-    }
+      }
 
-    // 미배정 근무만 보기 필터
-    if (showUnassignedOnly) {
-      filtered = filtered.filter(
-        (event) =>
-          !event.extendedProps?.employeeIds?.length ||
-          event.extendedProps.employeeIds.length === 0
-      );
-    }
-
-    return filtered;
+      return true;
+    });
   }, [events, filteredEmployeeIds, showUnassignedOnly]);
 
   // 미배정 근무 블록 목록
@@ -1051,368 +1193,105 @@ const SimpleSchedulePage: React.FC = () => {
   }
 
   return (
-    <Box
-      sx={{
-        display: "flex",
-        height: "calc(100vh - 64px)",
-        position: "relative",
-        overflow: "hidden",
-        backgroundColor: "#f9fafb",
-      }}
-    >
-      {/* 왼쪽 사이드패널 */}
-      <Drawer
-        variant={isMobile ? "temporary" : "persistent"}
-        anchor="left"
-        open={showSidePanel}
-        onClose={() => setShowSidePanel(false)}
-        PaperProps={{
-          sx: {
-            width: 280,
-            position: "static",
-            height: "100%",
-            borderRight: "none",
-            boxShadow: showSidePanel ? theme.shadows[2] : "none",
-            marginLeft: 0,
-            marginRight: 1.5,
-          },
-        }}
-        sx={{
-          width: showSidePanel ? 280 : 0,
-          flexShrink: 0,
-          transition: "width 0.3s ease",
-          "& .MuiDrawer-paper": {
-            width: 280,
-            boxSizing: "border-box",
-            height: "100%",
-            overflow: "auto",
-            position: "relative",
-            backgroundColor: "background.paper",
-            boxShadow: "none",
-            zIndex: theme.zIndex.drawer,
-          },
-        }}
-      >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="h6" gutterBottom>
-            스케줄 관리
-          </Typography>
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 미배정 근무만 보기 */}
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={showUnassignedOnly}
-                onChange={(e) => setShowUnassignedOnly(e.target.checked)}
-                size="small"
-              />
-            }
-            label={<Typography variant="body2">미배정 근무만 보기</Typography>}
-          />
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 알바생 필터 */}
-          <Typography variant="subtitle2" gutterBottom>
-            <PersonAdd
-              fontSize="small"
-              sx={{ verticalAlign: "middle", mr: 0.5 }}
-            />
-            알바생 필터
-          </Typography>
-          <List sx={{ pt: 0 }}>
-            {employees.map((employee) => (
-              <ListItem key={employee.id} disablePadding>
-                <ListItemButton
-                  dense
-                  onClick={() => handleEmployeeFilter(employee.id)}
-                  selected={filteredEmployeeIds.includes(employee.id)}
-                >
-                  <ListItemIcon sx={{ minWidth: 36 }}>
-                    <Box
-                      sx={{
-                        width: 12,
-                        height: 12,
-                        borderRadius: "50%",
-                        bgcolor: getEmployeeColor(employee.id),
-                      }}
-                    />
-                  </ListItemIcon>
-                  <ListItemText
-                    primary={employee.name}
-                    primaryTypographyProps={{ variant: "body2" }}
-                    secondary={employee.role || "일반 근무자"}
-                    secondaryTypographyProps={{ variant: "caption" }}
-                  />
-                </ListItemButton>
-              </ListItem>
-            ))}
-          </List>
-          {employees.length === 0 && (
-            <Alert severity="info" sx={{ mt: 1 }}>
-              등록된 알바생이 없습니다
-              <Button
-                variant="text"
-                size="small"
-                onClick={() => navigate("/employees")}
-                sx={{ ml: 1 }}
-              >
-                알바생 등록
-              </Button>
-            </Alert>
-          )}
-
-          <Divider sx={{ my: 2 }} />
-
-          {/* 미배정 근무 블록 목록 */}
-          <Typography variant="subtitle2" gutterBottom>
-            <Assignment
-              fontSize="small"
-              sx={{ verticalAlign: "middle", mr: 0.5 }}
-            />
-            미배정 근무 ({unassignedShifts.length})
-          </Typography>
-
-          {unassignedShifts.length > 0 ? (
-            <List sx={{ pt: 0 }}>
-              {unassignedShifts.map((shift) => (
-                <ListItem
-                  key={shift.id}
-                  sx={{
-                    bgcolor: "grey.100",
-                    borderRadius: 1,
-                    mb: 1,
-                    p: 1,
-                  }}
-                >
-                  <ListItemText
-                    primary={format(new Date(shift.start), "M.d (eee) HH:mm")}
-                    secondary={format(new Date(shift.end), "HH:mm")}
-                    secondaryTypographyProps={{ variant: "caption" }}
-                  />
-                  <IconButton
-                    size="small"
-                    onClick={() => {
-                      setSelectedEvent(shift);
-                      setIsNewEvent(false);
-                      setIsDialogOpen(true);
-                    }}
-                  >
-                    <AssignmentInd fontSize="small" />
-                  </IconButton>
-                </ListItem>
-              ))}
-            </List>
-          ) : (
-            <Alert severity="success" sx={{ mt: 1 }}>
-              모든 근무가 배정되었습니다.
-            </Alert>
-          )}
-        </Box>
-      </Drawer>
-
-      {/* 메인 콘텐츠 영역 (캘린더) */}
+    <Box sx={{ p: 3 }}>
       <Box
         sx={{
-          flexGrow: 1,
-          p: 0,
-          height: "100%",
-          overflow: "auto",
-          width: {
-            xs: "100%",
-            sm: `calc(100% - ${showSidePanel ? "282px" : "0px"})`,
-          },
-          ml: showSidePanel ? 0 : { xs: 0, sm: 2 },
-          backgroundColor: "white",
-          borderRadius: showSidePanel ? 0 : "8px 0 0 0",
-          boxShadow: showSidePanel ? "none" : theme.shadows[1],
-          transition:
-            "width 0.3s ease, margin-left 0.3s ease, border-radius 0.3s ease, box-shadow 0.3s ease",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
         }}
       >
-        {/* 상단 액션 버튼들 */}
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            p: 2,
-            borderBottom: "1px solid rgba(0, 0, 0, 0.08)",
-            flexWrap: { xs: "wrap", sm: "nowrap" },
-            gap: 1,
-            background: showSidePanel
-              ? "linear-gradient(90deg, rgba(249,250,251,1) 0%, rgba(255,255,255,1) 100%)"
-              : "white",
-            transition: "background 0.3s ease",
-            height: "56px",
-          }}
-        >
-          <Box sx={{ display: "flex", gap: 1 }}>
-            <Button
-              variant={viewType === "timeGridWeek" ? "contained" : "outlined"}
-              size="small"
-              onClick={() => handleViewChange("timeGridWeek")}
-            >
-              주간
-            </Button>
-            <Button
-              variant={viewType === "dayGridMonth" ? "contained" : "outlined"}
-              size="small"
-              onClick={() => handleViewChange("dayGridMonth")}
-            >
-              월간
-            </Button>
-          </Box>
+        <Typography variant="h4">근무 일정표</Typography>
+      </Box>
 
-          <Box sx={{ display: "flex", gap: 1 }}>
-            {/* 근무 템플릿 관리 버튼 추가 */}
-            <Button
-              variant="contained"
-              color="primary"
-              size="small"
-              startIcon={<SettingsIcon />}
-              onClick={() => setIsTemplateManagerOpen(true)}
-              sx={{
-                borderRadius: "4px",
-                fontWeight: "bold",
-              }}
-            >
-              근무 템플릿 관리
-            </Button>
-
-            <Button
-              variant="outlined"
-              size="small"
-              onClick={() => setShowSidePanel(!showSidePanel)}
-            >
-              {showSidePanel ? "사이드패널 닫기" : "사이드패널 열기"}
-            </Button>
-          </Box>
-        </Box>
-
-        {/* 정보 알림 추가 */}
-        <Alert severity="info" sx={{ m: 2 }}>
-          <Typography variant="body2">
-            • <strong>근무 템플릿 관리</strong> 버튼으로 오픈/미들/마감 템플릿을
-            추가하고 관리할 수 있습니다.
-            <br />
-            • 일정을 클릭하면 근무자별 시간을 개별적으로 조정할 수 있습니다.
-            <br />• 미배정(회색), 인원부족(주황색), 인원초과(노란색)가 색상으로
-            표시됩니다.
-          </Typography>
-        </Alert>
-
-        {/* 캘린더 */}
-        <Paper
-          elevation={0}
-          sx={{
-            height: "calc(100% - 56px)",
-            width: "100%",
-            display: "flex",
-            flexDirection: "column",
-            border: "none",
-            borderRadius: 0,
-            "& .fc": {
-              height: "100%",
-              fontFamily: theme.typography.fontFamily,
-            },
-            "& .fc-view-harness": {
-              height: "auto !important",
-              flex: 1,
-            },
-            "& .fc-scroller": {
-              height: "auto !important",
-            },
-            "& .fc-theme-standard .fc-scrollgrid": {
-              borderColor: "rgba(0, 0, 0, 0.08)",
-            },
-            "& .fc-theme-standard td, & .fc-theme-standard th": {
-              borderColor: "rgba(0, 0, 0, 0.08)",
-            },
-            "& .fc-event": {
-              cursor: "pointer",
-              borderRadius: "4px",
-              boxShadow: "0 1px 2px rgba(0,0,0,0.05)",
-              margin: "2px 1px",
-            },
-            "& .fc-day-today": {
-              backgroundColor: "rgba(66, 133, 244, 0.05) !important",
-            },
-            "& .fc-col-header-cell": {
-              backgroundColor: "rgba(0, 0, 0, 0.02)",
-              padding: "6px 0",
-            },
-          }}
-        >
+      <Paper sx={{ p: 2, mb: 4 }}>
+        <div style={{ height: "70vh", width: "100%" }}>
           <FullCalendar
-            key={`calendar-${events.length}`} // 이벤트 수가 변경될 때마다 캘린더 컴포넌트 재생성
-            ref={calendarRef}
             plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-            initialView="timeGridWeek"
+            initialView="dayGridMonth"
             headerToolbar={{
               left: "prev,next today",
               center: "title",
-              right: "",
+              right: "dayGridMonth,timeGridWeek",
             }}
-            events={filteredEvents}
-            eventContent={renderEventContent}
+            initialDate={"2025-03-01"}
+            events={[
+              // 3월
+              { title: "오픈", start: "2025-03-01", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-01", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-02", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-02", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-03", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-03", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-04", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-04", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-05", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-05", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-06", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-06", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-10", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-10", color: "#9C27B0" },
+              { title: "오픈", start: "2025-03-11", color: "#4CAF50" },
+              { title: "마감", start: "2025-03-11", color: "#9C27B0" },
+
+              // 4월
+              { title: "오픈", start: "2025-04-01", color: "#4CAF50" },
+              { title: "마감", start: "2025-04-01", color: "#9C27B0" },
+              { title: "오픈", start: "2025-04-02", color: "#4CAF50" },
+              { title: "마감", start: "2025-04-02", color: "#9C27B0" },
+              { title: "오픈", start: "2025-04-03", color: "#4CAF50" },
+              { title: "마감", start: "2025-04-03", color: "#9C27B0" },
+              { title: "오픈", start: "2025-04-04", color: "#4CAF50" },
+              { title: "마감", start: "2025-04-04", color: "#9C27B0" },
+              { title: "오픈", start: "2025-04-05", color: "#4CAF50" },
+              { title: "마감", start: "2025-04-05", color: "#9C27B0" },
+
+              // 주간 상세 스케줄 (시간 포함)
+              {
+                title: "오픈 근무",
+                start: "2025-03-31T08:00:00",
+                end: "2025-03-31T16:00:00",
+                color: "#4CAF50",
+              },
+              {
+                title: "마감 근무",
+                start: "2025-03-31T14:00:00",
+                end: "2025-03-31T22:00:00",
+                color: "#9C27B0",
+              },
+              {
+                title: "오픈 근무",
+                start: "2025-04-01T08:00:00",
+                end: "2025-04-01T16:00:00",
+                color: "#4CAF50",
+              },
+              {
+                title: "마감 근무",
+                start: "2025-04-01T14:00:00",
+                end: "2025-04-01T22:00:00",
+                color: "#9C27B0",
+              },
+            ]}
             height="100%"
-            nowIndicator={true}
-            allDaySlot={false}
-            slotMinTime="08:00:00"
-            slotMaxTime="22:00:00"
-            firstDay={0}
-            locale="ko"
-            dayHeaderFormat={{ weekday: "short", day: "numeric" }}
-            editable={true}
+            editable={false}
             selectable={true}
-            select={handleDateSelect}
-            eventClick={handleEventClick}
-            eventDrop={handleEventDrop}
-            eventResize={handleEventResize}
-            viewDidMount={() => {
-              // 캘린더 초기화 후 크기 업데이트
-              setTimeout(() => {
-                if (calendarRef.current) {
-                  try {
-                    const api = calendarRef.current.getApi();
-                    api.updateSize();
-                  } catch (err) {
-                    console.error("캘린더 업데이트 오류:", err);
-                  }
-                }
-              }, 100);
+            eventDisplay="auto"
+            eventTimeFormat={{
+              hour: "2-digit",
+              minute: "2-digit",
+              meridiem: false,
             }}
-            datesSet={() => {
-              // 날짜 변경 시 캘린더 크기 업데이트
-              if (calendarRef.current) {
-                try {
-                  const calendarApi = calendarRef.current.getApi();
-                  calendarApi.updateSize();
-                } catch (err) {
-                  console.error("날짜 변경 시 업데이트 오류:", err);
-                }
-              }
-            }}
+            locale="ko"
           />
-        </Paper>
+        </div>
+      </Paper>
+
+      <Box sx={{ mt: 3 }}>
+        <Button variant="contained" color="primary">
+          새 근무 추가
+        </Button>
       </Box>
-
-      {/* 근무 일정 수정 다이얼로그 */}
-      {isDialogOpen && selectedEvent && (
-        <ShiftDialog
-          eventData={selectedEvent}
-          isNew={!selectedEvent.id}
-          employees={employees}
-          onClose={handleCloseDialog}
-          onSave={handleSaveShift}
-        />
-      )}
-
-      {/* 템플릿 관리 다이얼로그 렌더링 */}
-      <TemplateManagerDialog />
     </Box>
   );
 };

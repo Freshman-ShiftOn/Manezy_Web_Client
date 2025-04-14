@@ -1,67 +1,122 @@
 // src/routes/Dashboard/DashboardPage.tsx
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
-  Chip,
-  CircularProgress,
-  Alert,
-  Avatar,
   Grid,
-  Paper,
+  Card,
+  CardContent,
+  CircularProgress,
+  Button,
+  Avatar,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemAvatar,
+  Divider,
+  useTheme,
+  Chip,
 } from "@mui/material";
-import { CalendarToday as CalendarTodayIcon } from "@mui/icons-material";
-import { getStoreInfo, getShifts, getEmployees } from "../../services/api"; // 필요한 API 호출
-import { Store, Shift, Employee } from "../../lib/types";
-import { isToday } from "date-fns";
+import { useNavigate } from "react-router-dom";
+import { getEmployees, getShifts, getStoreInfo } from "../../services/api";
+import { Employee, Shift, Store } from "../../lib/types";
+import CalendarTodayIcon from "@mui/icons-material/CalendarToday";
+import MonetizationOnIcon from "@mui/icons-material/MonetizationOn";
+import PeopleAltIcon from "@mui/icons-material/PeopleAlt";
+import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import EventIcon from "@mui/icons-material/Event";
+import {
+  format,
+  isToday,
+  parseISO,
+  differenceInHours,
+  isSameMonth,
+} from "date-fns";
+import { ko } from "date-fns/locale";
 
-function DashboardPage() {
+// Helper function to format time range
+const formatTimeRange = (start: string, end: string): string => {
+  try {
+    const startTime = format(parseISO(start), "HH:mm");
+    const endTime = format(parseISO(end), "HH:mm");
+    return `${startTime} - ${endTime}`;
+  } catch (error) {
+    console.error("Error formatting time range:", error);
+    return "시간 오류";
+  }
+};
+
+const DashboardPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [store, setStore] = useState<Store | null>(null);
-  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [storeInfo, setStoreInfo] = useState<Store | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<Shift[]>([]);
+  const [todaysShifts, setTodaysShifts] = useState<Shift[]>([]);
+  const [estimatedMonthlyWage, setEstimatedMonthlyWage] = useState<number>(0);
+  const navigate = useNavigate();
+  const theme = useTheme();
 
-  // 데이터 로드 (Store, Shifts, Employees)
   useEffect(() => {
-    const loadData = async () => {
+    const fetchData = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
+        const [storeData, employeeData, shiftData] = await Promise.all([
+          getStoreInfo(),
+          getEmployees(),
+          getShifts(),
+        ]);
 
-        // API에서 데이터 가져오기 (store, employees, shifts 정보 필요)
-        const storeData = await getStoreInfo();
-        const employeesData = await getEmployees();
-        const shiftsData = await getShifts();
+        setStoreInfo(storeData);
+        setEmployees(employeeData || []);
+        setShifts(shiftData || []);
 
-        setStore(storeData);
-        setEmployees(employeesData);
-        setShifts(shiftsData);
+        // Filter today's shifts
+        const today = new Date();
+        const filteredTodaysShifts = (shiftData || []).filter((shift) =>
+          isToday(parseISO(shift.start))
+        );
+        // Sort today's shifts by start time
+        filteredTodaysShifts.sort(
+          (a, b) => parseISO(a.start).getTime() - parseISO(b.start).getTime()
+        );
+        setTodaysShifts(filteredTodaysShifts);
 
-        setLoading(false);
-      } catch (err) {
-        console.error("Error loading data:", err);
-        setError("데이터를 불러오는 중 오류가 발생했습니다");
+        // Calculate estimated monthly wage
+        let totalWage = 0;
+        const employeeMap = new Map(employeeData?.map((emp) => [emp.id, emp]));
+        const currentMonthShifts = (shiftData || []).filter((shift) =>
+          isSameMonth(parseISO(shift.start), today)
+        );
+
+        currentMonthShifts.forEach((shift) => {
+          const start = parseISO(shift.start);
+          const end = parseISO(shift.end);
+          const hours = differenceInHours(end, start); // Note: This is a simple hour difference
+
+          shift.employeeIds.forEach((empId) => {
+            const employee = employeeMap.get(empId);
+            if (employee) {
+              totalWage +=
+                hours * (employee.hourlyRate || storeData?.baseHourlyRate || 0);
+            }
+          });
+        });
+        setEstimatedMonthlyWage(totalWage);
+      } catch (error) {
+        console.error("대시보드 데이터 로딩 오류:", error);
+        // Handle error appropriately
+      } finally {
         setLoading(false);
       }
     };
 
-    loadData();
+    fetchData();
   }, []);
 
-  // 오늘 근무자 목록 계산 (유지)
-  const todaysWorkers = useMemo(() => {
-    if (!shifts.length || !employees.length) return [];
-    const todayShifts = shifts.filter((shift) =>
-      isToday(new Date(shift.start))
-    );
-    const workerIds = new Set<string>();
-    todayShifts.forEach((shift) => {
-      shift.employeeIds.forEach((id) => workerIds.add(id));
-    });
-    return employees.filter((emp) => workerIds.has(emp.id));
-  }, [shifts, employees]);
+  const getEmployeeName = (employeeId: string): string => {
+    return employees.find((emp) => emp.id === employeeId)?.name || "미지정";
+  };
 
-  // 로딩 상태 표시
   if (loading) {
     return (
       <Box
@@ -69,98 +124,163 @@ function DashboardPage() {
           display: "flex",
           justifyContent: "center",
           alignItems: "center",
-          height: "80vh",
+          height: "60vh",
         }}
       >
         <CircularProgress />
-      </Box>
-    );
-  }
-
-  // 에러 상태 표시
-  if (error) {
-    return (
-      <Box sx={{ p: 3 }}>
-        <Alert severity="error">{error}</Alert>
+        <Typography sx={{ ml: 2 }}>대시보드 로딩 중...</Typography>
       </Box>
     );
   }
 
   return (
-    <Box sx={{ p: 3 }}>
-      {/* 상단: 환영 메시지 및 날짜 */}
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          mb: 4,
-        }}
-      >
-        <Typography variant="h4" component="h1">
-          안녕하세요, {store?.name || "매장"}입니다
-        </Typography>
-        <Chip
-          icon={<CalendarTodayIcon />}
-          label={new Date().toLocaleDateString("ko-KR", {
-            year: "numeric",
-            month: "long",
-            day: "numeric",
-            weekday: "long",
-          })}
-          color="primary"
-          variant="outlined"
-        />
-      </Box>
+    <Box sx={{ flexGrow: 1 }}>
+      <Typography variant="h4" gutterBottom sx={{ mb: 4, fontWeight: "bold" }}>
+        {storeInfo?.name || "매장"} 대시보드
+      </Typography>
 
-      {/* 오늘 근무자 명단 표시 (유지) */}
-      <Box sx={{ mt: 4 }}>
-        <Typography variant="h6" sx={{ mb: 2 }}>
-          오늘 근무 예정 직원
-        </Typography>
-        {todaysWorkers.length > 0 ? (
-          <Grid container spacing={2}>
-            {todaysWorkers.map((employee) => (
-              <Grid item key={employee.id} xs={6} sm={4} md={3} lg={2}>
-                {" "}
-                {/* Grid 크기 조정 */}
-                <Paper sx={{ p: 1.5, display: "flex", alignItems: "center" }}>
-                  {" "}
-                  {/* 패딩 조정 */}
-                  <Avatar
-                    sx={{
-                      mr: 1.5,
-                      width: 32,
-                      height: 32,
-                      fontSize: "0.875rem",
-                    }}
+      <Grid container spacing={3}>
+        {/* Today's Schedule Card (Moved to top) */}
+        <Grid item xs={12}>
+          <Card sx={{ borderRadius: 3, boxShadow: 3 }}>
+            <CardContent>
+              <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+                <Avatar
+                  sx={{ bgcolor: "info.light", width: 40, height: 40, mr: 1.5 }}
+                >
+                  <CalendarTodayIcon sx={{ color: "info.dark" }} />
+                </Avatar>
+                <Box>
+                  <Typography
+                    variant="h6"
+                    component="div"
+                    sx={{ fontWeight: "medium" }}
                   >
-                    {" "}
-                    {/* 크기/마진 조정 */}
-                    {employee.name.charAt(0)}
-                  </Avatar>
-                  <Box>
-                    <Typography variant="body2" sx={{ fontWeight: "medium" }}>
-                      {employee.name}
-                    </Typography>{" "}
-                    {/* 폰트 크기 조정 */}
-                    <Typography variant="caption" color="text.secondary">
-                      {employee.role || "일반"}
-                    </Typography>{" "}
-                    {/* 폰트 크기 조정 */}
-                  </Box>
-                </Paper>
-              </Grid>
-            ))}
-          </Grid>
-        ) : (
-          <Alert severity="info" sx={{ mt: 2 }}>
-            오늘 근무 예정인 직원이 없습니다.
-          </Alert>
-        )}
-      </Box>
+                    오늘의 근무 스케줄
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {format(new Date(), "yyyy년 MM월 dd일 (eee)", {
+                      locale: ko,
+                    })}
+                  </Typography>
+                </Box>
+              </Box>
+
+              {todaysShifts.length > 0 ? (
+                <List disablePadding>
+                  {todaysShifts.map((shift, index) => (
+                    <React.Fragment key={shift.id}>
+                      <ListItem disablePadding sx={{ py: 1.5 }}>
+                        <ListItemAvatar sx={{ minWidth: 50 }}>
+                          <Chip
+                            icon={<AccessTimeIcon fontSize="small" />}
+                            label={formatTimeRange(shift.start, shift.end)}
+                            size="small"
+                            color={
+                              shift.shiftType === "open"
+                                ? "success"
+                                : shift.shiftType === "close"
+                                ? "error"
+                                : "primary"
+                            }
+                            variant="outlined"
+                            sx={{ fontWeight: 500 }}
+                          />
+                        </ListItemAvatar>
+                        <ListItemText
+                          primary={shift.employeeIds
+                            .map((id) => getEmployeeName(id))
+                            .join(", ")}
+                          secondary={shift.title || shift.shiftType || "근무"} // Show title or type
+                          primaryTypographyProps={{ fontWeight: "medium" }}
+                        />
+                      </ListItem>
+                      {index < todaysShifts.length - 1 && (
+                        <Divider variant="inset" component="li" />
+                      )}
+                    </React.Fragment>
+                  ))}
+                </List>
+              ) : (
+                <Typography
+                  sx={{ textAlign: "center", py: 4, color: "text.secondary" }}
+                >
+                  오늘은 예정된 근무가 없습니다.
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Estimated Monthly Wage Card (Now below) */}
+        <Grid item xs={12} md={6}>
+          <Card
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              p: 2,
+              height: "100%",
+              borderRadius: 3,
+              boxShadow: 3,
+            }}
+          >
+            <Avatar
+              sx={{ bgcolor: "success.light", width: 56, height: 56, mr: 2 }}
+            >
+              <MonetizationOnIcon sx={{ color: "success.dark" }} />
+            </Avatar>
+            <Box>
+              <Typography color="text.secondary" gutterBottom variant="body2">
+                이번 달 예상 인건비 (확정 스케줄 기준)
+              </Typography>
+              <Typography
+                variant="h5"
+                component="div"
+                sx={{ fontWeight: "bold" }}
+              >
+                ₩{estimatedMonthlyWage.toLocaleString()}
+              </Typography>
+            </Box>
+          </Card>
+        </Grid>
+
+        {/* Quick Action Button Card (Now below) */}
+        <Grid item xs={12} md={6}>
+          <Card
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              justifyContent: "center",
+              p: 2,
+              height: "100%",
+              borderRadius: 3,
+              boxShadow: 3,
+            }}
+          >
+            <Typography variant="h6" gutterBottom sx={{ fontWeight: "medium" }}>
+              빠른 작업
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<EventIcon />}
+              onClick={() => navigate("/schedule")} // Navigate to schedule page
+              fullWidth
+              size="large"
+              sx={{ mt: 1 }}
+            >
+              주간 스케줄 보기 / 편집
+            </Button>
+            {/* Add more buttons if needed */}
+            {/* <Button variant="outlined" startIcon={<PersonAddIcon />} onClick={() => navigate("/employees")} fullWidth sx={{ mt: 1 }}>새 직원 등록</Button> */}
+          </Card>
+        </Grid>
+
+        {/* Potential Future Widgets (Notifications, Team Overview, etc.) */}
+        {/* <Grid item xs={12} md={6}> ... Notifications Card ... </Grid> */}
+        {/* <Grid item xs={12} md={6}> ... Team Overview Card ... </Grid> */}
+      </Grid>
     </Box>
   );
-}
+};
 
 export default DashboardPage;

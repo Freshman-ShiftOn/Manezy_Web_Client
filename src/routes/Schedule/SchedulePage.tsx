@@ -58,6 +58,9 @@ import {
   Toolbar,
   Avatar,
   Chip,
+  Snackbar,
+  Alert as MuiAlert,
+  AlertProps,
 } from "@mui/material";
 import {
   FilterAlt,
@@ -152,9 +155,11 @@ const schedulerStyles = {
   ".fc-timegrid-col-events": { margin: "0 0.5%", width: "99% !important" },
   ".fc-timegrid-event": {
     padding: "1px",
+    paddingBottom: "10px",
     minWidth: "auto !important",
     boxShadow: "0 1px 3px rgba(0,0,0,0.12)",
     border: "1px solid rgba(0,0,0,0.08)",
+    cursor: "pointer",
   },
   ".fc-timegrid-event-harness:nth-child(3n+1)": {
     left: "0% !important",
@@ -219,6 +224,14 @@ interface CalendarEvent {
 
 const drawerWidth = 260;
 
+// Alert 이름 변경
+const CustomAlert = React.forwardRef<HTMLDivElement, AlertProps>(function Alert(
+  props,
+  ref
+) {
+  return <MuiAlert elevation={6} ref={ref} variant="filled" {...props} />;
+});
+
 const SchedulePage: React.FC = () => {
   const navigate = useNavigate();
   const theme = useTheme();
@@ -245,6 +258,11 @@ const SchedulePage: React.FC = () => {
   const [showInfoAlert, setShowInfoAlert] = useState(true);
   const [showInfoIcon, setShowInfoIcon] = useState(false);
   const [showScrollGuide, setShowScrollGuide] = useState(true);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<
+    "success" | "error" | "info" | "warning"
+  >("success");
 
   // --- Helper Functions ---
   const getEmployeeColor = useCallback(
@@ -618,10 +636,14 @@ const SchedulePage: React.FC = () => {
       processShiftsToEvents(updatedShiftsForEvents, employees);
 
       console.log("handleSaveShift: Local state updated.");
-      alert("근무 일정이 저장되었습니다.");
+      setSnackbarMessage("근무 일정이 저장되었습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
     } catch (error) {
       console.error("Error saving shift:", error);
-      alert("근무 일정 저장 중 오류가 발생했습니다.");
+      setSnackbarMessage("근무 일정 저장 중 오류가 발생했습니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
     }
   };
 
@@ -639,7 +661,9 @@ const SchedulePage: React.FC = () => {
     });
     const updatedShifts = [...shifts, ...copiedShifts];
     setShifts(updatedShifts);
-    alert("지난 주 스케줄을 복사했습니다.");
+    setSnackbarMessage("지난 주 스케줄을 복사했습니다.");
+    setSnackbarSeverity("success");
+    setSnackbarOpen(true);
   }, [shifts]);
 
   const handleViewChange = (newViewType: string) => {
@@ -865,6 +889,44 @@ const SchedulePage: React.FC = () => {
         event.extendedProps.employeeIds.length === 0
     );
   }, [events]);
+
+  // 스낵바 닫기 핸들러 (중괄호 확인)
+  const handleSnackbarClose = (
+    event?: React.SyntheticEvent | Event,
+    reason?: string
+  ) => {
+    if (reason === "clickaway") {
+      return;
+    }
+    setSnackbarOpen(false);
+  };
+
+  // 근무 삭제 처리 함수 추가
+  const handleDeleteShift = async (shiftId: string) => {
+    try {
+      // API로 근무 일정 삭제 구현
+      await deleteShift(shiftId);
+
+      // UI에서 삭제된 근무 제거
+      setEvents((prev) => prev.filter((event) => event.id !== shiftId));
+      setShifts((prev) => prev.filter((shift) => shift.id !== shiftId));
+
+      // 대화상자 닫기
+      setIsDialogOpen(false);
+
+      // 성공 메시지 표시
+      setSnackbarMessage("근무가 성공적으로 삭제되었습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      console.log("Shift deleted:", shiftId);
+    } catch (error) {
+      console.error("근무 삭제 오류:", error);
+      setSnackbarMessage("근무 삭제 중 오류가 발생했습니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    }
+  };
 
   return (
     <Box sx={{ display: "flex", height: "100vh" }}>
@@ -1235,9 +1297,25 @@ const SchedulePage: React.FC = () => {
             employees={employees}
             onClose={handleCloseDialog}
             onSave={handleSaveShift}
+            onDelete={handleDeleteShift}
           />
         )}
       </Box>
+
+      {/* 스낵바 컴포넌트 (Alert -> CustomAlert 사용) */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={handleSnackbarClose}
+      >
+        <CustomAlert
+          onClose={handleSnackbarClose}
+          severity={snackbarSeverity}
+          sx={{ width: "100%" }}
+        >
+          {snackbarMessage}
+        </CustomAlert>
+      </Snackbar>
     </Box>
   );
 };
