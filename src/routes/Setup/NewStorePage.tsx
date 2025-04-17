@@ -135,17 +135,13 @@ const NewStorePage: React.FC = () => {
       // localStorage.removeItem(LS_KEYS.SHIFTS);
       // localStorage.removeItem(LS_KEYS.EMPLOYEES);
 
-      setSnackbarMessage(
-        "새 매장 정보가 저장되었습니다. 페이지를 새로고침합니다."
-      );
+      setSnackbarMessage("매장 정보가 저장되었습니다. 대시보드로 이동합니다.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // Wait for snackbar to show then reload
+      // 스낵바가 표시된 후 대시보드로 이동
       setTimeout(() => {
-        window.location.reload(); // Reload to reflect changes everywhere
-        // Alternatively, navigate and force update Layout state
-        // navigate('/');
+        navigate("/dashboard");
       }, 1500);
     } catch (error) {
       console.error("Error saving new store info:", error);
