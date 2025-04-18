@@ -12,6 +12,8 @@ const authClient = axios.create({
   },
   // 타임아웃 설정 - 10초
   timeout: 10000,
+  // credentials 설정
+  withCredentials: false,
 });
 
 // 요청 인터셉터 설정 - 인증 토큰 주입 및 로깅
@@ -145,6 +147,7 @@ const logAxiosError = (
 export interface SignupRequest {
   email: string;
   password: string;
+  confirmPassword: string;
   name: string;
 }
 
@@ -173,7 +176,9 @@ export const authService = {
     try {
       console.log(`카카오 로그인 시도 - 인증 코드: ${code.substring(0, 8)}...`);
 
-      const response = await authClient.get(`/kakao/web/login?code=${code}`);
+      const response = await authClient.get(
+        `/api/web/auth/kakao/login?code=${code}`
+      );
       const token = response.data;
 
       if (!token) {
@@ -210,7 +215,7 @@ export const authService = {
     try {
       console.log("회원가입 시도:", { email: data.email, name: data.name });
 
-      const response = await authClient.post("/api/signup", data);
+      const response = await authClient.post("/api/web/auth/signup", data);
       const token = response.data;
 
       if (!token) {
@@ -247,7 +252,7 @@ export const authService = {
     try {
       console.log("로그인 시도:", { email: data.email });
 
-      const response = await authClient.post("/api/login", data);
+      const response = await authClient.post("/api/web/auth/login", data);
       const token = response.data;
 
       if (!token) {

@@ -24,10 +24,10 @@ const SignupPage: React.FC = () => {
   const [formData, setFormData] = useState<SignupRequest>({
     email: "",
     password: "",
+    confirmPassword: "",
     name: "",
   });
 
-  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
@@ -37,11 +37,7 @@ const SignupPage: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    if (name === "passwordConfirm") {
-      setPasswordConfirm(value);
-    } else {
-      setFormData((prev) => ({ ...prev, [name]: value }));
-    }
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const validateForm = (): boolean => {
@@ -62,7 +58,7 @@ const SignupPage: React.FC = () => {
     }
 
     // 비밀번호 확인 일치 검사
-    if (formData.password !== passwordConfirm) {
+    if (formData.password !== formData.confirmPassword) {
       setSnackbarMessage("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
       setSnackbarSeverity("error");
       setSnackbarOpen(true);
@@ -185,10 +181,10 @@ const SignupPage: React.FC = () => {
             helperText="비밀번호는 최소 6자 이상이어야 합니다"
           />
           <TextField
-            name="passwordConfirm"
+            name="confirmPassword"
             label="비밀번호 확인"
             type="password"
-            value={passwordConfirm}
+            value={formData.confirmPassword}
             onChange={handleChange}
             fullWidth
             margin="normal"

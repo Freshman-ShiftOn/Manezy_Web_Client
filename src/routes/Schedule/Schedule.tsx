@@ -185,11 +185,63 @@ const Schedule: React.FC<ScheduleProps> = ({
 
   const handleShiftSave = (event: any) => {
     console.log("Shift saved:", event);
-    // TODO: API로 근무 일정 저장 구현
-    setShowShiftDialog(false);
 
-    // DragDropScheduler에 반영할 수 있도록 스케줄 업데이트
-    // 실제 구현에서는 API 응답으로 업데이트
+    // 반복 요일이 설정되어 있다면 각 요일별로 일정 생성
+    if (
+      event.extendedProps?.repeatDays &&
+      event.extendedProps.repeatDays.length > 0
+    ) {
+      // 기존 일정이 있는 경우 삭제
+      if (currentShift?.id) {
+        setSchedule((prevSchedule) =>
+          prevSchedule.filter((shift) => shift.id !== currentShift.id)
+        );
+      }
+
+      // 각 요일별로 새 일정 생성
+      const newShifts = event.extendedProps.repeatDays.map(
+        (dayNumber: number, index: number) => {
+          // 고유 ID 생성
+          const newShiftId = `shift-${dayNumber}-${Date.now()}-${index}`;
+
+          // 요일에 따른 새 일정 생성
+          return {
+            ...event,
+            id: newShiftId,
+            day: dayNumber, // 0: 일요일, 1: 월요일, ..., 6: 토요일
+            // 필요한 다른 속성들 추가
+          };
+        }
+      );
+
+      // 새 일정들을 스케줄에 추가
+      setSchedule((prevSchedule) => [...prevSchedule, ...newShifts]);
+      console.log(
+        `${event.extendedProps.repeatDays.length}개 요일에 반복 일정이 생성되었습니다.`
+      );
+    } else {
+      // 반복 요일이 없는 경우 단일 일정만 저장
+      // 기존 일정 업데이트 또는 새 일정 추가
+      if (currentShift?.id) {
+        // 기존 일정 업데이트
+        setSchedule((prevSchedule) =>
+          prevSchedule.map((shift) =>
+            shift.id === currentShift.id ? { ...event } : shift
+          )
+        );
+      } else {
+        // 새 일정 추가
+        const newShift = {
+          ...event,
+          id: `shift-${Date.now()}`,
+          // 필요한 다른 속성들 추가
+        };
+        setSchedule((prevSchedule) => [...prevSchedule, newShift]);
+      }
+    }
+
+    // 대화상자 닫기
+    setShowShiftDialog(false);
   };
 
   const handleShiftDelete = (shiftId: string) => {

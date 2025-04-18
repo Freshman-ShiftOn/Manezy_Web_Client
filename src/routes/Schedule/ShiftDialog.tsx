@@ -73,6 +73,7 @@ interface ShiftEvent {
     employeeIds?: string[];
     requiredStaff?: number;
     shiftType?: "open" | "middle" | "close";
+    repeatDays?: number[]; // 0: 일요일, 1: 월요일, ..., 6: 토요일
   };
 }
 
@@ -124,6 +125,11 @@ function ShiftDialog({
       "middle"
   );
 
+  // 반복 요일 상태 추가
+  const [repeatDays, setRepeatDays] = useState<number[]>(
+    eventData.extendedProps?.repeatDays || []
+  );
+
   // 색상 업데이트 useEffect 복원 (shiftType 변경 시)
   useEffect(() => {
     // 색상 자동 설정 로직은 handleSave에서 처리하므로 주석 처리 또는 제거
@@ -161,6 +167,7 @@ function ShiftDialog({
         employeeIds: selectedEmployeeIds,
         requiredStaff: requiredStaff,
         shiftType: shiftType,
+        repeatDays: repeatDays,
       },
     };
     onSave(updatedEvent);
@@ -217,8 +224,27 @@ function ShiftDialog({
     }
   };
 
+  // 반복 요일 핸들러 추가
+  const handleRepeatDaysChange = (event: SelectChangeEvent<number[]>) => {
+    const {
+      target: { value },
+    } = event;
+    setRepeatDays(typeof value === "string" ? [] : (value as number[]));
+  };
+
+  // 요일 정보
+  const DAYS_OF_WEEK = [
+    { value: 1, label: "월" },
+    { value: 2, label: "화" },
+    { value: 3, label: "수" },
+    { value: 4, label: "목" },
+    { value: 5, label: "금" },
+    { value: 6, label: "토" },
+    { value: 0, label: "일" },
+  ];
+
   return (
-    <Dialog open={true} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={true} onClose={onClose} maxWidth="md" fullWidth>
       <Box
         sx={{
           px: 3,
@@ -228,9 +254,16 @@ function ShiftDialog({
           justifyContent: "space-between",
         }}
       >
-        <Typography variant="h6">
-          {isNew ? "새 근무 생성" : "근무 수정"}
-        </Typography>
+        <Box>
+          <Typography variant="h6">
+            {isNew ? "새 근무 생성" : "근무 수정"}
+          </Typography>
+          {repeatDays.length > 0 && (
+            <Typography variant="caption" color="primary">
+              선택한 요일에 근무가 반복 생성됩니다
+            </Typography>
+          )}
+        </Box>
         <IconButton
           aria-label="close"
           onClick={onClose}
@@ -281,6 +314,53 @@ function ShiftDialog({
                 </ToggleButton>
               ))}
             </ToggleButtonGroup>
+          </Grid>
+
+          <Grid item xs={12}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 500 }}>
+              반복 설정
+            </Typography>
+            <FormControl fullWidth size="small">
+              <InputLabel id="repeat-days-label">주간 반복 요일</InputLabel>
+              <Select
+                labelId="repeat-days-label"
+                multiple
+                value={repeatDays}
+                onChange={handleRepeatDaysChange}
+                input={<OutlinedInput label="주간 반복 요일" />}
+                renderValue={(selected) => (
+                  <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5 }}>
+                    {selected.map((day) => (
+                      <Chip
+                        key={day}
+                        label={
+                          DAYS_OF_WEEK.find((d) => d.value === day)?.label || ""
+                        }
+                        size="small"
+                      />
+                    ))}
+                  </Box>
+                )}
+                MenuProps={{
+                  PaperProps: {
+                    style: {
+                      maxHeight: 224,
+                    },
+                  },
+                }}
+              >
+                {DAYS_OF_WEEK.map((day) => (
+                  <MenuItem key={day.value} value={day.value}>
+                    <Checkbox checked={repeatDays.indexOf(day.value) > -1} />
+                    <ListItemText primary={day.label} />
+                  </MenuItem>
+                ))}
+              </Select>
+              <FormHelperText>
+                요일을 선택하면 선택한 요일에 일정이 반복됩니다. 비워두면 단일
+                일정만 생성됩니다.
+              </FormHelperText>
+            </FormControl>
           </Grid>
 
           <Grid item xs={12}>
