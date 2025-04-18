@@ -1,258 +1,238 @@
 import React, { useState } from "react";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
-// Assuming useAuth is primarily for login state, signup might just redirect
-// If signup should also log the user in, import useAuth
-// import { useAuth } from '../../context/AuthContext';
 import {
-  Box,
-  Button,
-  TextField,
-  Typography,
   Container,
   Paper,
+  Box,
+  Typography,
+  TextField,
+  Button,
   Link,
+  Snackbar,
   Alert,
-  Grid,
-  Avatar,
-  InputAdornment,
-  IconButton,
+  CircularProgress,
+  useTheme,
 } from "@mui/material";
-import PersonAddAlt1Icon from "@mui/icons-material/PersonAddAlt1";
-import Visibility from "@mui/icons-material/Visibility";
-import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import { colors } from "../../theme";
+import { useNavigate } from "react-router-dom";
+import { SignupRequest, authService } from "../../services/auth";
+import { useAuth } from "../../context/AuthContext";
 
 const SignupPage: React.FC = () => {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  // const { login } = useAuth(); // Uncomment if signup logs user in
+  const theme = useTheme();
   const navigate = useNavigate();
+  const { login } = useAuth();
 
-  const handleSignup = (e: React.FormEvent) => {
+  const [formData, setFormData] = useState<SignupRequest>({
+    email: "",
+    password: "",
+    name: "",
+  });
+
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">(
+    "error"
+  );
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    if (name === "passwordConfirm") {
+      setPasswordConfirm(value);
+    } else {
+      setFormData((prev) => ({ ...prev, [name]: value }));
+    }
+  };
+
+  const validateForm = (): boolean => {
+    // 이메일 유효성 검사
+    if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) {
+      setSnackbarMessage("유효한 이메일 주소를 입력해주세요.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return false;
+    }
+
+    // 비밀번호 유효성 검사
+    if (!formData.password || formData.password.length < 6) {
+      setSnackbarMessage("비밀번호는 최소 6자 이상이어야 합니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return false;
+    }
+
+    // 비밀번호 확인 일치 검사
+    if (formData.password !== passwordConfirm) {
+      setSnackbarMessage("비밀번호와 비밀번호 확인이 일치하지 않습니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return false;
+    }
+
+    // 이름 유효성 검사
+    if (!formData.name || formData.name.trim().length < 2) {
+      setSnackbarMessage("이름을 2자 이상 입력해주세요.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
 
-    if (!name) {
-      setError("이름을 입력해주세요.");
-      return;
+    if (!validateForm()) return;
+
+    setLoading(true);
+
+    try {
+      console.log("회원가입 시도 중...");
+      const response = await authService.signup(formData);
+
+      // 회원가입 및 로그인 성공 처리
+      login(response.token, response.user);
+
+      // 성공 메시지
+      setSnackbarMessage("회원가입에 성공했습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      // 잠시 후 대시보드로 이동
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1000);
+    } catch (error: any) {
+      console.error("Signup error:", error);
+
+      // 서버가 응답한 에러 메시지가 있으면 표시
+      if (error.response?.data?.message) {
+        setSnackbarMessage(error.response.data.message);
+      } else if (error.response?.status === 409) {
+        setSnackbarMessage("이미 등록된 이메일 주소입니다.");
+      } else if (error.response?.status === 400) {
+        setSnackbarMessage(
+          "입력한 정보가 유효하지 않습니다. 다시 확인해주세요."
+        );
+      } else if (error.code === "ECONNABORTED") {
+        setSnackbarMessage(
+          "서버 응답 시간이 초과되었습니다. 나중에 다시 시도해주세요."
+        );
+      } else if (!error.response && error.request) {
+        setSnackbarMessage(
+          "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요."
+        );
+      } else {
+        setSnackbarMessage("회원가입에 실패했습니다. 다시 시도해주세요.");
+      }
+
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    } finally {
+      setLoading(false);
     }
-
-    if (password !== confirmPassword) {
-      setError("비밀번호가 일치하지 않습니다.");
-      return;
-    }
-
-    if (password.length < 6) {
-      setError("비밀번호는 6자 이상이어야 합니다.");
-      return;
-    }
-
-    console.log(`회원가입 시뮬레이션: 이름=${name}, 이메일=${email}`);
-    alert("회원가입 성공 (시뮬레이션)! 로그인 페이지로 이동합니다.");
-    navigate("/login");
   };
 
-  const handleClickShowPassword = () => setShowPassword((show) => !show);
-  const handleMouseDownPassword = (
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    event.preventDefault();
-  };
-  const handleClickShowConfirmPassword = () =>
-    setShowConfirmPassword((show) => !show);
-  const handleMouseDownConfirmPassword = (
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    event.preventDefault();
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 70%, ${colors.accent} 100%)`,
-        padding: { xs: 2, sm: 3 },
-      }}
-    >
-      <Container component="main" maxWidth="xs">
-        <Paper
-          elevation={12}
-          sx={{
-            padding: { xs: 3, sm: 5 },
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            borderRadius: 3,
-            backgroundColor: "rgba(255, 255, 255, 1)",
-            boxShadow: "0px 10px 30px rgba(0, 0, 0, 0.1)",
-          }}
-        >
-          <Avatar
-            sx={{ m: 1, bgcolor: "secondary.main", width: 56, height: 56 }}
-          >
-            <PersonAddAlt1Icon fontSize="large" />
-          </Avatar>
-          <Typography
-            component="h1"
-            variant="h4"
-            sx={{ mb: 1, fontWeight: "bold" }}
-          >
+    <Container maxWidth="sm" sx={{ mt: 8 }}>
+      <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+        <Box sx={{ textAlign: "center", mb: 3 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
             회원가입
           </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-            Manezy 사용을 위한 계정 생성
+          <Typography variant="subtitle1" color="text.secondary">
+            Manezy 계정 생성하기
           </Typography>
-          <Box
-            component="form"
-            onSubmit={handleSignup}
-            noValidate
-            sx={{ mt: 1, width: "100%" }}
+        </Box>
+
+        <form onSubmit={handleSubmit}>
+          <TextField
+            name="email"
+            label="이메일"
+            type="email"
+            value={formData.email}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+          />
+          <TextField
+            name="name"
+            label="이름"
+            value={formData.name}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+          />
+          <TextField
+            name="password"
+            label="비밀번호"
+            type="password"
+            value={formData.password}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+            helperText="비밀번호는 최소 6자 이상이어야 합니다"
+          />
+          <TextField
+            name="passwordConfirm"
+            label="비밀번호 확인"
+            type="password"
+            value={passwordConfirm}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+          />
+
+          <Button
+            type="submit"
+            variant="contained"
+            color="primary"
+            fullWidth
+            sx={{ mt: 3, mb: 2, py: 1.5 }}
+            disabled={loading}
           >
-            {error && (
-              <Alert severity="error" sx={{ mb: 2, width: "100%" }}>
-                {error}
-              </Alert>
-            )}
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="name"
-              label="이름"
-              name="name"
-              autoComplete="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-              }}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="이메일 주소"
-              name="email"
-              autoComplete="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-              }}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="비밀번호"
-              type={showPassword ? "text" : "password"}
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              variant="filled"
-              helperText="6자 이상 입력해주세요."
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label="toggle password visibility"
-                      onClick={handleClickShowPassword}
-                      onMouseDown={handleMouseDownPassword}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="confirmPassword"
-              label="비밀번호 확인"
-              type={showConfirmPassword ? "text" : "password"}
-              id="confirmPassword"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label="toggle confirm password visibility"
-                      onClick={handleClickShowConfirmPassword}
-                      onMouseDown={handleMouseDownConfirmPassword}
-                      edge="end"
-                    >
-                      {showConfirmPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 2 }}
-            />
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
-              sx={{
-                mt: 3,
-                mb: 2,
-                py: 1.5,
-                borderRadius: 2,
-                boxShadow: "0 4px 15px rgba(96, 112, 255, 0.4)",
-                transition: "all 0.3s ease",
-                "&:hover": {
-                  transform: "translateY(-2px)",
-                  boxShadow: "0 6px 20px rgba(96, 112, 255, 0.5)",
-                },
-              }}
-            >
-              가입 완료
-            </Button>
-            <Grid container justifyContent="center">
-              <Grid item>
-                <Typography variant="body2">
-                  이미 계정이 있으신가요?{" "}
-                  <Link
-                    component={RouterLink}
-                    to="/login"
-                    variant="body2"
-                    sx={{ fontWeight: "bold" }}
-                  >
-                    로그인
-                  </Link>
-                </Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        </Paper>
-      </Container>
-    </Box>
+            {loading ? <CircularProgress size={24} /> : "회원가입"}
+          </Button>
+        </form>
+
+        <Box sx={{ textAlign: "center", mt: 2 }}>
+          <Typography variant="body2">
+            이미 계정이 있으신가요?{" "}
+            <Link href="/login" underline="hover">
+              로그인
+            </Link>
+          </Typography>
+        </Box>
+      </Paper>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbarSeverity}
+          variant="filled"
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </Container>
   );
 };
 

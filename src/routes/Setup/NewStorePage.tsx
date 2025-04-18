@@ -135,13 +135,13 @@ const NewStorePage: React.FC = () => {
       // localStorage.removeItem(LS_KEYS.SHIFTS);
       // localStorage.removeItem(LS_KEYS.EMPLOYEES);
 
-      setSnackbarMessage("매장 정보가 저장되었습니다. 대시보드로 이동합니다.");
+      setSnackbarMessage("매장 정보가 저장되었습니다. 로그인하여 시작하세요.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // 스낵바가 표시된 후 대시보드로 이동
+      // 스낵바가 표시된 후 로그인 페이지로 이동
       setTimeout(() => {
-        navigate("/dashboard");
+        navigate("/login");
       }, 1500);
     } catch (error) {
       console.error("Error saving new store info:", error);

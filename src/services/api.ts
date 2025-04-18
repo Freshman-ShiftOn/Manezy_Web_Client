@@ -21,6 +21,7 @@ export const LS_KEYS = {
   SHIFT_APPROVAL_REQUESTS: "manezy_shift_approval_requests",
   EMPLOYEE_NOTIFICATIONS: "manezy_employee_notifications",
   EMPLOYEE_AVAILABILITIES: "manezy_employee_availabilities",
+  AUTH_TOKEN: "manezy_auth_token",
 };
 
 // 지연 시간 시뮬레이션 (ms)

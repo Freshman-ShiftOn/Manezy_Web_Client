@@ -8,6 +8,7 @@ import PayrollPage from "./routes/Payroll/PayrollPage";
 import StoreSettingsPage from "./routes/Settings/StoreSettingsPage";
 import LoginPage from "./routes/Auth/LoginPage";
 import SignupPage from "./routes/Auth/SignupPage";
+import KakaoCallback from "./routes/Auth/KakaoCallback";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import AccountSettingsPage from "./routes/Settings/AccountSettingsPage";
@@ -15,6 +16,7 @@ import {
   hasInitialSetup,
   getStoreInfo,
   generateDummyData,
+  LS_KEYS,
 } from "./services/api";
 import {
   CircularProgress,
@@ -31,6 +33,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import { CalendarMonth, Group, Payment } from "@mui/icons-material";
 import { appTheme, colors } from "./theme";
 import NewStorePage from "./routes/Setup/NewStorePage";
+import SetupWizard from "./routes/Setup/SetupWizard";
 
 const SetupCheck = () => {
   const [loading, setLoading] = useState(true);
@@ -41,11 +44,20 @@ const SetupCheck = () => {
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const needsSetup = !(await hasInitialSetup());
+        // localStorage에서 직접 확인하여 API 호출 최소화
+        const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
+        const storeData = localStorage.getItem(LS_KEYS.STORE);
+        const needsSetup = !setupComplete || !storeData;
+
         setSetupNeeded(needsSetup);
-        if (!needsSetup) {
-          const info = await getStoreInfo();
-          setStoreName(info?.name || "Your Store");
+
+        if (!needsSetup && storeData) {
+          try {
+            const storeInfo = JSON.parse(storeData);
+            setStoreName(storeInfo?.name || "Your Store");
+          } catch (e) {
+            console.error("Error parsing store data:", e);
+          }
         }
       } catch (error) {
         console.error("Error checking setup:", error);
@@ -53,11 +65,22 @@ const SetupCheck = () => {
         setLoading(false);
       }
     };
+
     checkSetup();
-  }, []);
+
+    // 5초 후에도 로딩 중이면 기본값 설정
+    const timeoutId = setTimeout(() => {
+      if (loading) {
+        setLoading(false);
+        setSetupNeeded(true);
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, [loading]);
 
   const handleSetup = () => {
-    navigate("/setup/new-store");
+    navigate("/setup/wizard");
   };
 
   const handleGenerateData = async () => {
@@ -98,10 +121,10 @@ const SetupCheck = () => {
               매장 초기 설정 필요
             </Typography>
             <Typography sx={{ mb: 3 }}>
-              환영합니다! 시작하기 전에 매장 정보를 설정해 주세요.
+              환영합니다! 매장 설정 마법사를 통해 빠르게 시작할 수 있습니다.
             </Typography>
             <Button variant="contained" onClick={handleSetup}>
-              매장 설정하기
+              설정 마법사 시작하기
             </Button>
           </Paper>
         </Container>
@@ -115,18 +138,19 @@ const SetupCheck = () => {
 // 초기 리디렉션을 처리하는 컴포넌트
 const InitialRedirect = () => {
   const [loading, setLoading] = useState(true);
-  const [setupNeeded, setSetupNeeded] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     const checkSetup = async () => {
       try {
-        const needsSetup = !(await hasInitialSetup());
-        setSetupNeeded(needsSetup);
+        // localStorage에서 직접 확인하여 API 호출 최소화
+        const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
+        const storeData = localStorage.getItem(LS_KEYS.STORE);
+        const needsSetup = !setupComplete || !storeData;
 
         // 설정 필요 여부에 따라 적절한 페이지로 리디렉션
         if (needsSetup) {
-          navigate("/setup/new-store");
+          navigate("/setup/wizard");
         } else {
           navigate("/login");
         }
@@ -137,8 +161,20 @@ const InitialRedirect = () => {
         setLoading(false);
       }
     };
+
+    // 컴포넌트 마운트 즉시 초기화 실행
     checkSetup();
-  }, [navigate]);
+
+    // 5초 후에도 응답이 없으면 로그인 페이지로 리디렉션하는 안전장치
+    const timeoutId = setTimeout(() => {
+      if (loading) {
+        console.log("Setup check timed out, redirecting to login");
+        navigate("/login");
+      }
+    }, 5000);
+
+    return () => clearTimeout(timeoutId);
+  }, [navigate, loading]);
 
   if (loading) {
     return (
@@ -165,9 +201,11 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/auth/kakao/callback" element={<KakaoCallback />} />
 
           {/* 초기 설정 경로 - 인증 불필요 */}
           <Route path="/setup/new-store" element={<NewStorePage />} />
+          <Route path="/setup/wizard" element={<SetupWizard />} />
 
           {/* Protected Routes: Require authentication */}
           <Route element={<ProtectedRoute />}>

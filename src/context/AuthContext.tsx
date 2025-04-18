@@ -4,12 +4,23 @@ import React, {
   useContext,
   ReactNode,
   useCallback,
+  useEffect,
 } from "react";
+import { LS_KEYS } from "../services/api";
+
+// 사용자 정보 인터페이스
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+}
 
 interface AuthContextType {
   isAuthenticated: boolean;
-  login: (token: string) => void; // Simulate login with a token
+  user: User | null;
+  login: (token: string, user: User) => void;
   logout: () => void;
+  updateUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -19,27 +30,71 @@ interface AuthProviderProps {
 }
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
-  // Check localStorage for an existing token on initial load
+  // 초기 로딩 시 localStorage에서 토큰과 사용자 정보 확인
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(
-    !!localStorage.getItem("authToken")
+    !!localStorage.getItem(LS_KEYS.AUTH_TOKEN)
   );
 
-  const login = useCallback((token: string) => {
-    // In a real app, you'd verify the token with a backend
-    localStorage.setItem("authToken", token); // Store token
+  const [user, setUser] = useState<User | null>(() => {
+    const userStr = localStorage.getItem("user");
+    return userStr ? JSON.parse(userStr) : null;
+  });
+
+  const login = useCallback((token: string, userData: User) => {
+    // 토큰 및 사용자 정보 저장
+    localStorage.setItem(LS_KEYS.AUTH_TOKEN, token);
+    localStorage.setItem("user", JSON.stringify(userData));
+
+    // 상태 업데이트
     setIsAuthenticated(true);
-    console.log("User logged in (simulated)");
+    setUser(userData);
+
+    console.log("User logged in:", userData.email);
+  }, []);
+
+  const updateUser = useCallback((userData: User) => {
+    // 사용자 정보 업데이트
+    localStorage.setItem("user", JSON.stringify(userData));
+    setUser(userData);
+
+    console.log("User profile updated:", userData.name);
   }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("authToken"); // Remove token
+    // 토큰 및 사용자 정보 제거
+    localStorage.removeItem(LS_KEYS.AUTH_TOKEN);
+    localStorage.removeItem("user");
+
+    // 상태 업데이트
     setIsAuthenticated(false);
+    setUser(null);
+
     console.log("User logged out");
-    // Optionally redirect to login page here or let ProtectedRoute handle it
+  }, []);
+
+  // 인증 상태 변경 감지
+  useEffect(() => {
+    const checkAuth = () => {
+      const token = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+      setIsAuthenticated(!!token);
+
+      if (!token) {
+        setUser(null);
+      }
+    };
+
+    // 다른 탭에서 로그인/로그아웃 감지
+    window.addEventListener("storage", checkAuth);
+
+    return () => {
+      window.removeEventListener("storage", checkAuth);
+    };
   }, []);
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+    <AuthContext.Provider
+      value={{ isAuthenticated, user, login, logout, updateUser }}
+    >
       {children}
     </AuthContext.Provider>
   );

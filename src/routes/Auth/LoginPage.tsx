@@ -1,222 +1,277 @@
-import React, { useState } from "react";
-import { useNavigate, Link as RouterLink } from "react-router-dom";
-import { useAuth } from "../../context/AuthContext";
+import React, { useState, useEffect } from "react";
 import {
-  Box,
-  Button,
-  TextField,
-  Typography,
   Container,
   Paper,
+  Box,
+  Typography,
+  TextField,
+  Button,
+  Divider,
   Link,
+  Snackbar,
   Alert,
-  FormControlLabel,
-  Checkbox,
-  Grid,
-  Avatar,
-  InputAdornment,
-  IconButton,
+  CircularProgress,
+  useTheme,
 } from "@mui/material";
-import BusinessIcon from "@mui/icons-material/Business";
-import Visibility from "@mui/icons-material/Visibility";
-import VisibilityOff from "@mui/icons-material/VisibilityOff";
-import { colors } from "../../theme";
+import { useNavigate, useLocation } from "react-router-dom";
+import { LoginRequest, authService } from "../../services/auth";
+import { useAuth } from "../../context/AuthContext";
 
 const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const { login } = useAuth();
+  const theme = useTheme();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
 
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
+  const [formData, setFormData] = useState<LoginRequest>({
+    email: "",
+    password: "",
+  });
 
-    console.log("로그인 시뮬레이션 (입력값 무시)...");
-    const fakeToken = "fake-jwt-token-" + Date.now();
-    login(fakeToken);
-    navigate("/");
+  const [loading, setLoading] = useState(false);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">(
+    "error"
+  );
+
+  // URL에서 카카오 인증 코드 확인
+  useEffect(() => {
+    const urlParams = new URLSearchParams(location.search);
+    const kakaoCode = urlParams.get("code");
+
+    if (kakaoCode) {
+      handleKakaoLogin(kakaoCode);
+    }
+  }, [location]);
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleClickShowPassword = () => setShowPassword((show) => !show);
-  const handleMouseDownPassword = (
-    event: React.MouseEvent<HTMLButtonElement>
-  ) => {
-    event.preventDefault();
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!formData.email || !formData.password) {
+      setSnackbarMessage("이메일과 비밀번호를 모두 입력해주세요.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      console.log("로그인 시도 중...");
+      const response = await authService.login(formData);
+
+      // 로그인 성공 처리
+      login(response.token, response.user);
+
+      // 성공 메시지
+      setSnackbarMessage("로그인에 성공했습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      // 잠시 후 대시보드로 이동
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1000);
+    } catch (error: any) {
+      console.error("Login error:", error);
+
+      // 서버가 응답한 에러 메시지가 있으면 표시
+      if (error.response?.data?.message) {
+        setSnackbarMessage(error.response.data.message);
+      } else if (error.response?.status === 401) {
+        setSnackbarMessage("아이디 또는 비밀번호가 일치하지 않습니다.");
+      } else if (error.response?.status === 404) {
+        setSnackbarMessage("존재하지 않는 계정입니다.");
+      } else if (error.response?.status === 403) {
+        setSnackbarMessage("계정이 잠겨 있습니다.");
+      } else if (error.code === "ECONNABORTED") {
+        setSnackbarMessage(
+          "서버 응답 시간이 초과되었습니다. 나중에 다시 시도해주세요."
+        );
+      } else if (!error.response && error.request) {
+        setSnackbarMessage(
+          "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요."
+        );
+      } else {
+        setSnackbarMessage(
+          "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
+        );
+      }
+
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKakaoLogin = async (code: string) => {
+    setLoading(true);
+
+    try {
+      console.log("카카오 로그인 시도 중...");
+      const response = await authService.kakaoLogin(code);
+
+      // 로그인 성공 처리
+      login(response.token, response.user);
+
+      // 성공 메시지
+      setSnackbarMessage("카카오 로그인에 성공했습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      // 잠시 후 대시보드로 이동
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1000);
+    } catch (error: any) {
+      console.error("Kakao login error:", error);
+
+      // 서버가 응답한 에러 메시지가 있으면 표시
+      if (error.response?.data?.message) {
+        setSnackbarMessage(error.response.data.message);
+      } else if (error.response?.status === 401) {
+        setSnackbarMessage("카카오 로그인 인증에 실패했습니다.");
+      } else if (error.response?.status === 404) {
+        setSnackbarMessage(
+          "연결된 계정을 찾을 수 없습니다. 먼저 회원가입을 해주세요."
+        );
+      } else if (error.code === "ECONNABORTED") {
+        setSnackbarMessage(
+          "서버 응답 시간이 초과되었습니다. 나중에 다시 시도해주세요."
+        );
+      } else if (!error.response && error.request) {
+        setSnackbarMessage(
+          "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요."
+        );
+      } else {
+        setSnackbarMessage("카카오 로그인에 실패했습니다. 다시 시도해주세요.");
+      }
+
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleKakaoLoginClick = () => {
+    // 카카오 로그인 페이지로 리디렉션
+    console.log("카카오 로그인 버튼 클릭");
+    const KAKAO_CLIENT_ID = process.env.REACT_APP_KAKAO_CLIENT_ID;
+    const REDIRECT_URI =
+      process.env.REACT_APP_KAKAO_REDIRECT_URI ||
+      `${window.location.origin}/auth/kakao/callback`;
+
+    console.log("카카오 로그인 설정:", { KAKAO_CLIENT_ID, REDIRECT_URI });
+
+    window.location.href = `https://kauth.kakao.com/oauth/authorize?client_id=${KAKAO_CLIENT_ID}&redirect_uri=${encodeURIComponent(
+      REDIRECT_URI
+    )}&response_type=code`;
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   return (
-    <Box
-      sx={{
-        minHeight: "100vh",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: `linear-gradient(135deg, ${colors.primary} 0%, ${colors.secondary} 70%, ${colors.accent} 100%)`,
-        padding: { xs: 2, sm: 3 },
-      }}
-    >
-      <Container component="main" maxWidth="xs">
-        <Paper
-          elevation={12}
+    <Container maxWidth="sm" sx={{ mt: 8 }}>
+      <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+        <Box sx={{ textAlign: "center", mb: 3 }}>
+          <Typography variant="h4" component="h1" gutterBottom>
+            Manezy
+          </Typography>
+          <Typography variant="subtitle1" color="text.secondary">
+            매장 관리의 모든 것, 마네지
+          </Typography>
+        </Box>
+
+        <form onSubmit={handleSubmit}>
+          <TextField
+            name="email"
+            label="이메일"
+            type="email"
+            value={formData.email}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+          />
+          <TextField
+            name="password"
+            label="비밀번호"
+            type="password"
+            value={formData.password}
+            onChange={handleChange}
+            fullWidth
+            margin="normal"
+            variant="outlined"
+            required
+          />
+
+          <Button
+            type="submit"
+            variant="contained"
+            color="primary"
+            fullWidth
+            sx={{ mt: 3, mb: 2, py: 1.5 }}
+            disabled={loading}
+          >
+            {loading ? <CircularProgress size={24} /> : "로그인"}
+          </Button>
+        </form>
+
+        <Box sx={{ textAlign: "center", my: 1 }}>
+          <Link href="/signup" underline="hover">
+            계정이 없으신가요? 회원가입
+          </Link>
+        </Box>
+
+        <Divider sx={{ my: 3 }}>또는</Divider>
+
+        <Button
+          variant="outlined"
+          color="inherit"
+          fullWidth
           sx={{
-            padding: { xs: 3, sm: 5 },
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            borderRadius: 3,
-            backgroundColor: "rgba(255, 255, 255, 1)",
-            boxShadow: "0px 10px 30px rgba(0, 0, 0, 0.1)",
+            py: 1.5,
+            bgcolor: "#FEE500",
+            color: "#000",
+            borderColor: "#FEE500",
+            "&:hover": {
+              bgcolor: "#E6CF00",
+              borderColor: "#E6CF00",
+            },
           }}
+          onClick={handleKakaoLoginClick}
+          disabled={loading}
         >
-          <Avatar sx={{ m: 1, bgcolor: "primary.main", width: 56, height: 56 }}>
-            <BusinessIcon fontSize="large" />
-          </Avatar>
-          <Typography
-            component="h1"
-            variant="h4"
-            sx={{ mb: 1, fontWeight: "bold" }}
-          >
-            Manezy 로그인
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 4 }}>
-            매장 관리를 위한 첫 걸음
-          </Typography>
-          <Box
-            component="form"
-            onSubmit={handleLogin}
-            noValidate
-            sx={{ mt: 1, width: "100%" }}
-          >
-            {error && (
-              <Alert severity="error" sx={{ mb: 2, width: "100%" }}>
-                {error}
-              </Alert>
-            )}
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              id="email"
-              label="이메일 주소"
-              name="email"
-              autoComplete="email"
-              autoFocus
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="test@example.com (테스트용)"
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-              }}
-              sx={{ mb: 2 }}
-            />
-            <TextField
-              margin="normal"
-              required
-              fullWidth
-              name="password"
-              label="비밀번호"
-              type={showPassword ? "text" : "password"}
-              id="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="password (테스트용)"
-              variant="filled"
-              InputProps={{
-                disableUnderline: true,
-                sx: { borderRadius: 2 },
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      aria-label="toggle password visibility"
-                      onClick={handleClickShowPassword}
-                      onMouseDown={handleMouseDownPassword}
-                      edge="end"
-                    >
-                      {showPassword ? <VisibilityOff /> : <Visibility />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              }}
-              sx={{ mb: 1 }}
-            />
-            <Grid
-              container
-              alignItems="center"
-              justifyContent="space-between"
-              sx={{ mt: 1, mb: 2 }}
-            >
-              <Grid item>
-                <FormControlLabel
-                  control={
-                    <Checkbox value="remember" color="primary" size="small" />
-                  }
-                  label={
-                    <Typography variant="body2">로그인 상태 유지</Typography>
-                  }
-                  sx={{
-                    ".MuiFormControlLabel-label": { fontSize: "0.875rem" },
-                  }}
-                />
-              </Grid>
-              <Grid item>
-                <Link
-                  component={RouterLink}
-                  to="#"
-                  variant="body2"
-                  sx={{
-                    textDecoration: "none",
-                    "&:hover": { textDecoration: "underline" },
-                  }}
-                >
-                  비밀번호를 잊으셨나요?
-                </Link>
-              </Grid>
-            </Grid>
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              size="large"
-              sx={{
-                mt: 2,
-                mb: 2,
-                py: 1.5,
-                borderRadius: 2,
-                boxShadow: "0 4px 15px rgba(64, 80, 181, 0.4)",
-                transition: "all 0.3s ease",
-                "&:hover": {
-                  transform: "translateY(-2px)",
-                  boxShadow: "0 6px 20px rgba(64, 80, 181, 0.5)",
-                },
-              }}
-            >
-              로그인
-            </Button>
-            <Grid container justifyContent="center">
-              <Grid item>
-                <Typography variant="body2">
-                  계정이 없으신가요?{" "}
-                  <Link
-                    component={RouterLink}
-                    to="/signup"
-                    variant="body2"
-                    sx={{ fontWeight: "bold" }}
-                  >
-                    회원가입
-                  </Link>
-                </Typography>
-              </Grid>
-            </Grid>
-          </Box>
-        </Paper>
-      </Container>
-    </Box>
+          카카오 계정으로 로그인
+        </Button>
+      </Paper>
+
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbarSeverity}
+          variant="filled"
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
+    </Container>
   );
 };
 
