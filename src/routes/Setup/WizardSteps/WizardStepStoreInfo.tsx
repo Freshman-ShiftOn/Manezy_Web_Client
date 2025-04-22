@@ -7,11 +7,19 @@ import {
   Grid,
   InputAdornment,
   FormHelperText,
+  Paper,
+  Card,
+  CardContent,
+  Divider,
+  Tooltip,
+  Icon,
 } from "@mui/material";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { Store } from "../../../lib/types";
 import { isValid, parse, format } from "date-fns";
+import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
+import StorefrontIcon from "@mui/icons-material/Storefront";
 
 interface WizardStepStoreInfoProps {
   data: Partial<Store>;
@@ -112,11 +120,51 @@ function WizardStepStoreInfo({
 
   return (
     <Box sx={{ py: 2 }}>
-      <Typography variant="h6" gutterBottom>
-        매장 기본 정보를 입력해주세요
+      {/* 환영 메시지 카드 */}
+      <Card
+        elevation={0}
+        sx={{
+          mb: 4,
+          p: 3,
+          backgroundColor: "#f5f9ff",
+          borderRadius: 2,
+          border: "1px solid #c2e0ff",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
+          <StorefrontIcon sx={{ fontSize: 40, color: "primary.main", mr: 2 }} />
+          <Typography variant="h5" color="primary.main" fontWeight="600">
+            환영합니다!
+          </Typography>
+        </Box>
+        <Typography variant="body1" sx={{ mb: 1 }}>
+          아직 등록된 지점이 없네요. 지금 바로 첫 번째 지점을 설정해 보세요!
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          간단한 정보 입력만으로 매장 관리를 시작할 수 있습니다. 모든 정보는
+          나중에 언제든지 수정할 수 있어요.
+        </Typography>
+      </Card>
+
+      <Typography
+        variant="h6"
+        gutterBottom
+        sx={{ fontWeight: 600, display: "flex", alignItems: "center" }}
+      >
+        매장 기본 정보
+        <Tooltip title="입력하신 정보는 직원 관리, 급여 계산, 근무 스케줄 관리 등에 사용됩니다">
+          <HelpOutlineIcon
+            sx={{
+              ml: 1,
+              fontSize: 18,
+              color: "text.secondary",
+              cursor: "pointer",
+            }}
+          />
+        </Tooltip>
       </Typography>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-        매장 운영에 필요한 기본 정보를 설정합니다.
+        매장 운영에 필요한 기본 정보를 입력해주세요.
       </Typography>
 
       <Grid container spacing={3}>
@@ -128,7 +176,8 @@ function WizardStepStoreInfo({
             onChange={handleInputChange}
             fullWidth
             required
-            variant="filled"
+            variant="outlined"
+            placeholder="예: 카페 마네지 강남점"
             error={!!errors.name}
             helperText={errors.name}
           />
@@ -141,7 +190,8 @@ function WizardStepStoreInfo({
             onChange={handleInputChange}
             fullWidth
             required
-            variant="filled"
+            variant="outlined"
+            placeholder="예: 서울시 강남구 테헤란로 123"
             error={!!errors.address}
             helperText={errors.address}
           />
@@ -154,7 +204,8 @@ function WizardStepStoreInfo({
             onChange={handleInputChange}
             fullWidth
             required
-            variant="filled"
+            variant="outlined"
+            placeholder="예: 02-1234-5678"
             error={!!errors.phoneNumber}
             helperText={errors.phoneNumber}
           />
@@ -168,7 +219,7 @@ function WizardStepStoreInfo({
             onChange={handleInputChange}
             fullWidth
             required
-            variant="filled"
+            variant="outlined"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">₩</InputAdornment>
@@ -180,6 +231,32 @@ function WizardStepStoreInfo({
             }
           />
         </Grid>
+      </Grid>
+
+      <Typography
+        variant="h6"
+        sx={{
+          mt: 4,
+          mb: 2,
+          fontWeight: 600,
+          display: "flex",
+          alignItems: "center",
+        }}
+      >
+        영업 시간
+        <Tooltip title="영업 시간은 직원 스케줄 관리와 주휴수당 계산에 사용됩니다">
+          <HelpOutlineIcon
+            sx={{
+              ml: 1,
+              fontSize: 18,
+              color: "text.secondary",
+              cursor: "pointer",
+            }}
+          />
+        </Tooltip>
+      </Typography>
+
+      <Grid container spacing={3}>
         <Grid item xs={12} sm={6}>
           <LocalizationProvider dateAdapter={AdapterDateFns}>
             <TimePicker
@@ -190,7 +267,7 @@ function WizardStepStoreInfo({
               slotProps={{
                 textField: {
                   fullWidth: true,
-                  variant: "filled",
+                  variant: "outlined",
                   required: true,
                   error: !!errors.time,
                 },
@@ -209,7 +286,7 @@ function WizardStepStoreInfo({
               slotProps={{
                 textField: {
                   fullWidth: true,
-                  variant: "filled",
+                  variant: "outlined",
                   required: true,
                   error: !!errors.time,
                 },
@@ -227,7 +304,7 @@ function WizardStepStoreInfo({
             onChange={handleInputChange}
             fullWidth
             required
-            variant="filled"
+            variant="outlined"
             InputProps={{
               endAdornment: (
                 <InputAdornment position="end">시간</InputAdornment>
@@ -238,8 +315,13 @@ function WizardStepStoreInfo({
         </Grid>
       </Grid>
 
-      <Box sx={{ mt: 4, display: "flex", justifyContent: "flex-end" }}>
-        <Button variant="contained" onClick={handleSubmit}>
+      <Box sx={{ mt: 5, display: "flex", justifyContent: "flex-end" }}>
+        <Button
+          variant="contained"
+          onClick={handleSubmit}
+          size="large"
+          sx={{ px: 4, py: 1 }}
+        >
           다음
         </Button>
       </Box>
