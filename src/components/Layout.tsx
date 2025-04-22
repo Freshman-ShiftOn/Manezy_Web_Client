@@ -248,8 +248,7 @@ function Layout() {
   const handleAddNewStore = () => {
     handleStoreMenuClose();
     // navigate("/settings/store"); // 이전 경로
-    navigate("/setup/new-store"); // 새 매장 생성 페이지로 이동
-    console.log("Navigating to /setup/new-store to create a new store.");
+    navigate("/setup/wizard?mode=new-store"); // 마법사를 사용하여 새 지점 추가
   };
 
   // 데이터 초기화 핸들러

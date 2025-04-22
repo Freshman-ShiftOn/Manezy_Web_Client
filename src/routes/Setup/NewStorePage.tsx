@@ -45,6 +45,16 @@ const NewStorePage: React.FC = () => {
   );
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // 컴포넌트 마운트 시 마법사로 리디렉션
+  useEffect(() => {
+    // 잠시 로딩 상태 표시 후 리디렉션
+    const redirectTimer = setTimeout(() => {
+      navigate("/setup/wizard?mode=new-store");
+    }, 1000);
+
+    return () => clearTimeout(redirectTimer);
+  }, [navigate]);
+
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = event.target;
     setStoreData((prev) => ({
@@ -159,167 +169,25 @@ const NewStorePage: React.FC = () => {
   };
 
   return (
-    <Container maxWidth="md" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom sx={{ mb: 4, fontWeight: "bold" }}>
-        새 매장 생성
-      </Typography>
-      <Paper sx={{ p: { xs: 2, md: 4 }, borderRadius: 3, boxShadow: 3 }}>
-        <Typography variant="h6" component="h2" sx={{ mb: 3, fontWeight: 500 }}>
-          매장 기본 정보 입력
+    <Container maxWidth="md" sx={{ mt: 8 }}>
+      <Paper sx={{ p: 4, textAlign: "center", borderRadius: 2 }}>
+        <Typography variant="h5" gutterBottom>
+          매장 설정 마법사로 이동 중...
         </Typography>
-        <Grid container spacing={3}>
-          {/* Input Fields */}
-          <Grid item xs={12}>
-            <TextField
-              label="매장 이름"
-              name="name"
-              value={storeData.name}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              variant="filled"
-              error={!!errors.name}
-              helperText={errors.name}
-            />
-          </Grid>
-          <Grid item xs={12}>
-            <TextField
-              label="매장 주소"
-              name="address"
-              value={storeData.address}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              variant="filled"
-              error={!!errors.address}
-              helperText={errors.address}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              label="전화번호"
-              name="phoneNumber"
-              value={storeData.phoneNumber}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              variant="filled"
-              error={!!errors.phoneNumber}
-              helperText={errors.phoneNumber}
-            />
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <TextField
-              label="기본 시급"
-              name="baseHourlyRate"
-              type="number"
-              value={storeData.baseHourlyRate}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              variant="filled"
-              InputProps={{
-                startAdornment: (
-                  <InputAdornment position="start">₩</InputAdornment>
-                ),
-              }}
-              error={!!errors.baseHourlyRate}
-              helperText={
-                errors.baseHourlyRate || "직원 등록 시 기본값으로 사용됩니다."
-              }
-            />
-          </Grid>
-          {/* Time Pickers */}
-          <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <TimePicker
-                label="영업 시작 시간"
-                value={openTime}
-                onChange={(newValue) =>
-                  handleTimeChange("openingHour", newValue)
-                }
-                ampm={false} // 24시간 형식 사용
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    variant: "filled",
-                    required: true,
-                    error: !!errors.time,
-                  },
-                }}
-              />
-            </LocalizationProvider>
-          </Grid>
-          <Grid item xs={12} sm={6}>
-            <LocalizationProvider dateAdapter={AdapterDateFns}>
-              <TimePicker
-                label="영업 종료 시간"
-                value={closeTime}
-                onChange={(newValue) =>
-                  handleTimeChange("closingHour", newValue)
-                }
-                ampm={false}
-                minTime={openTime || undefined}
-                slotProps={{
-                  textField: {
-                    fullWidth: true,
-                    variant: "filled",
-                    required: true,
-                    error: !!errors.time,
-                  },
-                }}
-              />
-            </LocalizationProvider>
-            {errors.time && (
-              <FormHelperText error sx={{ textAlign: "right", mt: 1 }}>
-                {errors.time}
-              </FormHelperText>
-            )}
-          </Grid>
-          {/* Holiday Pay Threshold */}
-          <Grid item xs={12} sm={6}>
-            <TextField
-              label="주휴수당 기준 시간 (주당)"
-              name="weeklyHolidayHoursThreshold"
-              type="number"
-              value={storeData.weeklyHolidayHoursThreshold}
-              onChange={handleInputChange}
-              fullWidth
-              required
-              variant="filled"
-              InputProps={{
-                endAdornment: (
-                  <InputAdornment position="end">시간</InputAdornment>
-                ),
-              }}
-              error={!!errors.weeklyHolidayHoursThreshold}
-              helperText={
-                errors.weeklyHolidayHoursThreshold ||
-                "주 15시간 이상 근무 시 주휴수당 지급 (일반적)"
-              }
-            />
-          </Grid>
-
-          {/* Save Button */}
-          <Grid
-            item
-            xs={12}
-            sx={{ display: "flex", justifyContent: "flex-end", mt: 2 }}
-          >
-            <Button
-              variant="contained"
-              color="primary"
-              onClick={handleSave}
-              disabled={loading}
-              startIcon={
-                loading ? <CircularProgress size={20} color="inherit" /> : null
-              }
-              size="large"
-            >
-              {loading ? "저장 중..." : "새 매장 정보 저장"}
-            </Button>
-          </Grid>
-        </Grid>
+        <Box sx={{ display: "flex", justifyContent: "center", mt: 4, mb: 4 }}>
+          <CircularProgress />
+        </Box>
+        <Typography variant="body2" color="text.secondary">
+          더 편리한 설정을 위해 마법사로 이동합니다. 자동으로 이동하지 않는 경우
+          아래 버튼을 클릭하세요.
+        </Typography>
+        <Button
+          variant="contained"
+          sx={{ mt: 4 }}
+          onClick={() => navigate("/setup/wizard?mode=new-store")}
+        >
+          마법사로 이동
+        </Button>
       </Paper>
 
       {/* Feedback Snackbar */}

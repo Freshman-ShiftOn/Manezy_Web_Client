@@ -2,21 +2,29 @@ import React, { useState, useEffect } from "react";
 import {
   Box,
   Paper,
-  CircularProgress,
   Typography,
   Button,
-  Divider,
-  Tab,
-  Tabs,
+  IconButton,
+  ButtonGroup,
+  Tooltip,
+  useTheme,
+  Snackbar,
+  Alert,
 } from "@mui/material";
-import { getEmployees } from "../../services/api";
-import { Employee, Shift, Store } from "../../lib/types";
-import WeeklyScheduleManager from "./components/WeeklyScheduleManager";
-import DragDropScheduler from "./components/DragDropScheduler";
+import {
+  AddCircleOutline as AddIcon,
+  Refresh as RefreshIcon,
+} from "@mui/icons-material";
 import ShiftDialog from "./ShiftDialog";
-import mockData from "../../lib/mockData";
+import {
+  getEmployees,
+  getShifts,
+  saveShift,
+  deleteShift,
+} from "../../services/api";
+import { Employee, Shift } from "../../lib/types";
 
-// 시간대 템플릿 타입 정의
+// 지점 템플릿 정보 타입 정의
 interface ShiftTemplate {
   id: string;
   name: string;
@@ -34,74 +42,66 @@ interface ShiftTemplate {
   };
 }
 
-// 기본 템플릿 정의
-const DEFAULT_SHIFT_TEMPLATES: ShiftTemplate[] = [
-  {
-    id: "template-open",
-    name: "오픈",
-    type: "open",
-    startTime: "09:00",
-    endTime: "15:00",
-    requiredStaff: 3,
-    color: "#4CAF50", // 초록색
-    requiredPositions: {
-      매니저: 1,
-      바리스타: 1,
-      서빙: 1,
-    },
-  },
-  {
-    id: "template-middle",
-    name: "미들",
-    type: "middle",
-    startTime: "15:00",
-    endTime: "17:00",
-    requiredStaff: 2,
-    color: "#2196F3", // 파랑색
-    requiredPositions: {
-      바리스타: 1,
-      캐셔: 1,
-    },
-  },
-  {
-    id: "template-close",
-    name: "마감",
-    type: "close",
-    startTime: "17:00",
-    endTime: "22:00",
-    requiredStaff: 3,
-    color: "#9C27B0", // 보라색
-    requiredPositions: {
-      매니저: 1,
-      바리스타: 1,
-      주방: 1,
-    },
-  },
-];
-
-// 모의 직원 데이터 제거 (useEffect에서 설정)
-/*
-const MOCK_EMPLOYEES: Employee[] = [
-  // ...
-];
-*/
-
-// ScheduleItem 타입 정의 제거
-/*
-interface ScheduleItem {
-  employeeId: string;
-  day: number;
-  shiftType: string;
+// ShiftEvent 타입 정의 (ShiftDialog에서 사용)
+interface ShiftEvent {
+  id: string;
+  title?: string;
+  start: string;
+  end: string;
+  color?: string;
+  backgroundColor?: string;
+  borderColor?: string;
+  extendedProps?: {
+    employeeIds?: string[];
+    requiredStaff?: number;
+    shiftType?: "open" | "middle" | "close";
+    repeatDays?: number[]; // 0: 일요일, 1: 월요일, ..., 6: 토요일
+  };
 }
-*/
 
-// generateInitialSchedule 함수 제거 또는 수정 (여기서는 제거)
-/*
-const generateInitialSchedule = (employees: Employee[]): Shift[] => { // 타입을 Shift[]로 변경
-  // ... Shift 객체를 생성하여 반환하는 로직 ...
-  return []; // 예시
-};
-*/
+// 모의 직원 데이터
+const MOCK_EMPLOYEES: Employee[] = [
+  {
+    id: "emp-1",
+    name: "김지은",
+    hourlyRate: 9860,
+    role: "매니저",
+    phoneNumber: "010-1234-5678",
+    status: "active",
+  },
+  {
+    id: "emp-2",
+    name: "박민준",
+    hourlyRate: 9620,
+    role: "바리스타",
+    phoneNumber: "010-2345-6789",
+    status: "active",
+  },
+  {
+    id: "emp-3",
+    name: "정서연",
+    hourlyRate: 9620,
+    role: "바리스타",
+    phoneNumber: "010-3456-7890",
+    status: "active",
+  },
+  {
+    id: "emp-4",
+    name: "이도윤",
+    hourlyRate: 9620,
+    role: "홀",
+    phoneNumber: "010-4567-8901",
+    status: "active",
+  },
+  {
+    id: "emp-5",
+    name: "최하은",
+    hourlyRate: 9620,
+    role: "알바생",
+    phoneNumber: "010-5678-9012",
+    status: "active",
+  },
+];
 
 interface ScheduleProps {
   onAssignEmployee?: (shiftId: string, employeeId: string) => void;
@@ -112,252 +112,217 @@ const Schedule: React.FC<ScheduleProps> = ({
   onAssignEmployee,
   selectedShiftId,
 }) => {
+  const theme = useTheme();
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [initialSchedule, setInitialSchedule] = useState<Shift[]>([]); // 타입을 Shift[]로 변경
+  const [shifts, setShifts] = useState<Shift[]>([]);
   const [showShiftDialog, setShowShiftDialog] = useState(false);
-  const [currentShift, setCurrentShift] = useState<any>(null);
-  const [showTemplateDialog, setShowTemplateDialog] = useState(false);
-  const [schedule, setSchedule] = useState<Shift[]>(mockData.schedules); // 타입 명시
+  const [currentShift, setCurrentShift] = useState<ShiftEvent | null>(null);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+  const [snackbarSeverity, setSnackbarSeverity] = useState<
+    "success" | "error" | "info" | "warning"
+  >("success");
 
+  // 컴포넌트 마운트 시 직원 데이터 로드
   useEffect(() => {
     const loadEmployees = async () => {
-      setLoading(true);
       try {
-        // API 호출 대신 실제 데이터 로딩 로직 구현 필요
-        // 예시: const employeesData = await getEmployees();
-        // setEmployees(employeesData);
-
-        // 모의 데이터 사용 (임시)
-        const mockEmployees: Employee[] = [
-          {
-            id: "emp-1",
-            name: "김지은",
-            phoneNumber: "010-1234-5678",
-            role: "매니저",
-            status: "active",
-            hourlyRate: 12000,
-          },
-          {
-            id: "emp-2",
-            name: "박민우",
-            phoneNumber: "010-2345-6789",
-            role: "바리스타",
-            status: "active",
-            hourlyRate: 10000,
-          },
-          // ... 다른 직원들 ...
-        ];
-        setEmployees(mockEmployees);
-        setInitialSchedule([]); // 초기 스케줄은 빈 배열
-      } catch (err) {
-        console.error("직원 데이터 로딩 오류:", err);
-      } finally {
-        setLoading(false);
+        const data = await getEmployees();
+        if (data && data.length > 0) {
+          setEmployees(data);
+        } else {
+          console.log("직원 데이터가 없어 목업 데이터를 사용합니다");
+          setEmployees(MOCK_EMPLOYEES);
+        }
+      } catch (error) {
+        console.error("직원 데이터 로드 실패:", error);
+        setEmployees(MOCK_EMPLOYEES);
       }
     };
+
+    const loadShifts = async () => {
+      try {
+        const data = await getShifts();
+        if (data && data.length > 0) {
+          setShifts(data);
+        }
+      } catch (error) {
+        console.error("근무 일정 로드 실패:", error);
+      }
+    };
+
     loadEmployees();
+    loadShifts();
   }, []);
 
-  // schedule이 변경될 때 DragDropScheduler 업데이트
+  // 선택된 근무 ID가 변경되면 해당 근무를 찾아 대화상자 표시
   useEffect(() => {
-    // initialSchedule 업데이트 (필요한 경우)
-    if (schedule.length > 0) {
-      setInitialSchedule(schedule);
+    if (selectedShiftId) {
+      const selectedShift = shifts.find(
+        (shift) => shift.id === selectedShiftId
+      );
+      if (selectedShift) {
+        // Shift를 ShiftEvent로 변환
+        const shiftEvent: ShiftEvent = {
+          id: selectedShift.id,
+          title: selectedShift.title,
+          start: selectedShift.start,
+          end: selectedShift.end,
+          color: selectedShift.color,
+          extendedProps: {
+            employeeIds: selectedShift.employeeIds || [],
+            requiredStaff: selectedShift.extendedProps?.requiredStaff || 1,
+            shiftType: selectedShift.extendedProps?.shiftType || "middle",
+          },
+        };
+        setCurrentShift(shiftEvent);
+        setShowShiftDialog(true);
+      }
     }
-  }, [schedule]);
+  }, [selectedShiftId, shifts]);
 
-  // 드래그 앤 드롭 스케줄 저장
-  const handleDragDropScheduleSave = (dragDropSchedule: any) => {
-    console.log("드래그 앤 드롭 스케줄 저장:", dragDropSchedule);
-    setSchedule(dragDropSchedule);
-    // TODO: 스케줄을 저장하는 API 호출 구현
+  // 근무 일정 저장 처리
+  const handleShiftSave = async (event: ShiftEvent) => {
+    try {
+      // ShiftEvent를 Shift로 변환
+      const shiftData: Shift = {
+        id: event.id,
+        title: event.title || "",
+        start: event.start,
+        end: event.end,
+        color: event.color,
+        employeeIds: event.extendedProps?.employeeIds || [],
+        storeId: "", // API가 필요에 따라 채움
+        isRecurring: !!event.extendedProps?.repeatDays?.length, // repeatDays 배열이 있으면 반복
+        extendedProps: {
+          requiredStaff: event.extendedProps?.requiredStaff,
+          shiftType: event.extendedProps?.shiftType,
+        },
+      };
+
+      await saveShift(shiftData);
+
+      // 성공 메시지 표시
+      setSnackbarMessage("근무 일정이 저장되었습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      // 근무 목록 갱신
+      const updatedShifts = await getShifts();
+      setShifts(updatedShifts);
+    } catch (error) {
+      console.error("근무 저장 실패:", error);
+      setSnackbarMessage("근무 일정 저장에 실패했습니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    }
+
+    // 대화상자 닫기
+    setShowShiftDialog(false);
   };
 
-  const handleShiftClick = (shift: Shift) => {
-    setCurrentShift(shift);
+  // 근무 삭제 처리
+  const handleShiftDelete = async (shiftId: string) => {
+    try {
+      await deleteShift(shiftId);
+
+      // 성공 메시지 표시
+      setSnackbarMessage("근무가 삭제되었습니다.");
+      setSnackbarSeverity("success");
+      setSnackbarOpen(true);
+
+      // 근무 목록 갱신
+      const updatedShifts = await getShifts();
+      setShifts(updatedShifts);
+    } catch (error) {
+      console.error("근무 삭제 실패:", error);
+      setSnackbarMessage("근무 삭제에 실패했습니다.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+    }
+
+    // 대화상자 닫기
+    setShowShiftDialog(false);
+  };
+
+  // 새 근무 추가 버튼 핸들러
+  const handleAddShift = () => {
+    // 새 근무 생성을 위한 기본값 설정
+    const now = new Date();
+    const oneHourLater = new Date(now.getTime() + 3600000);
+
+    setCurrentShift({
+      id: `temp-${Date.now()}`,
+      start: now.toISOString(),
+      end: oneHourLater.toISOString(),
+      extendedProps: {
+        employeeIds: [],
+        requiredStaff: 1,
+      },
+    });
     setShowShiftDialog(true);
   };
 
+  // 근무 대화상자 닫기 핸들러
   const handleShiftDialogClose = () => {
     setShowShiftDialog(false);
   };
 
-  const handleShiftSave = (event: any) => {
-    console.log("Shift saved:", event);
-
-    // 반복 요일이 설정되어 있다면 각 요일별로 일정 생성
-    if (
-      event.extendedProps?.repeatDays &&
-      event.extendedProps.repeatDays.length > 0
-    ) {
-      // 기존 일정이 있는 경우 삭제
-      if (currentShift?.id) {
-        setSchedule((prevSchedule) =>
-          prevSchedule.filter((shift) => shift.id !== currentShift.id)
-        );
-      }
-
-      // 각 요일별로 새 일정 생성
-      const newShifts = event.extendedProps.repeatDays.map(
-        (dayNumber: number, index: number) => {
-          // 고유 ID 생성
-          const newShiftId = `shift-${dayNumber}-${Date.now()}-${index}`;
-
-          // 요일에 따른 새 일정 생성
-          return {
-            ...event,
-            id: newShiftId,
-            day: dayNumber, // 0: 일요일, 1: 월요일, ..., 6: 토요일
-            // 필요한 다른 속성들 추가
-          };
-        }
-      );
-
-      // 새 일정들을 스케줄에 추가
-      setSchedule((prevSchedule) => [...prevSchedule, ...newShifts]);
-      console.log(
-        `${event.extendedProps.repeatDays.length}개 요일에 반복 일정이 생성되었습니다.`
-      );
-    } else {
-      // 반복 요일이 없는 경우 단일 일정만 저장
-      // 기존 일정 업데이트 또는 새 일정 추가
-      if (currentShift?.id) {
-        // 기존 일정 업데이트
-        setSchedule((prevSchedule) =>
-          prevSchedule.map((shift) =>
-            shift.id === currentShift.id ? { ...event } : shift
-          )
-        );
-      } else {
-        // 새 일정 추가
-        const newShift = {
-          ...event,
-          id: `shift-${Date.now()}`,
-          // 필요한 다른 속성들 추가
-        };
-        setSchedule((prevSchedule) => [...prevSchedule, newShift]);
-      }
-    }
-
-    // 대화상자 닫기
-    setShowShiftDialog(false);
-  };
-
-  const handleShiftDelete = (shiftId: string) => {
-    console.log("Deleting shift:", shiftId);
-
-    // UI에서 삭제된 근무 제거
-    setSchedule((prevSchedule) =>
-      prevSchedule.filter((shift) => shift.id !== shiftId)
-    );
-
-    // initialSchedule에서도 삭제
-    setInitialSchedule((prevSchedule) =>
-      prevSchedule.filter((shift) => shift.id !== shiftId)
-    );
-
-    // 대화상자 닫기
-    setShowShiftDialog(false);
-
-    // TODO: API로 근무 일정 삭제 구현
-    // 예시: await deleteShift(shiftId);
-  };
-
-  const handleTemplateManagerOpen = () => {
-    setShowTemplateDialog(true);
-  };
-
-  // 로딩 상태 표시
-  if (loading && employees.length === 0) {
-    return (
-      <Box
-        sx={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          height: "300px",
-        }}
-      >
-        <CircularProgress />
-      </Box>
-    );
-  }
-
   return (
-    <Paper elevation={0} sx={{ height: "100%", overflow: "hidden" }}>
+    <Paper
+      sx={{
+        p: 3,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
       <Box
         sx={{
-          p: 2,
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          mb: 2,
         }}
       >
-        <Typography variant="h6">주간 스케줄 관리</Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          {/* "샘플 직원 배정" 버튼 제거 */}
-          {/* <Button
-            variant="outlined"
-            color="secondary"
-            startIcon={<RestoreIcon />}
-            onClick={regenerateInitialSchedule}
-          >
-            샘플 직원 배정
-          </Button> */}
-          {/* "근무 템플릿 관리" 버튼 제거 */}
-          {/* <Button
-            variant="outlined"
-            color="primary"
-            startIcon={<SettingsIcon />}
-            onClick={handleTemplateManagerOpen}
-          >
-            근무 템플릿 관리
-          </Button> */}
-          {/* "시간대 추가" 버튼 제거 */}
-          {/* <Button
+        <Typography variant="h5" sx={{ fontWeight: "bold" }}>
+          근무 일정 관리
+        </Typography>
+        <Box>
+          <Button
             variant="contained"
             color="primary"
             startIcon={<AddIcon />}
             onClick={handleAddShift}
+            sx={{ mr: 1 }}
           >
-            시간대 추가
-          </Button> */}
-        </Box>
-      </Box>
-      <Divider />
-      <Box
-        sx={{
-          height: "calc(100% - 60px)", // 높이 조절
-          display: "flex",
-          flexDirection: "column",
-          p: 2,
-          overflow: "hidden", // 스크롤은 DragDropScheduler 내부에서 처리하도록 변경
-        }}
-      >
-        {loading ? (
-          <Box
-            sx={{
-              display: "flex",
-              justifyContent: "center",
-              alignItems: "center",
-              height: "300px",
+            새 근무 추가
+          </Button>
+          <IconButton
+            onClick={async () => {
+              const updatedShifts = await getShifts();
+              setShifts(updatedShifts);
+              setSnackbarMessage("근무 일정을 새로고침했습니다.");
+              setSnackbarSeverity("info");
+              setSnackbarOpen(true);
             }}
           >
-            <CircularProgress />
-          </Box>
-        ) : (
-          <DragDropScheduler
-            key={`schedule-${initialSchedule.length}`}
-            employees={employees}
-            onSaveSchedule={handleDragDropScheduleSave}
-            initialSchedule={initialSchedule}
-          />
-        )}
+            <RefreshIcon />
+          </IconButton>
+        </Box>
       </Box>
 
-      {/* 템플릿 관리 대화상자 제거 */}
-      {/* {showTemplateDialog && (...)} */}
+      {/* 근무 일정 캘린더 컴포넌트 자리 */}
+      <Box sx={{ flexGrow: 1, overflow: "auto" }}>
+        <Typography
+          variant="body1"
+          color="text.secondary"
+          sx={{ textAlign: "center", mt: 4 }}
+        >
+          캘린더 컴포넌트가 여기에 표시됩니다.
+        </Typography>
+      </Box>
 
       {/* ShiftDialog */}
       {showShiftDialog && currentShift && (
@@ -368,9 +333,24 @@ const Schedule: React.FC<ScheduleProps> = ({
           onClose={handleShiftDialogClose}
           onSave={handleShiftSave}
           onDelete={handleShiftDelete}
-          // onOpenTemplateManager={handleTemplateManagerOpen} // 제거
         />
       )}
+
+      {/* 알림 스낵바 */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={4000}
+        onClose={() => setSnackbarOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setSnackbarOpen(false)}
+          severity={snackbarSeverity}
+          variant="filled"
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Paper>
   );
 };

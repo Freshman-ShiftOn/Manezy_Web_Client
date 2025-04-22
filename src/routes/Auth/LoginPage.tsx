@@ -16,6 +16,7 @@ import {
 import { useNavigate, useLocation } from "react-router-dom";
 import { LoginRequest, authService } from "../../services/auth";
 import { useAuth } from "../../context/AuthContext";
+import { LS_KEYS } from "../../services/api";
 
 const LoginPage: React.FC = () => {
   const theme = useTheme();
@@ -46,17 +47,27 @@ const LoginPage: React.FC = () => {
   }, [location]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+  };
+
+  // 폼 유효성 검사
+  const validateForm = (): boolean => {
+    if (!formData.email || !formData.password) {
+      setSnackbarMessage("이메일과 비밀번호를 모두 입력해주세요.");
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+      return false;
+    }
+    return true;
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.email || !formData.password) {
-      setSnackbarMessage("이메일과 비밀번호를 모두 입력해주세요.");
-      setSnackbarSeverity("error");
-      setSnackbarOpen(true);
+    if (!validateForm()) {
       return;
     }
 
@@ -74,9 +85,21 @@ const LoginPage: React.FC = () => {
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // 잠시 후 대시보드로 이동
+      // 지점 설정 확인
+      const storeData = localStorage.getItem(LS_KEYS.STORE);
+      const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
+
+      // 잠시 후 적절한 페이지로 이동
       setTimeout(() => {
-        navigate("/dashboard");
+        if (!storeData || !setupComplete) {
+          // 지점 설정이 없으면 설정 마법사로 이동
+          console.log("지점 설정이 필요합니다. 설정 마법사로 이동합니다.");
+          navigate("/setup/wizard");
+        } else {
+          // 지점 설정이 있으면 대시보드로 이동
+          console.log("지점 설정이 완료되었습니다. 대시보드로 이동합니다.");
+          navigate("/dashboard");
+        }
       }, 1000);
     } catch (error: any) {
       console.error("Login error:", error);
@@ -126,9 +149,21 @@ const LoginPage: React.FC = () => {
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // 잠시 후 대시보드로 이동
+      // 지점 설정 확인
+      const storeData = localStorage.getItem(LS_KEYS.STORE);
+      const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
+
+      // 잠시 후 적절한 페이지로 이동
       setTimeout(() => {
-        navigate("/dashboard");
+        if (!storeData || !setupComplete) {
+          // 지점 설정이 없으면 설정 마법사로 이동
+          console.log("지점 설정이 필요합니다. 설정 마법사로 이동합니다.");
+          navigate("/setup/wizard");
+        } else {
+          // 지점 설정이 있으면 대시보드로 이동
+          console.log("지점 설정이 완료되었습니다. 대시보드로 이동합니다.");
+          navigate("/dashboard");
+        }
       }, 1000);
     } catch (error: any) {
       console.error("Kakao login error:", error);

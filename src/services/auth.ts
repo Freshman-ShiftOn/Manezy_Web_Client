@@ -2,7 +2,8 @@ import { LS_KEYS } from "./api";
 import axios, { AxiosError } from "axios";
 
 // API 기본 URL
-const API_BASE_URL = process.env.REACT_APP_API_URL || "https://epicode.co.kr";
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL || "https://crewezy.epicode.co.kr";
 
 // HTTP 클라이언트 설정
 const authClient = axios.create({
@@ -189,14 +190,14 @@ export const authService = {
       // 토큰 저장
       localStorage.setItem(LS_KEYS.AUTH_TOKEN, token);
 
-      // 사용자 정보 조회
-      console.log("사용자 정보 요청 중...");
-      const userResponse = await authClient.get("/api/users/me");
-      console.log("사용자 정보 조회 성공");
-
+      // 사용자 정보 API가 없으므로 기본 정보만 반환
       return {
         token,
-        user: userResponse.data,
+        user: {
+          id: "", // 실제 ID는 없지만 로그인 처리를 위한 임시 값
+          email: "", // 카카오 로그인으로는 이메일을 알 수 없음
+          name: "", // 이름은 알 수 없음
+        },
       };
     } catch (error: any) {
       console.error("카카오 로그인 오류:", error.message);
@@ -218,23 +219,50 @@ export const authService = {
       const response = await authClient.post("/api/web/auth/signup", data);
       const token = response.data;
 
-      if (!token) {
-        throw new Error("회원가입 성공했으나 토큰이 응답에 없습니다.");
+      // 토큰 유효성 검사 - 한글이 포함된 응답 체크
+      if (
+        !token ||
+        typeof token !== "string" ||
+        /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(token)
+      ) {
+        console.log("회원가입은 성공했으나 유효한 토큰이 아닙니다:", token);
+        // 기본 응답 반환 (토큰이 유효하지 않음을 나타내는)
+        return {
+          token: "",
+          user: {
+            id: "",
+            email: data.email,
+            name: data.name,
+          },
+        };
       }
 
       console.log("회원가입 성공, 토큰 저장됨");
       // 토큰 저장
       localStorage.setItem(LS_KEYS.AUTH_TOKEN, token);
 
-      // 사용자 정보 조회
-      console.log("사용자 정보 요청 중...");
-      const userResponse = await authClient.get("/api/users/me");
-      console.log("사용자 정보 조회 성공");
+      try {
+        // 사용자 정보 조회
+        console.log("사용자 정보 요청 중...");
+        const userResponse = await authClient.get("/api/users/me");
+        console.log("사용자 정보 조회 성공");
 
-      return {
-        token,
-        user: userResponse.data,
-      };
+        return {
+          token,
+          user: userResponse.data,
+        };
+      } catch (userError) {
+        // 사용자 정보 조회 실패 시 기본 정보 반환
+        console.error("사용자 정보 조회 실패:", userError);
+        return {
+          token,
+          user: {
+            id: "",
+            email: data.email,
+            name: data.name,
+          },
+        };
+      }
     } catch (error: any) {
       console.error("회원가입 오류:", error.message);
       if (error.response?.data?.message) {
@@ -263,14 +291,14 @@ export const authService = {
       // 토큰 저장
       localStorage.setItem(LS_KEYS.AUTH_TOKEN, token);
 
-      // 사용자 정보 조회
-      console.log("사용자 정보 요청 중...");
-      const userResponse = await authClient.get("/api/users/me");
-      console.log("사용자 정보 조회 성공");
-
+      // 사용자 정보 API가 없으므로 기본 정보만 반환
       return {
         token,
-        user: userResponse.data,
+        user: {
+          id: "", // 실제 ID는 없지만 로그인 처리를 위한 임시 값
+          email: data.email,
+          name: "", // 이름은 알 수 없음
+        },
       };
     } catch (error: any) {
       console.error("로그인 오류:", error.message);
@@ -351,18 +379,16 @@ export const authService = {
   // 현재 로그인된 사용자 ID 조회
   getCurrentUserId: async (): Promise<string> => {
     try {
-      console.log("현재 사용자 ID 조회 중...");
-      const response = await authClient.get("/api/users/me");
-      console.log(`사용자 ID 조회 성공: ${response.data.id}`);
-      return response.data.id;
+      // 토큰이 있는지 확인
+      const token = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+      if (!token) {
+        throw new Error("인증 토큰이 없습니다.");
+      }
+
+      // 토큰이 있으면 임시 ID 반환 (실제로는 API 호출이 필요하지만 현재는 API가 없음)
+      return "temp-user-id";
     } catch (error: any) {
       console.error("사용자 ID 조회 오류:", error.message);
-      if (error.response?.data?.message) {
-        console.error("서버 오류 메시지:", error.response.data.message);
-      }
-      if (axios.isAxiosError(error)) {
-        logAxiosError(error, "사용자 ID 조회 오류");
-      }
       throw error;
     }
   },
@@ -370,18 +396,20 @@ export const authService = {
   // 현재 로그인된 사용자 정보 조회
   getCurrentUser: async () => {
     try {
-      console.log("현재 사용자 정보 조회 중...");
-      const response = await authClient.get("/api/users/me");
-      console.log("사용자 정보 조회 성공:", response.data);
-      return response.data;
+      // 토큰이 있는지 확인
+      const token = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+      if (!token) {
+        throw new Error("인증 토큰이 없습니다.");
+      }
+
+      // 토큰이 있으면 임시 정보 반환 (실제로는 API 호출이 필요하지만 현재는 API가 없음)
+      return {
+        id: "temp-user-id",
+        email: "",
+        name: "",
+      };
     } catch (error: any) {
       console.error("사용자 정보 조회 오류:", error.message);
-      if (error.response?.data?.message) {
-        console.error("서버 오류 메시지:", error.response.data.message);
-      }
-      if (axios.isAxiosError(error)) {
-        logAxiosError(error, "사용자 정보 조회 오류");
-      }
       throw error;
     }
   },

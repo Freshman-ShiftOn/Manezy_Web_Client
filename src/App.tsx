@@ -28,9 +28,18 @@ import {
   Grid,
   Button,
   CssBaseline,
+  Card,
+  CardContent,
+  CardActions,
 } from "@mui/material";
 import { ThemeProvider } from "@mui/material/styles";
-import { CalendarMonth, Group, Payment } from "@mui/icons-material";
+import {
+  CalendarMonth,
+  Group,
+  Payment,
+  Add as AddIcon,
+  Store as StoreIcon,
+} from "@mui/icons-material";
 import { appTheme, colors } from "./theme";
 import NewStorePage from "./routes/Setup/NewStorePage";
 import SetupWizard from "./routes/Setup/SetupWizard";
@@ -83,6 +92,10 @@ const SetupCheck = () => {
     navigate("/setup/wizard");
   };
 
+  const handleNewStore = () => {
+    navigate("/setup/wizard?mode=new-store");
+  };
+
   const handleGenerateData = async () => {
     setLoading(true);
     try {
@@ -106,7 +119,7 @@ const SetupCheck = () => {
         minHeight="100vh"
       >
         <CircularProgress />
-        <Typography sx={{ ml: 2 }}>Checking store setup...</Typography>
+        <Typography sx={{ ml: 2 }}>매장 설정 확인 중...</Typography>
       </Box>
     );
   }
@@ -115,17 +128,96 @@ const SetupCheck = () => {
     return (
       <ThemeProvider theme={appTheme}>
         <CssBaseline />
-        <Container maxWidth="sm" sx={{ mt: 8 }}>
-          <Paper elevation={3} sx={{ p: 4, textAlign: "center" }}>
-            <Typography variant="h5" gutterBottom>
-              매장 초기 설정 필요
+        <Container maxWidth="md" sx={{ mt: 8 }}>
+          <Paper elevation={3} sx={{ p: 4, borderRadius: 2 }}>
+            <Typography
+              variant="h4"
+              gutterBottom
+              textAlign="center"
+              color="primary"
+            >
+              매장 설정이 필요합니다
             </Typography>
-            <Typography sx={{ mb: 3 }}>
-              환영합니다! 매장 설정 마법사를 통해 빠르게 시작할 수 있습니다.
+            <Typography variant="subtitle1" textAlign="center" sx={{ mb: 4 }}>
+              마네지를 시작하기 위해 매장 정보를 설정해주세요.
             </Typography>
-            <Button variant="contained" onClick={handleSetup}>
-              설정 마법사 시작하기
-            </Button>
+
+            <Grid container spacing={4} justifyContent="center">
+              <Grid item xs={12} md={6}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <CardContent sx={{ flexGrow: 1 }}>
+                    <Box display="flex" justifyContent="center" mb={2}>
+                      <StoreIcon color="primary" fontSize="large" />
+                    </Box>
+                    <Typography variant="h6" gutterBottom textAlign="center">
+                      새 매장 설정하기
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      textAlign="center"
+                    >
+                      처음 시작하는 경우, 매장 설정 마법사를 통해 기본 정보를
+                      설정합니다.
+                    </Typography>
+                  </CardContent>
+                  <CardActions sx={{ justifyContent: "center", pb: 3 }}>
+                    <Button
+                      variant="contained"
+                      size="large"
+                      onClick={handleSetup}
+                    >
+                      시작하기
+                    </Button>
+                  </CardActions>
+                </Card>
+              </Grid>
+
+              <Grid item xs={12} md={6}>
+                <Card
+                  variant="outlined"
+                  sx={{
+                    height: "100%",
+                    display: "flex",
+                    flexDirection: "column",
+                  }}
+                >
+                  <CardContent sx={{ flexGrow: 1 }}>
+                    <Box display="flex" justifyContent="center" mb={2}>
+                      <AddIcon color="secondary" fontSize="large" />
+                    </Box>
+                    <Typography variant="h6" gutterBottom textAlign="center">
+                      데모 데이터로 시작하기
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      textAlign="center"
+                    >
+                      마네지의 모든 기능을 빠르게 살펴보고 싶다면 샘플 데이터를
+                      사용해보세요.
+                    </Typography>
+                  </CardContent>
+                  <CardActions sx={{ justifyContent: "center", pb: 3 }}>
+                    <Button
+                      variant="outlined"
+                      color="secondary"
+                      size="large"
+                      onClick={handleGenerateData}
+                    >
+                      데모 데이터 생성
+                    </Button>
+                  </CardActions>
+                </Card>
+              </Grid>
+            </Grid>
           </Paper>
         </Container>
       </ThemeProvider>
@@ -150,9 +242,18 @@ const InitialRedirect = () => {
 
         // 설정 필요 여부에 따라 적절한 페이지로 리디렉션
         if (needsSetup) {
+          console.log("초기 설정이 필요하므로 마법사로 이동합니다.");
           navigate("/setup/wizard");
         } else {
-          navigate("/login");
+          // 로그인 상태 확인
+          const authToken = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+          if (authToken) {
+            console.log("이미 로그인 상태이므로 대시보드로 이동합니다.");
+            navigate("/dashboard");
+          } else {
+            console.log("로그인이 필요합니다.");
+            navigate("/login");
+          }
         }
       } catch (error) {
         console.error("Error checking setup:", error);

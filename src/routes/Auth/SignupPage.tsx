@@ -87,18 +87,29 @@ const SignupPage: React.FC = () => {
       console.log("회원가입 시도 중...");
       const response = await authService.signup(formData);
 
-      // 회원가입 및 로그인 성공 처리
-      login(response.token, response.user);
-
-      // 성공 메시지
-      setSnackbarMessage("회원가입에 성공했습니다.");
+      // 회원가입 성공 메시지
+      setSnackbarMessage("회원가입이 완료되었습니다. 로그인해주세요.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // 잠시 후 대시보드로 이동
+      // 토큰이 유효하지 않거나 빈 값인 경우 (백엔드 응답 문제)
+      if (!response.token) {
+        console.log("유효하지 않은 토큰, 로그인 페이지로 리다이렉트");
+
+        // 잠시 후 로그인 페이지로 이동
+        setTimeout(() => {
+          navigate("/login");
+        }, 1500);
+        return;
+      }
+
+      // 토큰이 유효한 경우 로그인 처리
+      login(response.token, response.user);
+
+      // 잠시 후 로그인 페이지로 이동
       setTimeout(() => {
-        navigate("/dashboard");
-      }, 1000);
+        navigate("/login");
+      }, 1500);
     } catch (error: any) {
       console.error("Signup error:", error);
 
