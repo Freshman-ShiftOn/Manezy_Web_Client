@@ -43,6 +43,8 @@ const KakaoCallback: React.FC = () => {
         // 오류 메시지 설정
         if (error.response?.data?.message) {
           setError(error.response.data.message);
+        } else if (error.response?.status === 400) {
+          setError("잘못된 요청입니다. 다시 로그인해 주세요.");
         } else if (error.response?.status === 401) {
           setError("카카오 로그인 인증에 실패했습니다.");
         } else if (error.response?.status === 404) {

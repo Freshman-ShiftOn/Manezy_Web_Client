@@ -177,8 +177,34 @@ export const authService = {
     try {
       console.log(`카카오 로그인 시도 - 인증 코드: ${code.substring(0, 8)}...`);
 
-      const response = await authClient.get(
-        `/api/web/auth/kakao/login?code=${code}`
+      // 요청 데이터 형식 로그
+      console.log("요청 형식: 'text/plain' - 코드 전송 방식:", {
+        bodyType: typeof code,
+        dataFormat: "원시 텍스트 (JSON 아님)",
+        bodyPreview: code.substring(0, 20) + "...",
+        contentType: "text/plain",
+      });
+
+      // 요청 세부 정보 로깅
+      const requestDetails = {
+        url: `${API_BASE_URL}/api/web/auth/kakao/login`,
+        method: "POST",
+        headers: { "Content-Type": "text/plain" },
+        body: code,
+        bodyLength: code.length,
+        bodyIsJSON: false,
+        bodyIsText: true,
+      };
+      console.log("카카오 로그인 요청 세부정보:", requestDetails);
+
+      const response = await authClient.post(
+        `/api/web/auth/kakao/login`,
+        code,
+        {
+          headers: {
+            "Content-Type": "text/plain",
+          },
+        }
       );
       const token = response.data;
 
