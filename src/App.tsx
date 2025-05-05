@@ -8,7 +8,6 @@ import PayrollPage from "./routes/Payroll/PayrollPage";
 import StoreSettingsPage from "./routes/Settings/StoreSettingsPage";
 import LoginPage from "./routes/Auth/LoginPage";
 import SignupPage from "./routes/Auth/SignupPage";
-import KakaoCallback from "./routes/Auth/KakaoCallback";
 import { AuthProvider } from "./context/AuthContext";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import AccountSettingsPage from "./routes/Settings/AccountSettingsPage";
@@ -302,7 +301,6 @@ function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
-          <Route path="/auth/kakao/callback" element={<KakaoCallback />} />
 
           {/* 초기 설정 경로 - 인증 불필요 */}
           <Route path="/setup/new-store" element={<NewStorePage />} />
