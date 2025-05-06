@@ -110,30 +110,73 @@ const LoginPage: React.FC = () => {
         }
       }, 1000);
     } catch (error: any) {
-      console.error("Login error:", error);
+      console.error("Login error object:", error); // 전체 에러 객체 로깅
 
-      if (error.response?.data?.message) {
-        setSnackbarMessage(error.response.data.message);
-      } else if (error.response?.status === 401) {
-        setSnackbarMessage("아이디 또는 비밀번호가 일치하지 않습니다.");
-      } else if (error.response?.status === 404) {
-        setSnackbarMessage("존재하지 않는 계정입니다.");
-      } else if (error.response?.status === 403) {
-        setSnackbarMessage("계정이 잠겨 있습니다.");
-      } else if (error.code === "ECONNABORTED") {
-        setSnackbarMessage(
-          "서버 응답 시간이 초과되었습니다. 나중에 다시 시도해주세요."
+      let displayMessage =
+        "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."; // 기본 오류 메시지
+
+      if (error.response) {
+        // 서버 응답이 있는 경우
+        const status = error.response.status;
+        const serverMessage = error.response.data?.message; // 백엔드에서 주는 메시지
+        const serverData = error.response.data; // 백엔드 전체 데이터
+        const serverHeaders = error.response.headers; // 백엔드 응답 헤더
+
+        console.groupCollapsed(
+          `Login Server Error Details (Status: ${status})`
         );
-      } else if (!error.response && error.request) {
-        setSnackbarMessage(
-          "서버에 연결할 수 없습니다. 인터넷 연결을 확인해주세요."
-        );
+        console.log("Status Code:", status);
+        console.log("Server Message:", serverMessage);
+        console.log("Server Data:", serverData);
+        console.log("Response Headers:", serverHeaders);
+        console.groupEnd();
+
+        switch (status) {
+          case 401: // Unauthorized
+            displayMessage = "아이디 또는 비밀번호가 일치하지 않습니다.";
+            break;
+          case 404: // Not Found
+            displayMessage =
+              "가입되지 않은 사용자입니다. 회원가입을 진행해주세요.";
+            break;
+          case 403: // Forbidden
+            displayMessage = "접근 권한이 없거나 계정이 잠겨 있습니다.";
+            break;
+          case 500: // Internal Server Error
+            displayMessage =
+              "서버 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.";
+            break;
+          default:
+            if (serverMessage && typeof serverMessage === "string") {
+              displayMessage = serverMessage;
+            } else {
+              displayMessage = `오류가 발생했습니다. (상태 코드: ${status})`;
+            }
+            break;
+        }
+      } else if (error.request) {
+        // 서버 응답이 없는 경우 (네트워크 오류 등)
+        console.groupCollapsed("Login Network/Request Error Details");
+        console.log("Error Code:", error.code);
+        console.log("Error Request:", error.request);
+        console.groupEnd();
+
+        if (error.code === "ECONNABORTED") {
+          displayMessage =
+            "서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.";
+        } else {
+          displayMessage =
+            "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.";
+        }
       } else {
-        setSnackbarMessage(
-          "로그인에 실패했습니다. 이메일과 비밀번호를 확인해주세요."
-        );
+        // 요청 설정 오류 등 기타 오류
+        console.groupCollapsed("Login General Error Details");
+        console.log("Error Message:", error.message);
+        console.groupEnd();
+        displayMessage = "로그인 요청 중 문제가 발생했습니다.";
       }
 
+      setSnackbarMessage(displayMessage);
       setSnackbarSeverity("error");
       setSnackbarOpen(true);
     } finally {
