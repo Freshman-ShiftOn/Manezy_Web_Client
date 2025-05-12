@@ -16,7 +16,7 @@ import {
   CardHeader,
 } from "@mui/material";
 import { Save as SaveIcon, Store as StoreIcon } from "@mui/icons-material";
-import { getStoreInfo, updateStoreInfo } from "../../services/api";
+import { storeApi } from "../../services/api/store.api";
 import { Store } from "../../lib/types";
 
 function StoreSettingsPage() {
@@ -35,7 +35,7 @@ function StoreSettingsPage() {
     const loadStoreInfo = async () => {
       try {
         setLoading(true);
-        const storeData = await getStoreInfo();
+        const storeData = await storeApi.getStore();
         setStore(storeData);
         setLoading(false);
       } catch (error) {
@@ -113,7 +113,9 @@ function StoreSettingsPage() {
 
     try {
       setSaving(true);
-      await updateStoreInfo(store as Store);
+      if (store.id) {
+        await storeApi.updateStore(store.id, store);
+      }
       setSaving(false);
 
       setSnackbar({

@@ -180,8 +180,8 @@ const DashboardPage: React.FC = () => {
                               shift.shiftType === "open"
                                 ? "success"
                                 : shift.shiftType === "close"
-                                ? "error"
-                                : "primary"
+                                  ? "error"
+                                  : "primary"
                             }
                             variant="outlined"
                             sx={{ fontWeight: 500 }}

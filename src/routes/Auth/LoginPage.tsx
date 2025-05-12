@@ -19,6 +19,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { LoginRequest, authService } from "../../services/auth";
 import { useAuth } from "../../context/AuthContext";
 import { LS_KEYS } from "../../services/api";
+import axios, { AxiosError } from "axios";
 
 const LoginPage: React.FC = () => {
   const theme = useTheme();
@@ -35,9 +36,7 @@ const LoginPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [snackbarOpen, setSnackbarOpen] = useState(false);
   const [snackbarMessage, setSnackbarMessage] = useState("");
-  const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">(
-    "error"
-  );
+  const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "error">("error");
 
   useEffect(() => {
     const savedEmail = localStorage.getItem(LS_KEYS.REMEMBERED_EMAIL);
@@ -54,9 +53,7 @@ const LoginPage: React.FC = () => {
     }));
   };
 
-  const handleRememberEmailChange = (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleRememberEmailChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setRememberEmail(event.target.checked);
   };
 
@@ -80,15 +77,14 @@ const LoginPage: React.FC = () => {
     setLoading(true);
 
     try {
-      console.log("로그인 시도 중...");
+      console.log("로그인 시도 중...", formData);
       const response = await authService.login(formData);
+      console.log("로그인 응답:", response);
 
       if (rememberEmail) {
         localStorage.setItem(LS_KEYS.REMEMBERED_EMAIL, formData.email);
-        console.log("아이디 저장됨:", formData.email);
       } else {
         localStorage.removeItem(LS_KEYS.REMEMBERED_EMAIL);
-        console.log("저장된 아이디 제거됨");
       }
 
       login(response.token, response.user);
@@ -100,80 +96,42 @@ const LoginPage: React.FC = () => {
       const storeData = localStorage.getItem(LS_KEYS.STORE);
       const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
 
-      setTimeout(() => {
-        if (!storeData || !setupComplete) {
-          console.log("지점 설정이 필요합니다. 설정 마법사로 이동합니다.");
-          navigate("/setup/wizard");
-        } else {
-          console.log("지점 설정이 완료되었습니다. 대시보드로 이동합니다.");
-          navigate("/dashboard");
-        }
-      }, 1000);
-    } catch (error: any) {
-      console.error("Login error object:", error); // 전체 에러 객체 로깅
+      // 즉시 리다이렉션
+      if (!storeData || !setupComplete) {
+        navigate("/setup/wizard");
+      } else {
+        navigate("/dashboard");
+      }
+    } catch (error) {
+      console.error("Login error:", error);
 
-      let displayMessage =
-        "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."; // 기본 오류 메시지
+      let displayMessage = "로그인 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
 
-      if (error.response) {
-        // 서버 응답이 있는 경우
-        const status = error.response.status;
-        const serverMessage = error.response.data?.message; // 백엔드에서 주는 메시지
-        const serverData = error.response.data; // 백엔드 전체 데이터
-        const serverHeaders = error.response.headers; // 백엔드 응답 헤더
-
-        console.groupCollapsed(
-          `Login Server Error Details (Status: ${status})`
-        );
-        console.log("Status Code:", status);
-        console.log("Server Message:", serverMessage);
-        console.log("Server Data:", serverData);
-        console.log("Response Headers:", serverHeaders);
-        console.groupEnd();
+      if (axios.isAxiosError(error)) {
+        const status = error.response?.status;
+        const serverMessage = error.response?.data?.message;
 
         switch (status) {
-          case 401: // Unauthorized
+          case 401:
             displayMessage = "아이디 또는 비밀번호가 일치하지 않습니다.";
             break;
-          case 404: // Not Found
-            displayMessage =
-              "가입되지 않은 사용자입니다. 회원가입을 진행해주세요.";
+          case 404:
+            displayMessage = "가입되지 않은 사용자입니다. 회원가입을 진행해주세요.";
             break;
-          case 403: // Forbidden
+          case 403:
             displayMessage = "접근 권한이 없거나 계정이 잠겨 있습니다.";
             break;
-          case 500: // Internal Server Error
-            displayMessage =
-              "서버 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.";
+          case 500:
+            displayMessage = "서버 처리 중 오류가 발생했습니다. 관리자에게 문의해주세요.";
             break;
           default:
-            if (serverMessage && typeof serverMessage === "string") {
+            if (serverMessage) {
               displayMessage = serverMessage;
-            } else {
-              displayMessage = `오류가 발생했습니다. (상태 코드: ${status})`;
             }
             break;
         }
-      } else if (error.request) {
-        // 서버 응답이 없는 경우 (네트워크 오류 등)
-        console.groupCollapsed("Login Network/Request Error Details");
-        console.log("Error Code:", error.code);
-        console.log("Error Request:", error.request);
-        console.groupEnd();
-
-        if (error.code === "ECONNABORTED") {
-          displayMessage =
-            "서버 응답 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.";
-        } else {
-          displayMessage =
-            "서버에 연결할 수 없습니다. 네트워크 상태를 확인해주세요.";
-        }
-      } else {
-        // 요청 설정 오류 등 기타 오류
-        console.groupCollapsed("Login General Error Details");
-        console.log("Error Message:", error.message);
-        console.groupEnd();
-        displayMessage = "로그인 요청 중 문제가 발생했습니다.";
+      } else if (error instanceof Error) {
+        displayMessage = error.message;
       }
 
       setSnackbarMessage(displayMessage);

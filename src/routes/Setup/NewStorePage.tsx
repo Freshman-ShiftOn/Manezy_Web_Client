@@ -16,7 +16,7 @@ import {
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
 import { useNavigate } from "react-router-dom";
-import { saveStoreSetup, LS_KEYS } from "../../services/api";
+import { storeApi, LS_KEYS } from "../../services/api";
 import { Store } from "../../lib/types";
 import { isValid, parse, format } from "date-fns";
 
@@ -122,34 +122,28 @@ const NewStorePage: React.FC = () => {
 
     setLoading(true);
     try {
-      // Create the store object to save (overwrite)
-      const newStore: Store = {
-        id: `store-${Date.now()}`, // Generate a new ID or use a fixed one if overwriting
+      // API 요구 형식에 맞게 payload 생성
+      const requestBody = {
         name: storeData.name || "",
-        address: storeData.address || "",
-        phoneNumber: storeData.phoneNumber || "",
-        baseHourlyRate: storeData.baseHourlyRate || 9860,
-        openingHour: storeData.openingHour || "08:00",
-        closingHour: storeData.closingHour || "22:00",
-        weeklyHolidayHoursThreshold:
-          storeData.weeklyHolidayHoursThreshold || 15,
+        adress: storeData.address || "",
+        dial_numbers: storeData.phoneNumber || "",
+        basic_cost: (storeData.baseHourlyRate || 9860).toString(),
+        weekly_allowance: (storeData.weeklyHolidayHoursThreshold || 15).toString(),
+        images: "",
+        contents: ""
       };
 
-      // Overwrite existing store data in localStorage
-      localStorage.setItem(LS_KEYS.STORE, JSON.stringify(newStore));
-      localStorage.setItem(LS_KEYS.SETUP_COMPLETE, "true"); // Ensure setup is marked complete
+      console.log("[POST] createStore payload:", requestBody);
 
-      // Note: This simple overwrite might clear shifts/employees if not handled carefully
-      // For MVP, we assume a clean slate or user understands the implication.
-      // Consider clearing related data explicitly if needed:
-      // localStorage.removeItem(LS_KEYS.SHIFTS);
-      // localStorage.removeItem(LS_KEYS.EMPLOYEES);
+      // 실제 POST 요청
+      const response = await storeApi.createStore(requestBody);
+
+      console.log("[POST] createStore response:", response);
 
       setSnackbarMessage("매장 정보가 저장되었습니다. 로그인하여 시작하세요.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
-      // 스낵바가 표시된 후 로그인 페이지로 이동
       setTimeout(() => {
         navigate("/login");
       }, 1500);
@@ -159,8 +153,7 @@ const NewStorePage: React.FC = () => {
       setSnackbarSeverity("error");
       setSnackbarOpen(true);
     } finally {
-      // Keep loading true because page will reload
-      // setLoading(false);
+      setLoading(false);
     }
   };
 

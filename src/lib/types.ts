@@ -183,3 +183,9 @@ export interface SetupWizardState {
   };
   initialSchedules: Partial<Shift>[];
 }
+
+// 간단한 매장 정보 타입 (API 응답용)
+export interface SimpleStore {
+  id: number;
+  name: string;
+}

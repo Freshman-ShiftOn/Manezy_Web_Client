@@ -19,7 +19,7 @@ import {
 } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { Store, Employee } from "../../lib/types";
-import { LS_KEYS } from "../../services/api";
+import { storeApi, LS_KEYS } from "../../services/api";
 import WizardStepStoreInfo from "./WizardSteps/WizardStepStoreInfo";
 import WizardStepEmployees from "./WizardSteps/WizardStepEmployees";
 import WizardStepComplete from "./WizardSteps/WizardStepComplete";
@@ -82,15 +82,18 @@ export default function SetupWizard() {
 
   // LS_KEYS.STORE에서 기존 데이터 로드
   useEffect(() => {
-    const storedData = localStorage.getItem(LS_KEYS.STORE);
-    if (storedData) {
+    const loadStoreData = async () => {
       try {
-        const parsedData = JSON.parse(storedData);
-        setStoreData(parsedData);
+        const storeData = await storeApi.getStore();
+        if (storeData) {
+          setStoreData(storeData);
+        }
       } catch (e) {
-        console.error("Store data parsing failed:", e);
+        console.error("Store data loading failed:", e);
       }
-    }
+    };
+
+    loadStoreData();
   }, []);
 
   const handleNext = () => {
@@ -107,27 +110,51 @@ export default function SetupWizard() {
     }
   };
 
-  const handleStoreUpdate = (data: Partial<Store>) => {
+  const handleStoreUpdate = async (data: Partial<Store>) => {
     setStoreData(data);
-    localStorage.setItem(LS_KEYS.STORE, JSON.stringify(data));
+    try {
+      if (data.id) {
+        await storeApi.updateStore(data.id, data);
+      }
+    } catch (error) {
+      console.error("Failed to update store:", error);
+    }
   };
 
   const handleEmployeesUpdate = (data: { employees: Partial<Employee>[] }) => {
     setEmployees(data.employees);
   };
 
-  const handleSetupComplete = () => {
-    localStorage.setItem(LS_KEYS.SETUP_COMPLETE, "true");
-    setSnackbar({
-      open: true,
-      message: "설정이 성공적으로 완료되었습니다.",
-      severity: "success",
-    });
+  const handleSetupComplete = async () => {
+    try {
+      await storeApi.createStore({
+        step: 2,
+        storeInfo: storeData,
+        employees: employees,
+        workingHours: {
+          openingHour: storeData.openingHour || "08:00",
+          closingHour: storeData.closingHour || "22:00",
+        },
+        initialSchedules: [],
+      });
 
-    // 잠시 후 대시보드로 이동
-    setTimeout(() => {
-      navigate("/dashboard");
-    }, 1500);
+      setSnackbar({
+        open: true,
+        message: "설정이 성공적으로 완료되었습니다.",
+        severity: "success",
+      });
+
+      setTimeout(() => {
+        navigate("/dashboard");
+      }, 1500);
+    } catch (error) {
+      console.error("Setup completion failed:", error);
+      setSnackbar({
+        open: true,
+        message: "설정 완료 중 오류가 발생했습니다.",
+        severity: "error",
+      });
+    }
   };
 
   const handleSnackbarClose = () => {
@@ -198,9 +225,8 @@ export default function SetupWizard() {
             }}
           >
             <Typography variant="body1" fontWeight={500}>
-              {`${activeStep + 1} / ${steps.length}: ${
-                steps[activeStep].label
-              }`}
+              {`${activeStep + 1} / ${steps.length}: ${steps[activeStep].label
+                }`}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               {steps[activeStep].description}

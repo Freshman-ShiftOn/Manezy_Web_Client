@@ -48,9 +48,9 @@ import {
   ChevronRight as ChevronRightIcon,
   Refresh as RefreshIcon,
 } from "@mui/icons-material";
-import { getStoreInfo, getEmployees, generateDummyData } from "../services/api";
+import { storeApi } from "../services/api/store.api";
 import { useEffect } from "react";
-import { Store } from "../lib/types";
+import { Store, SimpleStore } from "../lib/types";
 import { colors } from "../theme";
 import { LS_KEYS } from "../services/api";
 import { alpha } from "@mui/material/styles";
@@ -83,32 +83,11 @@ const dummyNotifications = [
   },
 ];
 
-// 더미 스토어 데이터
-const dummyStores = [
-  {
-    id: "store1",
-    name: "메인 카페",
-    address: "서울시 강남구 역삼동 123-45",
-    phoneNumber: "02-1234-5678",
-    baseHourlyRate: 9620,
-    openingHour: "09:00",
-    closingHour: "22:00",
-  },
-  {
-    id: "store2",
-    name: "홍대 지점",
-    address: "서울시 마포구 서교동 456-78",
-    phoneNumber: "02-2345-6789",
-    baseHourlyRate: 9620,
-    openingHour: "08:00",
-    closingHour: "23:00",
-  },
-];
 
 function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [storeInfo, setStoreInfo] = useState<Store | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
+  const [stores, setStores] = useState<SimpleStore[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [notificationCount, setNotificationCount] = useState(2);
 
@@ -146,28 +125,35 @@ function Layout() {
   useEffect(() => {
     const loadStoreInfo = async () => {
       try {
-        // 실제 API 호출
-        const info = await getStoreInfo();
-        setStoreInfo(info);
+        // 매장 목록 가져오기
+        const storeList = await storeApi.getMyStores();
+        console.log('storeList', storeList);
 
-        // 더미 데이터 추가
-        if (info && info.id) {
-          setStores([info, ...dummyStores]);
-          setSelectedStoreId(info.id);
-        } else {
-          // If info is null or has no id, use dummy data
-          setStores(dummyStores);
-          if (dummyStores.length > 0) {
-            setSelectedStoreId(dummyStores[0].id);
-          }
+        // 매장이 하나도 없으면 지점 생성 화면으로 이동
+        if (storeList.length === 0) {
+          navigate("/setup/wizard?mode=new-store");
+          return;
         }
+
+
+        setStores(storeList);
+
+
+
+        // 현재 선택된 branchId가 localStorage에 있으면 사용
+        const savedBranchId = localStorage.getItem("selectedBranchId");
+        if (savedBranchId && storeList.some(store => store.id.toString() === savedBranchId)) {
+          setSelectedStoreId(savedBranchId);
+        } else if (storeList.length > 0) {
+          setSelectedStoreId(storeList[0].id.toString());
+          localStorage.setItem("selectedBranchId", storeList[0].id.toString());
+        }
+
+        // 현재 선택된 매장 정보 가져오기
+        const info = await storeApi.getStore();
+        setStoreInfo(info);
       } catch (error) {
         console.error("Failed to load store info:", error);
-        // In case of error, still set some default data
-        setStores(dummyStores);
-        if (dummyStores.length > 0) {
-          setSelectedStoreId(dummyStores[0].id);
-        }
       }
     };
 
@@ -233,14 +219,20 @@ function Layout() {
   // 스토어 변경 처리
   const handleStoreChange = (storeId: string) => {
     setSelectedStoreId(storeId);
-    // 여기서 실제로는 API를 호출하여 선택된 스토어의 데이터를 로드해야 함
-
+    localStorage.setItem("selectedBranchId", storeId);
     // 선택된 스토어 정보 업데이트
-    const selected = stores.find((store) => store.id === storeId);
+    const selected = stores.find((store) => store.id.toString() === storeId);
     if (selected) {
-      setStoreInfo(selected);
+      setStoreInfo({
+        id: selected.id.toString(),
+        name: selected.name,
+        address: "",
+        phoneNumber: "",
+        baseHourlyRate: 0,
+        openingHour: "",
+        closingHour: "",
+      });
     }
-
     handleStoreMenuClose();
   };
 
@@ -770,8 +762,8 @@ function Layout() {
         {stores.map((store) => (
           <MenuItem
             key={store.id}
-            selected={selectedStoreId === store.id}
-            onClick={() => handleStoreChange(store.id)}
+            selected={selectedStoreId === store.id.toString()}
+            onClick={() => handleStoreChange(store.id.toString())}
             sx={{
               borderRadius: 1,
               mx: 1,
@@ -784,7 +776,7 @@ function Layout() {
                 fontSize="small"
                 sx={{
                   color:
-                    selectedStoreId === store.id
+                    selectedStoreId === store.id.toString()
                       ? colors.primary
                       : "text.secondary",
                 }}
