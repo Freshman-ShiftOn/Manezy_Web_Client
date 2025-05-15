@@ -1355,36 +1355,31 @@ export interface BranchWorkerRequest {
 }
 
 // Branch Worker 생성
-export const createBranchWorker = async (
-  data: BranchWorkerRequest
-): Promise<any> => {
+export const createBranchWorker = async (data: {
+  branchId: number | string;
+  name: string;
+  email: string;
+  phoneNums: string;
+  roles: string;
+  status: string;
+  cost: number;
+}): Promise<any> => {
   try {
-    // API 요청 전에 정확한 형식으로 변환
-    const requestData = {
-      branchId: data.branchId,
-      email: data.email,
-      name: data.name,
-      phoneNums: data.phoneNums,
-      roles: data.roles,
-      status: data.status,
-      cost: data.cost,
-    };
-
-    console.log("Sending worker creation request:", requestData);
+    console.log(`브랜치 직원 생성 요청: ${JSON.stringify(data)}`);
     const url = `${API_BASE_URL}/api/branch/workers`;
     console.log("Request URL:", url);
 
     // JWT 토큰 가져오기
     const authToken = getAuthToken();
 
-    // 로그인/회원가입과 동일한 URL 구조 사용
+    // POST 요청 생성
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${authToken}`,
       },
-      body: JSON.stringify(requestData),
+      body: JSON.stringify(data),
     });
 
     console.log("Response status:", response.status);
@@ -1395,34 +1390,21 @@ export const createBranchWorker = async (
         .catch(() => ({ message: "서버 오류" }));
       console.error("API error response:", errorData);
       throw new Error(
-        errorData.message || `근무자 등록 실패 (${response.status})`
+        errorData.message || `직원 등록 실패 (${response.status})`
       );
     }
 
-    // 빈 응답 처리
+    // 응답 처리
     const responseText = await response.text();
     let responseData = {};
 
     if (responseText && responseText.trim() !== "") {
       try {
         responseData = JSON.parse(responseText);
-        console.log("API success response:", responseData);
+        console.log("Worker created successfully:", responseData);
       } catch (parseError) {
         console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
-        // 성공 응답을 가정하고 최소한의 데이터 제공
-        responseData = {
-          success: true,
-          message:
-            "근무자가 등록되었지만 서버가 상세 정보를 반환하지 않았습니다.",
-        };
       }
-    } else {
-      console.log("서버가 빈 응답을 반환했지만 상태 코드는 성공(200)입니다.");
-      // 빈 응답이지만 성공으로 처리
-      responseData = {
-        success: true,
-        message: "근무자가 등록되었습니다. (빈 응답)",
-      };
     }
 
     return responseData;
@@ -1579,4 +1561,310 @@ export const getAuthToken = (): string => {
   }
 
   return authToken;
+};
+
+// Branch 목록 조회 API
+interface BranchListItem {
+  name: string;
+  id: number;
+}
+
+// 가입된 브랜치 목록 조회
+export const getBranchList = async (): Promise<BranchListItem[]> => {
+  try {
+    console.log("Fetching branch list");
+    const url = `${API_BASE_URL}/api/branch/list`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+
+    // GET 요청 생성
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "서버 오류" }));
+      console.error("API error response:", errorData);
+      throw new Error(
+        errorData.message || `브랜치 목록 조회 실패 (${response.status})`
+      );
+    }
+
+    // 응답 처리
+    const responseText = await response.text();
+    let responseData: BranchListItem[] = [];
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("Branch list fetched successfully:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+      }
+    }
+
+    return responseData;
+  } catch (error) {
+    console.error("Branch list fetch error:", error);
+    throw error;
+  }
+};
+
+// 브랜치 상세 정보 조회
+export const getBranchDetail = async (
+  branchId: number | string
+): Promise<any> => {
+  try {
+    console.log(`Fetching branch detail for ID: ${branchId}`);
+    const url = `${API_BASE_URL}/api/branch/${branchId}`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+
+    // GET 요청 생성
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "서버 오류" }));
+      console.error("API error response:", errorData);
+      throw new Error(
+        errorData.message || `브랜치 상세 정보 조회 실패 (${response.status})`
+      );
+    }
+
+    // 응답 처리
+    const responseText = await response.text();
+    let branchDetail = {};
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        branchDetail = JSON.parse(responseText);
+        console.log("Branch detail fetched successfully:", branchDetail);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+      }
+    }
+
+    return branchDetail;
+  } catch (error) {
+    console.error("Branch detail fetch error:", error);
+    throw error;
+  }
+};
+
+// 브랜치 직원 수정 API
+export const updateBranchWorker = async (
+  branchId: number | string,
+  data: {
+    name: string;
+    email: string;
+    phoneNums: string;
+    roles: string;
+    status: string;
+    cost: number;
+    userId?: string;
+  }
+): Promise<any> => {
+  try {
+    console.group("직원 정보 수정 API");
+
+    // 필수 userId 확인
+    if (!data.userId) {
+      console.error("Error: The given id must not be null (userId 누락)");
+      throw new Error("Error: The given id must not be null");
+    }
+
+    console.log(`브랜치 ${branchId} 직원 수정 요청:`, data);
+    console.log("userId:", data.userId);
+
+    // 수정된 API URL (userId 포함)
+    const url = `${API_BASE_URL}/api/branch/${branchId}/workers/${data.userId}`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+    console.log(
+      "인증 토큰 확인됨 (첫 10자):",
+      authToken.substring(0, 10) + "..."
+    );
+
+    // 요청 데이터 (userId를 제외한 필드만)
+    const requestBody = {
+      name: data.name,
+      email: data.email,
+      phoneNums: data.phoneNums,
+      roles: data.roles,
+      status: data.status,
+      cost: data.cost,
+    };
+
+    console.log("요청 본문:", JSON.stringify(requestBody));
+
+    // PUT 요청 생성
+    const response = await fetch(url, {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(requestBody),
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+      try {
+        errorData = JSON.parse(errorText);
+        console.error("API error response:", errorData);
+      } catch (parseError) {
+        console.error("API 오류 원본 텍스트:", errorText);
+        errorData = { message: errorText || "서버 오류" };
+      }
+
+      throw new Error(
+        errorData.message || `직원 정보 수정 실패 (${response.status})`
+      );
+    }
+
+    // 응답 처리
+    const responseText = await response.text();
+    let responseData = {};
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("Worker updated successfully:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+        responseData = { success: true, text: responseText };
+      }
+    } else {
+      console.log("빈 응답 - 성공으로 간주");
+      responseData = { success: true };
+    }
+
+    console.groupEnd();
+    return responseData;
+  } catch (error) {
+    console.error("Branch worker update error:", error);
+    console.groupEnd();
+    throw error;
+  }
+};
+
+// 브랜치 직원 삭제 API
+export const deleteBranchWorker = async (
+  branchId: number | string,
+  userId: string
+): Promise<boolean> => {
+  try {
+    console.group("직원 삭제 API");
+
+    if (!userId) {
+      console.error("Error: The given id must not be null (userId 누락)");
+      throw new Error("Error: The given id must not be null");
+    }
+
+    console.log(`브랜치 ${branchId}의 직원 ID: ${userId} 삭제 요청`);
+    const url = `${API_BASE_URL}/api/branch/${branchId}/workers/${userId}`;
+    console.log("Delete Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+    console.log(
+      "인증 토큰 확인됨 (첫 10자):",
+      authToken.substring(0, 10) + "..."
+    );
+
+    // DELETE 요청 생성
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    console.log("Delete Response status:", response.status);
+    console.log(
+      "Response headers:",
+      Object.fromEntries([...response.headers.entries()])
+    );
+
+    if (!response.ok) {
+      let errorMessage = `직원 삭제 실패 (${response.status})`;
+      const errorText = await response.text();
+      console.error("API 오류 응답 원본:", errorText);
+
+      try {
+        const errorData = JSON.parse(errorText);
+        console.error("API error response:", errorData);
+
+        if (
+          errorData.error === "Internal Server Error" &&
+          errorData.message?.includes("The given id must not be null")
+        ) {
+          errorMessage = "직원 ID가 유효하지 않습니다.";
+        } else if (errorData.message) {
+          errorMessage = errorData.message;
+        }
+      } catch (parseError) {
+        console.error("응답을 JSON으로 파싱할 수 없습니다. 원본:", errorText);
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    // 응답 처리 개선
+    try {
+      const responseText = await response.text();
+      console.log("Delete response:", responseText || "No content (success)");
+
+      if (responseText && responseText.trim() !== "") {
+        try {
+          const responseData = JSON.parse(responseText);
+          console.log("Parsed delete response:", responseData);
+        } catch (parseError) {
+          console.warn(
+            "응답을 JSON으로 파싱할 수 없습니다. 텍스트 응답:",
+            responseText
+          );
+        }
+      }
+    } catch (responseError) {
+      console.warn("응답 처리 중 오류:", responseError);
+    }
+
+    // 응답이 비어있거나 200/204 상태 코드를 받았으면 성공으로 처리
+    console.log("직원 삭제 성공");
+    console.groupEnd();
+    return true;
+  } catch (error) {
+    console.error("Branch worker deletion error:", error);
+    console.groupEnd();
+    throw error;
+  }
 };

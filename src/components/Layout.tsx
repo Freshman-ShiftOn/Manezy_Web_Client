@@ -30,6 +30,9 @@ import {
   InputLabel,
   SelectChangeEvent,
   Container,
+  CircularProgress,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import {
   Menu as MenuIcon,
@@ -48,13 +51,20 @@ import {
   ChevronRight as ChevronRightIcon,
   Refresh as RefreshIcon,
 } from "@mui/icons-material";
-import { getStoreInfo, getEmployees, generateDummyData } from "../services/api";
+import {
+  getStoreInfo,
+  getEmployees,
+  generateDummyData,
+  getBranchList,
+  getBranchDetail,
+} from "../services/api";
 import { useEffect } from "react";
 import { Store } from "../lib/types";
 import { colors } from "../theme";
 import { LS_KEYS } from "../services/api";
 import { alpha } from "@mui/material/styles";
 import { useAuth } from "../context/AuthContext";
+import { useBranch } from "../context/BranchContext";
 
 const drawerWidth = 260;
 
@@ -83,34 +93,29 @@ const dummyNotifications = [
   },
 ];
 
-// 더미 스토어 데이터
-const dummyStores = [
-  {
-    id: "store1",
-    name: "메인 카페",
-    address: "서울시 강남구 역삼동 123-45",
-    phoneNumber: "02-1234-5678",
-    baseHourlyRate: 9620,
-    openingHour: "09:00",
-    closingHour: "22:00",
-  },
-  {
-    id: "store2",
-    name: "홍대 지점",
-    address: "서울시 마포구 서교동 456-78",
-    phoneNumber: "02-2345-6789",
-    baseHourlyRate: 9620,
-    openingHour: "08:00",
-    closingHour: "23:00",
-  },
-];
-
 function Layout() {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [storeInfo, setStoreInfo] = useState<Store | null>(null);
-  const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>("");
   const [notificationCount, setNotificationCount] = useState(2);
+
+  // 브랜치 컨텍스트 사용
+  const {
+    branches,
+    currentBranch,
+    branchDetail,
+    selectedBranchId,
+    setSelectedBranchId,
+    isLoading,
+  } = useBranch();
+
+  // 디버깅을 위한 브랜치 상태 로그
+  useEffect(() => {
+    console.log("Layout - 브랜치 상태:", {
+      branches: branches?.length || 0,
+      currentBranch: currentBranch?.name || null,
+      isLoading,
+    });
+  }, [branches, currentBranch, isLoading]);
 
   // 알림 메뉴 상태
   const [notificationAnchorEl, setNotificationAnchorEl] =
@@ -120,6 +125,17 @@ function Layout() {
   // 스토어 메뉴 상태
   const [storeAnchorEl, setStoreAnchorEl] = useState<null | HTMLElement>(null);
   const storeMenuOpen = Boolean(storeAnchorEl);
+
+  // 스토어 메뉴가 열릴 때 상태 로깅
+  useEffect(() => {
+    if (storeMenuOpen) {
+      console.log("매장 선택 메뉴 열림 - 브랜치 목록 상태:", {
+        branches: branches?.length || 0,
+        브랜치목록: branches,
+        isLoading,
+      });
+    }
+  }, [storeMenuOpen, branches, isLoading]);
 
   // 사용자 메뉴 상태
   const [userMenuAnchorEl, setUserMenuAnchorEl] = useState<null | HTMLElement>(
@@ -142,37 +158,23 @@ function Layout() {
     }
   }, [isMobile]);
 
-  // 스토어 정보 가져오기
+  // 브랜치 상세 정보가 변경될 때 storeInfo 업데이트
   useEffect(() => {
-    const loadStoreInfo = async () => {
-      try {
-        // 실제 API 호출
-        const info = await getStoreInfo();
-        setStoreInfo(info);
-
-        // 더미 데이터 추가
-        if (info && info.id) {
-          setStores([info, ...dummyStores]);
-          setSelectedStoreId(info.id);
-        } else {
-          // If info is null or has no id, use dummy data
-          setStores(dummyStores);
-          if (dummyStores.length > 0) {
-            setSelectedStoreId(dummyStores[0].id);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to load store info:", error);
-        // In case of error, still set some default data
-        setStores(dummyStores);
-        if (dummyStores.length > 0) {
-          setSelectedStoreId(dummyStores[0].id);
-        }
-      }
-    };
-
-    loadStoreInfo();
-  }, []);
+    if (branchDetail) {
+      setStoreInfo({
+        id: String(branchDetail.id),
+        name: branchDetail.name,
+        address: branchDetail.adress || "",
+        phoneNumber: branchDetail.dial_numbers || "",
+        baseHourlyRate:
+          typeof branchDetail.basic_cost === "string"
+            ? parseFloat(branchDetail.basic_cost)
+            : (branchDetail.basic_cost as number) || 9860,
+        openingHour: branchDetail.openingHour || "09:00",
+        closingHour: branchDetail.closingHour || "22:00",
+      });
+    }
+  }, [branchDetail]);
 
   const handleNavigation = (path: string) => {
     console.log("Navigating to:", path);
@@ -210,9 +212,51 @@ function Layout() {
     handleNotificationClose();
   };
 
-  // 스토어 선택 메뉴 열기
-  const handleStoreMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+  // 스토어 변경 처리
+  const handleStoreChange = (storeId: string | number) => {
+    console.log(
+      `브랜치 변경 시도: ID ${storeId}, 이전 선택된 ID: ${selectedBranchId}`
+    );
+
+    // 이미 선택된 브랜치면 다시 선택하지 않음
+    if (selectedBranchId === storeId) {
+      console.log(`이미 선택된 브랜치(${storeId})입니다.`);
+      handleStoreMenuClose();
+      return;
+    }
+
+    // 브랜치 컨텍스트의 상태 업데이트
+    setSelectedBranchId(storeId);
+
+    // 브랜치 목록에서 해당 브랜치 정보 찾기
+    const selectedBranch = branches.find((branch) => branch.id === storeId);
+    console.log(
+      `브랜치 ID ${storeId} 선택됨, 브랜치 정보:`,
+      selectedBranch || "정보 없음"
+    );
+
+    // 알림 표시 (실제 상황에서는 필요에 따라 제거 가능)
+    setSnackbarOpen(true);
+    setSnackbarMessage(
+      `${selectedBranch?.name || `ID: ${storeId}`} 브랜치로 전환되었습니다.`
+    );
+
+    handleStoreMenuClose();
+  };
+
+  // 드롭다운 메뉴의 현재 상태를 여닫는 함수
+  const openStoreMenu = (event: React.MouseEvent<HTMLElement>) => {
+    console.log("매장 선택 메뉴 열기");
     setStoreAnchorEl(event.currentTarget);
+  };
+
+  // 스낵바(알림) 상태 관리
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState("");
+
+  // 스낵바 닫기
+  const handleSnackbarClose = () => {
+    setSnackbarOpen(false);
   };
 
   // 스토어 선택 메뉴 닫기
@@ -228,20 +272,6 @@ function Layout() {
   // 사용자 메뉴 닫기
   const handleUserMenuClose = () => {
     setUserMenuAnchorEl(null);
-  };
-
-  // 스토어 변경 처리
-  const handleStoreChange = (storeId: string) => {
-    setSelectedStoreId(storeId);
-    // 여기서 실제로는 API를 호출하여 선택된 스토어의 데이터를 로드해야 함
-
-    // 선택된 스토어 정보 업데이트
-    const selected = stores.find((store) => store.id === storeId);
-    if (selected) {
-      setStoreInfo(selected);
-    }
-
-    handleStoreMenuClose();
   };
 
   // 새 스토어 등록 (핸들러 수정 - 새 페이지 경로 사용)
@@ -342,19 +372,19 @@ function Layout() {
             {/* 매장 선택 버튼 (그림자 제거) */}
             <Button
               color="inherit"
-              onClick={handleStoreMenuOpen}
+              onClick={openStoreMenu}
               startIcon={<StoreIcon sx={{ color: "text.secondary" }} />}
               sx={{
-                textTransform: "none", // 텍스트 변환 없음
-                boxShadow: "none", // *** 그림자 제거 ***
-                backgroundColor: "transparent", // 배경 투명하게
+                textTransform: "none",
+                boxShadow: "none",
+                backgroundColor: "transparent",
                 "&:hover": {
-                  backgroundColor: "rgba(0, 0, 0, 0.04)", // hover 효과 유지 (옵션)
+                  backgroundColor: "rgba(0, 0, 0, 0.04)",
                 },
               }}
             >
               <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-                {storeInfo?.name || "매장 선택"}
+                {currentBranch?.name || storeInfo?.name || "매장 선택"}
               </Typography>
               <ChevronRightIcon
                 sx={{
@@ -767,32 +797,64 @@ function Layout() {
 
         <Divider />
 
-        {stores.map((store) => (
-          <MenuItem
-            key={store.id}
-            selected={selectedStoreId === store.id}
-            onClick={() => handleStoreChange(store.id)}
+        {isLoading ? (
+          <Box
             sx={{
-              borderRadius: 1,
-              mx: 1,
-              my: 0.5,
-              px: 1.5,
+              display: "flex",
+              justifyContent: "center",
+              p: 2,
+              flexDirection: "column",
+              alignItems: "center",
             }}
           >
-            <ListItemIcon>
-              <StoreIcon
-                fontSize="small"
-                sx={{
-                  color:
-                    selectedStoreId === store.id
-                      ? colors.primary
-                      : "text.secondary",
+            <CircularProgress size={24} />
+            <Typography variant="caption" sx={{ mt: 1 }}>
+              브랜치 목록 로딩 중...
+            </Typography>
+          </Box>
+        ) : branches && branches.length > 0 ? (
+          branches.map((branch) => (
+            <MenuItem
+              key={branch.id}
+              selected={selectedBranchId === branch.id}
+              onClick={() => handleStoreChange(branch.id)}
+              sx={{
+                borderRadius: 1,
+                mx: 1,
+                my: 0.5,
+                px: 1.5,
+                display: "flex",
+                alignItems: "center",
+              }}
+            >
+              <ListItemIcon>
+                <StoreIcon
+                  fontSize="small"
+                  sx={{
+                    color:
+                      selectedBranchId === branch.id
+                        ? colors.primary
+                        : "text.secondary",
+                  }}
+                />
+              </ListItemIcon>
+              <ListItemText
+                primary={branch.name}
+                primaryTypographyProps={{
+                  variant: "body2",
+                  fontWeight: selectedBranchId === branch.id ? 600 : 400,
                 }}
               />
-            </ListItemIcon>
-            <ListItemText primary={store.name} />
+            </MenuItem>
+          ))
+        ) : (
+          <MenuItem disabled sx={{ opacity: 0.7 }}>
+            <ListItemText
+              primary="가입된 지점이 없습니다"
+              secondary="새 매장을 추가하거나 기존 매장에 가입하세요"
+            />
           </MenuItem>
-        ))}
+        )}
 
         <Divider />
 
@@ -869,6 +931,23 @@ function Layout() {
           로그아웃
         </MenuItem>
       </Menu>
+
+      {/* 브랜치 변경 성공 알림 */}
+      <Snackbar
+        open={snackbarOpen}
+        autoHideDuration={3000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity="success"
+          variant="filled"
+          sx={{ width: "100%" }}
+        >
+          {snackbarMessage}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

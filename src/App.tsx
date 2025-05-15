@@ -42,6 +42,7 @@ import {
 import { appTheme, colors } from "./theme";
 import NewStorePage from "./routes/Setup/NewStorePage";
 import SetupWizard from "./routes/Setup/SetupWizard";
+import { BranchProvider } from "./context/BranchContext";
 
 const SetupCheck = () => {
   const [loading, setLoading] = useState(true);
@@ -377,44 +378,49 @@ function App() {
     <ThemeProvider theme={appTheme}>
       <CssBaseline />
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
+        <BranchProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/signup" element={<SignupPage />} />
 
-          {/* 초기 설정 경로 - 인증 불필요 */}
-          <Route path="/setup/new-store" element={<NewStorePage />} />
-          <Route path="/setup/wizard" element={<SetupWizard />} />
+            {/* 초기 설정 경로 - 인증 불필요 */}
+            <Route path="/setup/new-store" element={<NewStorePage />} />
+            <Route path="/setup/wizard" element={<SetupWizard />} />
 
-          {/* Protected Routes: Require authentication */}
-          <Route element={<ProtectedRoute />}>
-            {/* Setup Check Route: Runs after login, before main layout */}
-            <Route element={<SetupCheck />}>
-              {/* Main Layout Route: Wraps all pages needing the sidebar/header */}
-              <Route element={<Layout />}>
-                {/* Default route within layout -> redirect to dashboard */}
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                {/* Page Routes (relative paths to Layout) */}
-                <Route path="dashboard" element={<DashboardPage />} />
-                <Route path="schedule" element={<SchedulePage />} />
-                <Route path="employees" element={<EmployeePage />} />
-                <Route path="payroll" element={<PayrollPage />} />
-                <Route path="settings/store" element={<StoreSettingsPage />} />
-                <Route
-                  path="settings/account"
-                  element={<AccountSettingsPage />}
-                />
-                {/* Catch-all for unknown paths within the layout -> redirect to dashboard */}
-                <Route
-                  path="*"
-                  element={<Navigate to="/dashboard" replace />}
-                />
+            {/* Protected Routes: Require authentication */}
+            <Route element={<ProtectedRoute />}>
+              {/* Setup Check Route: Runs after login, before main layout */}
+              <Route element={<SetupCheck />}>
+                {/* Main Layout Route: Wraps all pages needing the sidebar/header */}
+                <Route element={<Layout />}>
+                  {/* Default route within layout -> redirect to dashboard */}
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  {/* Page Routes (relative paths to Layout) */}
+                  <Route path="dashboard" element={<DashboardPage />} />
+                  <Route path="schedule" element={<SchedulePage />} />
+                  <Route path="employees" element={<EmployeePage />} />
+                  <Route path="payroll" element={<PayrollPage />} />
+                  <Route
+                    path="settings/store"
+                    element={<StoreSettingsPage />}
+                  />
+                  <Route
+                    path="settings/account"
+                    element={<AccountSettingsPage />}
+                  />
+                  {/* Catch-all for unknown paths within the layout -> redirect to dashboard */}
+                  <Route
+                    path="*"
+                    element={<Navigate to="/dashboard" replace />}
+                  />
+                </Route>
               </Route>
             </Route>
-          </Route>
 
-          {/* 최상위 레벨 catch-all: 설정이 필요하면 setup으로, 아니면 login으로 리디렉션 */}
-          <Route path="*" element={<InitialRedirect />} />
-        </Routes>
+            {/* 최상위 레벨 catch-all: 설정이 필요하면 setup으로, 아니면 login으로 리디렉션 */}
+            <Route path="*" element={<InitialRedirect />} />
+          </Routes>
+        </BranchProvider>
       </AuthProvider>
     </ThemeProvider>
   );

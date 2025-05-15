@@ -55,45 +55,64 @@ import {
   ArrowDownward as ArrowDownwardIcon,
   FilterList as FilterListIcon,
   Close as CloseIcon,
+  RefreshOutlined as RefreshIcon,
+  AdminPanelSettings as AdminIcon,
+  PersonOutlined as StaffIcon,
 } from "@mui/icons-material";
 import {
-  getEmployees,
-  getShifts,
-  getStoreInfo,
   getBranchWorkers,
+  createBranchWorker,
+  updateBranchWorker,
+  deleteBranchWorker,
 } from "../../services/api";
-import { Employee, Shift, Store } from "../../lib/types";
-import {
-  differenceInHours,
-  startOfWeek,
-  endOfWeek,
-  addWeeks,
-  subWeeks,
-  startOfMonth,
-  endOfMonth,
-  format,
-} from "date-fns";
+import { useBranch } from "../../context/BranchContext";
+
+// 서버에서 받아오는 직원 인터페이스 정의
+interface BranchWorker {
+  name: string;
+  email: string;
+  phoneNums: string;
+  roles: string;
+  status: string;
+  cost: number;
+  userId?: string; // 삭제 시 필요할 수 있음
+}
 
 function EmployeePage() {
-  const [employees, setEmployees] = useState<Employee[]>([]);
-  const [shifts, setShifts] = useState<Shift[]>([]);
-  const [store, setStore] = useState<Store | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 브랜치 컨텍스트에서 현재 선택된 브랜치 정보 가져오기
+  const {
+    selectedBranchId,
+    currentBranch,
+    isLoading: branchLoading,
+  } = useBranch();
+
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [newEmployee, setNewEmployee] = useState<Partial<Employee>>({
+  const [newEmployee, setNewEmployee] = useState<Partial<BranchWorker>>({
     name: "",
-    phoneNumber: "",
+    phoneNums: "",
     email: "",
-    hourlyRate: 9620,
-    role: "알바생",
+    cost: 9620,
+    roles: "바리스타",
     status: "active",
   });
 
+  const [isEditing, setIsEditing] = useState(false);
+  const [editingUserId, setEditingUserId] = useState<string | undefined>(
+    undefined
+  );
+
   // 상세 정보 팝업 상태
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(
+  const [selectedEmployee, setSelectedEmployee] = useState<BranchWorker | null>(
+    null
+  );
+
+  // 삭제 확인 팝업 상태
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [employeeToDelete, setEmployeeToDelete] = useState<BranchWorker | null>(
     null
   );
 
@@ -103,191 +122,380 @@ function EmployeePage() {
     severity: "success" as "success" | "error" | "info" | "warning",
   });
 
-  const [apiWorkers, setApiWorkers] = useState<any[]>([]);
-  const [branchId, setBranchId] = useState<number | null>(null);
+  const [apiWorkers, setApiWorkers] = useState<BranchWorker[]>([]);
+  const [apiWorkerLoading, setApiWorkerLoading] = useState(false);
 
-  // 데이터 로드
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        // API에서 데이터 가져오기
-        const storeData = await getStoreInfo();
-        const employeesData = await getEmployees();
-        const shiftsData = await getShifts();
+  // 관리자(사장)와 일반 직원 분리
+  const [managerData, setManagerData] = useState<BranchWorker | null>(null);
+  const [staffData, setStaffData] = useState<BranchWorker[]>([]);
 
-        setStore(storeData);
-        setEmployees(employeesData);
-        setShifts(shiftsData);
+  // 상태 필터링을 위한 상태 추가 (전체/재직 중만 유지)
+  const [statusFilter, setStatusFilter] = useState<string>("all");
 
-        // 로컬 스토리지에서 지점 ID 가져오기
-        if (storeData.branchId) {
-          setBranchId(storeData.branchId);
+  // 필터링된 직원 데이터
+  const filteredStaffData = useMemo(() => {
+    if (statusFilter === "all") return staffData;
+    return staffData.filter((worker) => worker.status === statusFilter);
+  }, [staffData, statusFilter]);
 
-          // API에서 근무자 목록 불러오기
-          try {
-            const workers = await getBranchWorkers(storeData.branchId);
-            setApiWorkers(workers);
-
-            // 성공 메시지 표시
-            setSnackbar({
-              open: true,
-              message: `API에서 ${workers.length}명의 근무자 정보를 불러왔습니다.`,
-              severity: "success",
-            });
-          } catch (apiError) {
-            console.error("API에서 근무자 목록 불러오기 실패:", apiError);
-            setSnackbar({
-              open: true,
-              message:
-                "API에서 근무자 목록을 불러오는데 실패했습니다. 로컬 데이터를 사용합니다.",
-              severity: "warning",
-            });
-          }
-        }
-      } catch (err) {
-        console.error("Error loading data:", err);
-        setError("데이터를 불러오는 중 오류가 발생했습니다");
-        setLoading(false);
-      }
+  // 상태별 직원 수 계산 (전체/재직 중만 유지)
+  const statusCount = useMemo(() => {
+    const counts = {
+      all: staffData.length,
+      active: staffData.filter((worker) => worker.status === "active").length,
     };
+    return counts;
+  }, [staffData]);
 
-    // 데이터가 없을 경우 샘플 데이터 추가
-    if (localStorage.getItem("manezy_employees") === null) {
-      // 샘플 데이터 생성
-      const sampleEmployees: Employee[] = [
-        {
-          id: "emp1",
-          name: "김지은",
-          phoneNumber: "010-1234-5678",
-          email: "jieun@example.com",
-          hourlyRate: 10000,
-          role: "매니저",
-          status: "active",
-          bankAccount: "신한은행 110-123-456789",
-          birthDate: "1995-05-15",
-        },
-        {
-          id: "emp2",
-          name: "박민수",
-          phoneNumber: "010-8765-4321",
-          email: "minsu@example.com",
-          hourlyRate: 9620,
-          role: "바리스타",
-          status: "active",
-          bankAccount: "국민은행 123-12-123456",
-          birthDate: "1998-11-23",
-        },
-        {
-          id: "emp3",
-          name: "이하은",
-          phoneNumber: "010-9876-5432",
-          email: "haeun@example.com",
-          hourlyRate: 9620,
-          role: "바리스타",
-          status: "active",
-          bankAccount: "우리은행 1002-123-456789",
-          birthDate: "2000-03-10",
-        },
-        {
-          id: "emp4",
-          name: "정준호",
-          phoneNumber: "010-2345-6789",
-          email: "junho@example.com",
-          hourlyRate: 9800,
-          role: "홀 서빙",
-          status: "active",
-          bankAccount: "하나은행 123-456789-01",
-          birthDate: "1999-08-25",
-        },
-      ];
+  // 브랜치 직원 데이터 로드
+  const loadBranchWorkers = async (branchId: number | string) => {
+    if (!branchId) return;
 
-      localStorage.setItem("manezy_employees", JSON.stringify(sampleEmployees));
-      setEmployees(sampleEmployees);
-    }
-
-    loadData();
-  }, []);
-
-  // 알바생별 주간 근무 시간 계산
-  const calculateWeeklyHours = (employeeId: string): number => {
-    const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // 이번 주 일요일로 설정
-
-    return shifts
-      .filter(
-        (shift) =>
-          shift.employeeIds.includes(employeeId) &&
-          new Date(shift.start) >= startOfWeek
-      )
-      .reduce((total: number, shift: Shift) => {
-        const hours = differenceInHours(
-          new Date(shift.end),
-          new Date(shift.start)
-        );
-        return total + hours;
-      }, 0);
-  };
-
-  // 알바생별 이번 달 예상 월급 계산
-  const calculateMonthlyPay = (employee: Employee): number => {
-    const weeklyHours = calculateWeeklyHours(employee.id);
-    const monthlyHours = weeklyHours * 4; // 4주 기준 월급 계산 (근사치)
-    return monthlyHours * employee.hourlyRate;
-  };
-
-  // 알바생 추가 다이얼로그 열기
-  const handleOpenDialog = () => {
-    setDialogOpen(true);
-  };
-
-  // 직원 추가/수정 핸들러
-  const handleAddEmployee = async () => {
+    setApiWorkerLoading(true);
     try {
-      // 필수 필드 검증
-      if (!newEmployee.name || !newEmployee.phoneNumber) {
-        setSnackbar({
-          open: true,
-          message: "이름과 전화번호는 필수 입력 항목입니다.",
-          severity: "error",
-        });
-        return;
-      }
+      console.log(`브랜치 ID ${branchId}의 직원 목록 로드 중...`);
+      const workers = await getBranchWorkers(branchId);
+      setApiWorkers(workers);
 
-      // 필요한 경우 ID 생성
-      let employeeToSave: Employee = {
-        id: newEmployee.id || Date.now().toString(),
-        name: newEmployee.name || "",
-        phoneNumber: newEmployee.phoneNumber || "",
-        email: newEmployee.email || "",
-        hourlyRate: newEmployee.hourlyRate || 9860,
-        role: newEmployee.role || "바리스타",
-        status: (newEmployee.status as any) || "active",
-        bankAccount: newEmployee.bankAccount || "",
-        birthDate: newEmployee.birthDate || "",
-      };
+      // 관리자와 일반 직원 분리
+      const manager = workers.find(
+        (worker) => worker.roles === "사장" || worker.roles === "매니저"
+      );
+      const staff = workers.filter(
+        (worker) => worker.roles !== "사장" && worker.roles !== "매니저"
+      );
 
-      // 로컬 스토리지에 저장
-      const updatedEmployees = saveEmployee(employeeToSave, employees);
-      setEmployees(updatedEmployees);
+      setManagerData(manager || null);
+      setStaffData(staff);
+
+      setLoading(false);
+      setApiWorkerLoading(false);
 
       setSnackbar({
         open: true,
-        message: newEmployee.id
-          ? "직원 정보가 수정되었습니다."
-          : "새 직원이 추가되었습니다.",
+        message: `${currentBranch?.name || `브랜치(ID: ${branchId})`}의 직원 ${
+          workers.length
+        }명을 불러왔습니다.`,
         severity: "success",
       });
+    } catch (apiError) {
+      console.error(`브랜치 ID ${branchId}의 직원 목록 로드 실패:`, apiError);
+      setLoading(false);
+      setApiWorkerLoading(false);
+      setSnackbar({
+        open: true,
+        message: "직원 목록을 불러오는데 실패했습니다.",
+        severity: "error",
+      });
+    }
+  };
 
+  // 선택된 브랜치가 변경될 때마다 직원 목록 다시 불러오기
+  useEffect(() => {
+    if (selectedBranchId && !branchLoading) {
+      loadBranchWorkers(selectedBranchId);
+    }
+  }, [selectedBranchId, branchLoading]);
+
+  // 직원 추가 다이얼로그 열기
+  const handleOpenDialog = () => {
+    // 직원 추가 모드 (신규)
+    setIsEditing(false);
+    setEditingUserId(undefined);
+    setNewEmployee({
+      name: "",
+      phoneNums: "",
+      email: "",
+      cost: 9620,
+      roles: "바리스타",
+      status: "active",
+    });
+    setDialogOpen(true);
+  };
+
+  // 사장 정보 수정 다이얼로그 열기
+  const handleEditManager = () => {
+    if (!managerData) return;
+
+    setIsEditing(true);
+    setEditingUserId(managerData.userId);
+    setNewEmployee({
+      name: managerData.name,
+      phoneNums: managerData.phoneNums,
+      email: managerData.email,
+      cost: managerData.cost,
+      roles: managerData.roles,
+      status: managerData.status,
+    });
+    setDialogOpen(true);
+  };
+
+  // 직원 수정 다이얼로그 열기
+  const handleEditEmployee = (employee: BranchWorker) => {
+    // 직원 수정 모드
+    setIsEditing(true);
+    setEditingUserId(employee.userId);
+    setNewEmployee({
+      name: employee.name,
+      phoneNums: employee.phoneNums,
+      email: employee.email,
+      cost: employee.cost,
+      roles: employee.roles,
+      status: employee.status,
+    });
+    setDialogOpen(true);
+  };
+
+  // 시급을 통화 형식으로 포맷팅하는 함수
+  const formatCurrency = (amount: number): string => {
+    return amount.toLocaleString("ko-KR") + "원";
+  };
+
+  // 시급 입력 핸들러 - 콤마 포맷팅 지원
+  const handleCostChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // 숫자와 콤마만 남기기
+    const value = e.target.value.replace(/[^\d]/g, "");
+    // 숫자로 변환
+    const numValue = value ? parseInt(value, 10) : 0;
+    // 최소 시급보다 작으면 최소 시급으로 설정
+    const finalValue = numValue < 9620 ? 9620 : numValue;
+
+    setNewEmployee({
+      ...newEmployee,
+      cost: finalValue,
+    });
+  };
+
+  // 연락처 유효성 검사 함수
+  const validatePhoneNumber = (phoneNumber: string): boolean => {
+    // 한국 전화번호 형식 (010-XXXX-XXXX 또는 010XXXXXXXX 등)
+    const phoneRegex = /^01([0|1|6|7|8|9])-?([0-9]{3,4})-?([0-9]{4})$/;
+    return phoneRegex.test(phoneNumber);
+  };
+
+  // 직원 추가/수정 핸들러
+  const handleSaveEmployee = async () => {
+    try {
+      console.group("직원 저장 처리");
+      console.log("저장 중인 직원 데이터:", newEmployee);
+      console.log("수정 모드:", isEditing);
+      console.log("브랜치 ID:", selectedBranchId);
+
+      if (isEditing) {
+        console.log("수정 중인 직원 ID:", editingUserId);
+      }
+
+      // 필수 필드 검증
+      if (!newEmployee.name || !newEmployee.phoneNums) {
+        console.warn("필수 필드 누락:", {
+          name: newEmployee.name,
+          phoneNums: newEmployee.phoneNums,
+        });
+        setSnackbar({
+          open: true,
+          message: "이름과 연락처는 필수 입력 항목입니다.",
+          severity: "error",
+        });
+        console.groupEnd();
+        return;
+      }
+
+      // 연락처 유효성 검사
+      if (!validatePhoneNumber(newEmployee.phoneNums)) {
+        console.warn("연락처 형식 오류:", newEmployee.phoneNums);
+        setSnackbar({
+          open: true,
+          message: "유효한 연락처 형식이 아닙니다. (예: 010-1234-5678)",
+          severity: "error",
+        });
+        console.groupEnd();
+        return;
+      }
+
+      if (!selectedBranchId) {
+        console.warn("브랜치 ID 누락");
+        setSnackbar({
+          open: true,
+          message: "브랜치가 선택되지 않았습니다.",
+          severity: "error",
+        });
+        console.groupEnd();
+        return;
+      }
+
+      setApiWorkerLoading(true);
+
+      if (isEditing) {
+        // 기존 직원 수정 - userId 추가
+        console.log(`직원 ${editingUserId} 정보 수정 시도`);
+
+        // userId가 없으면 에러 표시
+        if (!editingUserId) {
+          console.error("수정 시 userId 누락");
+          setSnackbar({
+            open: true,
+            message: "직원 ID가 누락되었습니다. 직원 정보를 다시 불러오세요.",
+            severity: "error",
+          });
+          setApiWorkerLoading(false);
+          console.groupEnd();
+          return;
+        }
+
+        const updateData = {
+          name: newEmployee.name || "",
+          phoneNums: newEmployee.phoneNums || "",
+          email: newEmployee.email || "",
+          cost: newEmployee.cost || 9620,
+          roles: newEmployee.roles || "바리스타",
+          status: newEmployee.status || "active",
+          userId: editingUserId, // userId 추가
+        };
+
+        console.log("API 요청 데이터:", updateData);
+
+        try {
+          const updateResult = await updateBranchWorker(
+            selectedBranchId,
+            updateData
+          );
+          console.log("직원 정보 수정 응답:", updateResult);
+        } catch (updateError) {
+          console.error("직원 정보 수정 API 오류:", updateError);
+          throw updateError; // 상위 catch 블록으로 전파
+        }
+
+        setSnackbar({
+          open: true,
+          message: `${
+            newEmployee.roles === "사장" || newEmployee.roles === "매니저"
+              ? "관리자"
+              : "직원"
+          } 정보가 수정되었습니다.`,
+          severity: "success",
+        });
+      } else {
+        // 새 직원 추가 - 기존 코드 유지
+        const createData = {
+          branchId: selectedBranchId,
+          name: newEmployee.name || "",
+          phoneNums: newEmployee.phoneNums || "",
+          email: newEmployee.email || "",
+          cost: newEmployee.cost || 9620,
+          roles: newEmployee.roles || "바리스타",
+          status: newEmployee.status || "active",
+        };
+
+        console.log("새 직원 추가 요청 데이터:", createData);
+
+        try {
+          const createResult = await createBranchWorker(createData);
+          console.log("직원 추가 응답:", createResult);
+        } catch (createError) {
+          console.error("직원 추가 API 오류:", createError);
+          throw createError; // 상위 catch 블록으로 전파
+        }
+
+        setSnackbar({
+          open: true,
+          message: "새 직원이 추가되었습니다.",
+          severity: "success",
+        });
+      }
+
+      // 직원 목록 새로고침
+      console.log("직원 목록 새로고침 요청");
+      await loadBranchWorkers(selectedBranchId);
       setDialogOpen(false);
+      console.log("직원 저장 처리 완료");
+      console.groupEnd();
     } catch (err) {
-      console.error("직원 추가/수정 중 오류:", err);
+      console.error("직원 저장 중 오류:", err);
+      setApiWorkerLoading(false);
       setSnackbar({
         open: true,
         message: "직원 정보 저장 중 오류가 발생했습니다.",
         severity: "error",
       });
+      console.groupEnd();
+    }
+  };
+
+  // 직원 삭제 확인 다이얼로그 열기
+  const handleConfirmDelete = (employee: BranchWorker) => {
+    console.group("직원 삭제 다이얼로그");
+    console.log("삭제 예정 직원:", employee);
+    console.log("직원 ID:", employee.userId);
+    setEmployeeToDelete(employee);
+    setDeleteDialogOpen(true);
+    console.groupEnd();
+  };
+
+  // 직원 삭제 핸들러
+  const handleDeleteEmployee = async () => {
+    console.group("직원 삭제 처리");
+
+    if (!employeeToDelete || !selectedBranchId || !employeeToDelete.userId) {
+      console.error("삭제 필수 정보 누락:", {
+        employeeToDelete: !!employeeToDelete,
+        selectedBranchId,
+        userId: employeeToDelete?.userId,
+      });
+      setSnackbar({
+        open: true,
+        message: "삭제할 직원 정보가 잘못되었습니다.",
+        severity: "error",
+      });
+      console.groupEnd();
+      return;
+    }
+
+    try {
+      setApiWorkerLoading(true);
+      console.log(
+        `직원 삭제 시도: ${employeeToDelete.name}, ID: ${employeeToDelete.userId}`
+      );
+      console.log("브랜치 ID:", selectedBranchId);
+
+      let result = false;
+      try {
+        result = await deleteBranchWorker(
+          selectedBranchId,
+          employeeToDelete.userId
+        );
+        console.log("삭제 API 응답:", result);
+      } catch (deleteError) {
+        console.error("삭제 API 호출 실패:", deleteError);
+        throw deleteError; // 상위 catch 블록으로 전파
+      }
+
+      if (result) {
+        // 직원 목록 새로고침
+        console.log("직원 삭제 성공, 목록 새로고침");
+        await loadBranchWorkers(selectedBranchId);
+
+        setSnackbar({
+          open: true,
+          message: `${employeeToDelete.name} 직원이 삭제되었습니다.`,
+          severity: "success",
+        });
+      } else {
+        throw new Error(
+          "직원 삭제 실패: 서버에서 성공 응답을 받지 못했습니다."
+        );
+      }
+    } catch (error) {
+      console.error("직원 삭제 중 오류 발생:", error);
+      setSnackbar({
+        open: true,
+        message: "직원 삭제 중 오류가 발생했습니다. 다시 시도해주세요.",
+        severity: "error",
+      });
+    } finally {
+      setApiWorkerLoading(false);
+      setDeleteDialogOpen(false);
+      console.log("직원 삭제 처리 종료");
+      console.groupEnd();
     }
   };
 
@@ -298,8 +506,6 @@ function EmployeePage() {
         return "success";
       case "inactive":
         return "error";
-      case "pending":
-        return "warning";
       default:
         return "default";
     }
@@ -312,155 +518,43 @@ function EmployeePage() {
         return "재직 중";
       case "inactive":
         return "퇴직/휴직";
-      case "pending":
-        return "승인 대기";
       default:
-        return "알 수 없음";
-    }
-  };
-
-  // 이전 주 근무 시간 계산 함수
-  const calculatePreviousWeekHours = (employeeId: string): number => {
-    const now = new Date();
-    const lastWeekStart = startOfWeek(subWeeks(now, 1));
-    const lastWeekEnd = endOfWeek(subWeeks(now, 1));
-
-    return shifts
-      .filter(
-        (shift) =>
-          shift.employeeId === employeeId &&
-          new Date(shift.start) >= lastWeekStart &&
-          new Date(shift.end) <= lastWeekEnd
-      )
-      .reduce((total, shift) => {
-        return (
-          total + differenceInHours(new Date(shift.end), new Date(shift.start))
-        );
-      }, 0);
-  };
-
-  // 월간 근무 시간 계산 함수
-  const calculateMonthlyHours = (employeeId: string): number => {
-    const now = new Date();
-    const monthStart = startOfMonth(now);
-    const monthEnd = endOfMonth(now);
-
-    return shifts
-      .filter(
-        (shift) =>
-          shift.employeeId === employeeId &&
-          new Date(shift.start) >= monthStart &&
-          new Date(shift.end) <= monthEnd
-      )
-      .reduce((total, shift) => {
-        return (
-          total + differenceInHours(new Date(shift.end), new Date(shift.start))
-        );
-      }, 0);
-  };
-
-  // 대타 요청 가져오기 함수
-  const getSubstituteRequests = (employeeId: string) => {
-    return shifts.filter(
-      (shift) => shift.employeeId === employeeId && shift.isSubRequest === true
-    );
-  };
-
-  // 근무 변경 내역 가져오기 (예시 함수)
-  const getShiftChanges = (employeeId: string) => {
-    // 실제 구현에서는 변경 이력 데이터를 가져와야 함
-    // 지금은 더미 데이터 반환
-    return [
-      {
-        id: "1",
-        date: new Date().toISOString(),
-        type: "시간 변경",
-        description: "10:00 - 15:00 → 12:00 - 17:00",
-      },
-      {
-        id: "2",
-        date: new Date(Date.now() - 86400000 * 2).toISOString(),
-        type: "대타 승인",
-        description: "김영희의 대타 요청 승인",
-      },
-    ];
-  };
-
-  // 필터링된 직원 목록
-  const filteredEmployees = useMemo(() => {
-    return employees; // 필터링 없이 전체 반환
-  }, [employees]);
-
-  // 역할별 색상 가져오기
-  const getRoleColor = (
-    role: string
-  ): "success" | "primary" | "warning" | "secondary" | "default" => {
-    switch (role) {
-      case "바리스타":
-        return "success"; // 초록색
-      case "주방":
-        return "primary"; // 파란색
-      case "서빙":
-        return "warning"; // 주황색
-      case "매니저":
-        return "secondary"; // 보라색
-      default:
-        return "default";
+        return status; // 서버에서 온 상태값 그대로 표시
     }
   };
 
   // 상세 정보 팝업 열기
-  const handleOpenDetails = (employee: Employee) => {
+  const handleOpenDetails = (employee: BranchWorker) => {
     setSelectedEmployee(employee);
     setDetailsOpen(true);
   };
 
-  // 수정 핸들러 함수
-  const handleEditEmployee = (employee: Employee) => {
-    setNewEmployee(employee);
-    setDialogOpen(true);
-  };
-
-  // 삭제 핸들러 함수
-  const handleDeleteEmployee = async (id: string) => {
-    try {
-      // 실제 구현에서는 API를 통해 직원 삭제 구현
-      const updatedEmployees = employees.filter((emp) => emp.id !== id);
-      setEmployees(updatedEmployees);
-      // 성공 메시지 표시
-    } catch (error) {
-      // 에러 처리
-      console.error("직원 삭제 중 오류 발생:", error);
-    }
-  };
-
-  // 직원 정보 저장 및 수정 함수 (로컬스토리지 사용)
-  const saveEmployee = (
-    employee: Employee,
-    employees: Employee[]
-  ): Employee[] => {
-    let updatedEmployees: Employee[];
-
-    // 기존 직원 수정인지 확인
-    const existingIndex = employees.findIndex((emp) => emp.id === employee.id);
-
-    if (existingIndex >= 0) {
-      // 기존 직원 수정
-      updatedEmployees = [...employees];
-      updatedEmployees[existingIndex] = employee;
+  // 수동으로 직원 목록 새로고침
+  const handleRefreshWorkers = () => {
+    if (selectedBranchId) {
+      loadBranchWorkers(selectedBranchId);
     } else {
-      // 새 직원 추가
-      updatedEmployees = [...employees, employee];
+      setSnackbar({
+        open: true,
+        message: "선택된 브랜치가 없습니다. 먼저 브랜치를 선택해주세요.",
+        severity: "warning",
+      });
     }
-
-    // 로컬 스토리지에 저장
-    localStorage.setItem("manezy_employees", JSON.stringify(updatedEmployees));
-
-    return updatedEmployees;
   };
 
-  if (loading) {
-    return <Box p={3}>데이터를 불러오는 중...</Box>;
+  if (loading && branchLoading) {
+    return (
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "center",
+          alignItems: "center",
+          height: "50vh",
+        }}
+      >
+        <CircularProgress />
+      </Box>
+    );
   }
 
   if (error) {
@@ -469,132 +563,276 @@ function EmployeePage() {
 
   return (
     <Box sx={{ p: 3 }}>
-      <Typography variant="h4" gutterBottom sx={{ mb: 3 }}>
-        알바생 관리
-      </Typography>
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          mb: 3,
+        }}
+      >
+        <Typography variant="h4" gutterBottom sx={{ mb: 0 }}>
+          직원 관리
+        </Typography>
 
-      <Paper sx={{ mb: 3, p: 2 }}>
-        <Box
-          sx={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <Typography variant="h6">직원 목록</Typography>
+        <Box>
+          <Button
+            variant="outlined"
+            startIcon={<RefreshIcon />}
+            onClick={handleRefreshWorkers}
+            sx={{ mr: 1 }}
+          >
+            새로고침
+          </Button>
           <Button
             variant="contained"
             startIcon={<AddIcon />}
             onClick={handleOpenDialog}
+            disabled={!selectedBranchId}
           >
-            알바생 추가
+            직원 추가
           </Button>
         </Box>
-      </Paper>
+      </Box>
 
-      {/* API에서 가져온 근무자 목록 표시 */}
-      {apiWorkers.length > 0 && (
-        <>
-          <Typography variant="h6" gutterBottom>
-            API에서 가져온 근무자 목록 (지점 ID: {branchId})
+      {currentBranch && (
+        <Typography
+          variant="subtitle1"
+          gutterBottom
+          sx={{ mb: 3, color: "text.secondary" }}
+        >
+          {currentBranch.name} (ID: {selectedBranchId})
+        </Typography>
+      )}
+
+      {apiWorkerLoading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", p: 4 }}>
+          <CircularProgress size={24} />
+          <Typography variant="body2" sx={{ ml: 2 }}>
+            직원 정보를 처리 중입니다...
           </Typography>
-          <TableContainer component={Paper} sx={{ mb: 4 }}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>이름</TableCell>
-                  <TableCell>역할</TableCell>
-                  <TableCell>이메일</TableCell>
-                  <TableCell>연락처</TableCell>
-                  <TableCell>시급</TableCell>
-                  <TableCell>상태</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {apiWorkers.map((worker, index) => (
-                  <TableRow key={index}>
-                    <TableCell>{worker.name}</TableCell>
-                    <TableCell>{worker.roles}</TableCell>
-                    <TableCell>{worker.email}</TableCell>
-                    <TableCell>{worker.phoneNums}</TableCell>
-                    <TableCell>{worker.cost.toLocaleString()}원</TableCell>
-                    <TableCell>
+        </Box>
+      ) : (
+        <>
+          {/* 사장(관리자) 정보 섹션 - 간략화된 버전 */}
+          {managerData && (
+            <>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  mb: 2,
+                }}
+              >
+                <AdminIcon sx={{ mr: 1, color: "primary.main" }} />
+                <Typography variant="h6" gutterBottom sx={{ mb: 0 }}>
+                  관리자 정보
+                </Typography>
+              </Box>
+
+              <Paper sx={{ mb: 4, p: 2 }}>
+                <Grid container spacing={2}>
+                  <Grid item xs={12} sm={3}>
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        이름
+                      </Typography>
+                      <Typography variant="body1">
+                        {managerData.name}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={2}>
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        역할
+                      </Typography>
                       <Chip
-                        label={worker.status}
-                        color={getStatusColor(worker.status)}
+                        label={managerData.roles}
+                        color="primary"
                         size="small"
                       />
-                    </TableCell>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={3}>
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        이메일
+                      </Typography>
+                      <Typography variant="body1">
+                        {managerData.email}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={3}>
+                    <Box>
+                      <Typography variant="subtitle2" color="text.secondary">
+                        연락처
+                      </Typography>
+                      <Typography variant="body1">
+                        {managerData.phoneNums}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                  <Grid item xs={12} sm={1}>
+                    <Box
+                      sx={{
+                        display: "flex",
+                        justifyContent: "flex-end",
+                        height: "100%",
+                        alignItems: "center",
+                      }}
+                    >
+                      <Tooltip title="관리자 정보 수정">
+                        <IconButton
+                          onClick={handleEditManager}
+                          size="small"
+                          color="primary"
+                        >
+                          <EditIcon />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </Grid>
+                </Grid>
+              </Paper>
+            </>
+          )}
+
+          {/* 섹션 구분선 */}
+          <Divider sx={{ my: 4 }} />
+
+          {/* 직원 관리 섹션 헤더 */}
+          <Box
+            sx={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              mb: 3,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "center" }}>
+              <StaffIcon sx={{ mr: 1, color: "info.main" }} />
+              <Typography variant="h6" sx={{ mb: 0 }}>
+                일반 직원 관리
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* 상태별 직원 수 요약 - 간략화된 버전 */}
+          {staffData.length > 0 && (
+            <Box sx={{ display: "flex", gap: 2, mb: 3 }}>
+              <Chip
+                label={`전체: ${statusCount.all}명`}
+                onClick={() => setStatusFilter("all")}
+                variant={statusFilter === "all" ? "filled" : "outlined"}
+                sx={{ fontWeight: statusFilter === "all" ? "bold" : "normal" }}
+              />
+              <Chip
+                label={`재직 중: ${statusCount.active}명`}
+                color="success"
+                onClick={() => setStatusFilter("active")}
+                variant={statusFilter === "active" ? "filled" : "outlined"}
+                sx={{
+                  fontWeight: statusFilter === "active" ? "bold" : "normal",
+                }}
+              />
+            </Box>
+          )}
+
+          {/* 일반 직원 목록 섹션 */}
+          {statusFilter !== "all" && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              현재 재직 중인 직원만 표시하고 있습니다.
+            </Typography>
+          )}
+
+          {staffData && staffData.length > 0 ? (
+            <TableContainer component={Paper} sx={{ mb: 4 }}>
+              <Table>
+                <TableHead>
+                  <TableRow>
+                    <TableCell>이름</TableCell>
+                    <TableCell>역할</TableCell>
+                    <TableCell>이메일</TableCell>
+                    <TableCell>연락처</TableCell>
+                    <TableCell>시급</TableCell>
+                    <TableCell>상태</TableCell>
+                    <TableCell align="right">관리</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {filteredStaffData.map((worker, index) => (
+                    <TableRow
+                      key={index}
+                      hover
+                      // 퇴직/휴직 직원은 배경색으로 구분
+                      sx={{
+                        backgroundColor:
+                          worker.status === "inactive"
+                            ? "rgba(0, 0, 0, 0.04)"
+                            : "inherit",
+                        // 퇴직/휴직 직원은 텍스트를 연하게 표시
+                        opacity: worker.status === "inactive" ? 0.7 : 1,
+                      }}
+                    >
+                      <TableCell>{worker.name}</TableCell>
+                      <TableCell>{worker.roles}</TableCell>
+                      <TableCell>{worker.email}</TableCell>
+                      <TableCell>{worker.phoneNums}</TableCell>
+                      <TableCell>{formatCurrency(worker.cost)}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={getStatusLabel(worker.status)}
+                          color={getStatusColor(worker.status)}
+                          size="small"
+                          variant={
+                            worker.status === "inactive" ? "outlined" : "filled"
+                          }
+                        />
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleOpenDetails(worker)}
+                          sx={{ mr: 1 }}
+                        >
+                          <PersonIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleEditEmployee(worker)}
+                          sx={{ mr: 1 }}
+                        >
+                          <EditIcon fontSize="small" />
+                        </IconButton>
+                        <IconButton
+                          size="small"
+                          onClick={() => handleConfirmDelete(worker)}
+                          color="error"
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          ) : selectedBranchId ? (
+            <Alert severity="info" sx={{ mb: 4 }}>
+              {currentBranch?.name || `브랜치(ID: ${selectedBranchId})`}에
+              등록된 일반 직원이 없습니다.
+            </Alert>
+          ) : (
+            <Alert severity="warning" sx={{ mb: 4 }}>
+              먼저 상단에서 브랜치를 선택해주세요.
+            </Alert>
+          )}
         </>
       )}
 
-      {/* 로컬 직원 테이블 (기본 정보 위주) */}
-      <Typography variant="h6" gutterBottom>
-        로컬 데이터 직원 목록
-      </Typography>
-      <TableContainer component={Paper}>
-        <Table>
-          <TableHead>
-            <TableRow>
-              <TableCell>이름</TableCell>
-              <TableCell>역할</TableCell>
-              <TableCell>연락처</TableCell>
-              <TableCell>시급</TableCell>
-              <TableCell>상태</TableCell>
-              <TableCell align="right">관리</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {filteredEmployees.map((employee) => (
-              <TableRow
-                key={employee.id}
-                hover
-                sx={{ cursor: "pointer" }}
-                onClick={() => handleOpenDetails(employee)}
-              >
-                <TableCell>{employee.name}</TableCell>
-                <TableCell>{employee.role || "-"}</TableCell>
-                <TableCell>{employee.phoneNumber || "-"}</TableCell>
-                <TableCell>{employee.hourlyRate.toLocaleString()}원</TableCell>
-                <TableCell>
-                  <Chip
-                    label={getStatusLabel(employee.status)}
-                    color={getStatusColor(employee.status)}
-                    size="small"
-                  />
-                </TableCell>
-                <TableCell align="right">
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleEditEmployee(employee);
-                    }}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteEmployee(employee.id);
-                    }}
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-
-      {/* 직원 추가/수정 다이얼로그 JSX 수정 */}
+      {/* 직원 추가/수정 다이얼로그 */}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
@@ -602,13 +840,14 @@ function EmployeePage() {
         fullWidth
       >
         <DialogTitle>
-          {newEmployee.id ? "알바생 수정" : "알바생 추가"}
-        </DialogTitle>{" "}
-        {/* 수정 시 제목 변경 */}
+          {isEditing
+            ? newEmployee.roles === "사장" || newEmployee.roles === "매니저"
+              ? "관리자 정보 수정"
+              : "직원 정보 수정"
+            : "새 직원 추가"}
+        </DialogTitle>
         <DialogContent>
           <Grid container spacing={2} sx={{ pt: 1 }}>
-            {" "}
-            {/* 상단 패딩 추가 */}
             <Grid item xs={12} sm={6}>
               <TextField
                 label="이름"
@@ -625,12 +864,18 @@ function EmployeePage() {
                 label="연락처"
                 fullWidth
                 required
-                value={newEmployee.phoneNumber}
+                value={newEmployee.phoneNums}
                 onChange={(e) =>
                   setNewEmployee({
                     ...newEmployee,
-                    phoneNumber: e.target.value,
+                    phoneNums: e.target.value,
                   })
+                }
+                placeholder="010-0000-0000"
+                helperText="하이픈(-)을 포함한 연락처를 입력해주세요"
+                error={
+                  newEmployee.phoneNums !== "" &&
+                  !validatePhoneNumber(newEmployee.phoneNums)
                 }
               />
             </Grid>
@@ -649,13 +894,21 @@ function EmployeePage() {
               <TextField
                 label="시급"
                 fullWidth
-                type="number"
-                value={newEmployee.hourlyRate}
-                onChange={(e) =>
-                  setNewEmployee({
-                    ...newEmployee,
-                    hourlyRate: Number(e.target.value),
-                  })
+                value={formatCurrency(newEmployee.cost || 9620).replace(
+                  "원",
+                  ""
+                )}
+                onChange={handleCostChange}
+                inputProps={{
+                  min: 9620,
+                  step: 100,
+                }}
+                helperText="최저시급(9,620원) 이상으로 입력해주세요"
+                // 관리자인 경우 시급 수정 비활성화
+                disabled={
+                  isEditing &&
+                  (newEmployee.roles === "사장" ||
+                    newEmployee.roles === "매니저")
                 }
               />
             </Grid>
@@ -664,17 +917,21 @@ function EmployeePage() {
                 <InputLabel>역할</InputLabel>
                 <Select
                   label="역할"
-                  value={newEmployee.role}
+                  value={newEmployee.roles}
                   onChange={(e) =>
-                    setNewEmployee({ ...newEmployee, role: e.target.value })
+                    setNewEmployee({ ...newEmployee, roles: e.target.value })
+                  }
+                  disabled={
+                    isEditing &&
+                    (newEmployee.roles === "사장" ||
+                      newEmployee.roles === "매니저")
                   }
                 >
-                  {/* 역할 목록 (필요시 수정) */}
-                  <MenuItem value="매니저">매니저</MenuItem>
+                  {!isEditing && <MenuItem value="매니저">매니저</MenuItem>}
                   <MenuItem value="바리스타">바리스타</MenuItem>
                   <MenuItem value="홀 서빙">홀 서빙</MenuItem>
                   <MenuItem value="주방">주방</MenuItem>
-                  <MenuItem value="알바생">일반 알바</MenuItem>
+                  <MenuItem value="일반 직원">일반 직원</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
@@ -687,14 +944,16 @@ function EmployeePage() {
                   onChange={(e) =>
                     setNewEmployee({
                       ...newEmployee,
-                      status: e.target.value as any,
+                      status: e.target.value,
                     })
                   }
                 >
                   <MenuItem value="active">재직 중</MenuItem>
                   <MenuItem value="inactive">퇴직/휴직</MenuItem>
-                  <MenuItem value="pending">승인 대기</MenuItem>
                 </Select>
+                <Typography variant="caption" sx={{ mt: 0.5, ml: 1.5 }}>
+                  재직 중: 현재 근무 중인 직원 / 퇴직/휴직: 근무하지 않는 직원
+                </Typography>
               </FormControl>
             </Grid>
           </Grid>
@@ -704,21 +963,19 @@ function EmployeePage() {
           <Button
             variant="contained"
             color="primary"
-            onClick={handleAddEmployee}
+            onClick={handleSaveEmployee}
           >
-            {" "}
-            {/* 핸들러 수정 필요 시 반영 */}
-            {newEmployee.id ? "수정" : "추가"} {/* 버튼 텍스트 변경 */}
+            {isEditing ? "저장" : "추가"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {/* 직원 상세 정보 다이얼로그 (단순화) */}
+      {/* 직원 상세 정보 다이얼로그 */}
       <Dialog
         open={detailsOpen}
         onClose={() => setDetailsOpen(false)}
         maxWidth="sm"
-        /* 크기 조정 */ fullWidth
+        fullWidth
       >
         <DialogTitle>
           <Box sx={{ display: "flex", alignItems: "center" }}>
@@ -739,11 +996,9 @@ function EmployeePage() {
         <DialogContent dividers>
           {selectedEmployee ? (
             <Grid container spacing={1}>
-              {" "}
-              {/* 간격 조정 */}
               <Grid item xs={12}>
                 <Typography>
-                  <strong>역할:</strong> {selectedEmployee.role || "-"}
+                  <strong>역할:</strong> {selectedEmployee.roles || "-"}
                 </Typography>
               </Grid>
               <Grid item xs={12}>
@@ -758,7 +1013,7 @@ function EmployeePage() {
               </Grid>
               <Grid item xs={12}>
                 <Typography>
-                  <strong>연락처:</strong> {selectedEmployee.phoneNumber || "-"}
+                  <strong>연락처:</strong> {selectedEmployee.phoneNums || "-"}
                 </Typography>
               </Grid>
               <Grid item xs={12}>
@@ -768,28 +1023,97 @@ function EmployeePage() {
               </Grid>
               <Grid item xs={12}>
                 <Typography>
-                  <strong>시급:</strong>{" "}
-                  {selectedEmployee.hourlyRate.toLocaleString()}원
+                  <strong>시급:</strong> {formatCurrency(selectedEmployee.cost)}
                 </Typography>
               </Grid>
-              <Grid item xs={12}>
-                <Typography>
-                  <strong>은행 계좌:</strong>{" "}
-                  {selectedEmployee.bankAccount || "-"}
-                </Typography>
-              </Grid>
-              <Grid item xs={12}>
-                <Typography>
-                  <strong>생년월일:</strong> {selectedEmployee.birthDate || "-"}
-                </Typography>
-              </Grid>
+              {selectedEmployee.userId && (
+                <Grid item xs={12}>
+                  <Typography>
+                    <strong>사용자 ID:</strong> {selectedEmployee.userId}
+                  </Typography>
+                </Grid>
+              )}
             </Grid>
           ) : (
             <Typography>선택된 직원이 없습니다.</Typography>
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            onClick={() => {
+              setDetailsOpen(false);
+              if (selectedEmployee) {
+                handleEditEmployee(selectedEmployee);
+              }
+            }}
+            color="primary"
+          >
+            수정
+          </Button>
           <Button onClick={() => setDetailsOpen(false)}>닫기</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 직원 삭제 확인 다이얼로그 */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={() => setDeleteDialogOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ pb: 1 }}>
+          <Box sx={{ display: "flex", alignItems: "center" }}>
+            <DeleteIcon color="error" sx={{ mr: 1 }} />
+            직원 삭제 확인
+          </Box>
+        </DialogTitle>
+        <DialogContent>
+          {employeeToDelete && (
+            <>
+              <Typography variant="subtitle1" sx={{ mb: 2 }}>
+                다음 직원을 정말 삭제하시겠습니까?
+              </Typography>
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: "background.default",
+                  borderRadius: 1,
+                  mb: 2,
+                }}
+              >
+                <Typography variant="body1" component="div">
+                  <strong>이름:</strong> {employeeToDelete.name}
+                </Typography>
+                <Typography variant="body1" component="div">
+                  <strong>역할:</strong> {employeeToDelete.roles}
+                </Typography>
+                <Typography variant="body1" component="div">
+                  <strong>연락처:</strong> {employeeToDelete.phoneNums}
+                </Typography>
+              </Box>
+              <Typography
+                variant="caption"
+                color="error"
+                sx={{ display: "block" }}
+              >
+                이 작업은 되돌릴 수 없으며, 해당 직원의 모든 정보가 삭제됩니다.
+              </Typography>
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteDialogOpen(false)} color="primary">
+            취소
+          </Button>
+          <Button
+            onClick={handleDeleteEmployee}
+            color="error"
+            variant="contained"
+            startIcon={<DeleteIcon />}
+            disabled={apiWorkerLoading}
+          >
+            {apiWorkerLoading ? "삭제 중..." : "삭제"}
+          </Button>
         </DialogActions>
       </Dialog>
 
