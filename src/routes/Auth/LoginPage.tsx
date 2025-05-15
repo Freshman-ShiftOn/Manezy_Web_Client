@@ -20,6 +20,14 @@ import { LoginRequest, authService } from "../../services/auth";
 import { useAuth } from "../../context/AuthContext";
 import { LS_KEYS } from "../../services/api";
 
+// 사용자 정보 인터페이스 확장 (branchIds 추가)
+interface ExtendedUser {
+  id: string;
+  email: string;
+  name: string;
+  branchIds?: number[] | null;
+}
+
 const LoginPage: React.FC = () => {
   const theme = useTheme();
   const navigate = useNavigate();
@@ -46,6 +54,23 @@ const LoginPage: React.FC = () => {
       setRememberEmail(true);
     }
   }, []);
+
+  // URL 파라미터를 통한 오류 메시지 표시
+  useEffect(() => {
+    const searchParams = new URLSearchParams(location.search);
+    const errorType = searchParams.get("error");
+
+    if (errorType === "invalid_token") {
+      setSnackbarMessage(
+        "인증 정보가 만료되었거나 유효하지 않습니다. 다시 로그인해주세요."
+      );
+      setSnackbarSeverity("error");
+      setSnackbarOpen(true);
+
+      // 오류 파라미터 제거 (URL 정리)
+      navigate("/login", { replace: true });
+    }
+  }, [location, navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -91,24 +116,60 @@ const LoginPage: React.FC = () => {
         console.log("저장된 아이디 제거됨");
       }
 
+      // 사용자 정보에 branchIds가 있을 수 있음
+      const userWithBranch = response.user as ExtendedUser;
       login(response.token, response.user);
 
       setSnackbarMessage("로그인에 성공했습니다.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
+      // 서버에서 받은 branchIds 확인
+      const hasBranchIds =
+        userWithBranch.branchIds && userWithBranch.branchIds.length > 0;
+      console.log(
+        "사용자 지점 정보:",
+        hasBranchIds ? userWithBranch.branchIds : "없음"
+      );
+
+      // 로컬 스토리지에서 기존 데이터 확인
       const storeData = localStorage.getItem(LS_KEYS.STORE);
       const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
 
-      setTimeout(() => {
-        if (!storeData || !setupComplete) {
-          console.log("지점 설정이 필요합니다. 설정 마법사로 이동합니다.");
-          navigate("/setup/wizard");
-        } else {
-          console.log("지점 설정이 완료되었습니다. 대시보드로 이동합니다.");
-          navigate("/dashboard");
+      let hasValidBranchId = false;
+      if (storeData) {
+        try {
+          const storeInfo = JSON.parse(storeData);
+          hasValidBranchId = !!storeInfo.branchId;
+          console.log("LoginPage - 로컬 지점 ID 확인:", storeInfo.branchId);
+        } catch (e) {
+          console.error("로그인 페이지 - 지점 정보 파싱 오류:", e);
         }
-      }, 1000);
+      }
+
+      // 서버 지점 정보 또는 로컬 지점 정보가 있는지 확인
+      const needsSetup =
+        !hasBranchIds && (!setupComplete || !storeData || !hasValidBranchId);
+
+      if (needsSetup) {
+        console.log("지점 설정이 필요합니다. 설정 마법사로 이동합니다.", {
+          serverBranchIds: hasBranchIds,
+          setupComplete: !!setupComplete,
+          storeData: !!storeData,
+          localBranchId: hasValidBranchId,
+        });
+        setTimeout(() => {
+          navigate("/setup/wizard");
+        }, 800);
+      } else {
+        console.log("지점 설정이 완료되었습니다. 대시보드로 이동합니다.", {
+          fromServer: hasBranchIds,
+          fromLocal: hasValidBranchId,
+        });
+        setTimeout(() => {
+          navigate("/dashboard");
+        }, 800);
+      }
     } catch (error: any) {
       console.error("Login error object:", error); // 전체 에러 객체 로깅
 

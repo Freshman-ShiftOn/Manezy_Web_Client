@@ -9,6 +9,7 @@ import {
   EmployeeNotification,
   EmployeeAvailability,
 } from "../lib/types";
+import { isValidJWTFormat } from "./auth";
 
 // 로컬 스토리지 키
 export const LS_KEYS = {
@@ -1005,4 +1006,577 @@ export const generateDummyData = (forceReset = false): void => {
   }
 
   console.log("Dummy data generation finished.");
+};
+
+// ====================== Branch API ======================
+
+// API 베이스 URL (환경에 따라 변경 가능)
+export const API_BASE_URL = "https://crewezy.epicode.co.kr"; // 끝에 슬래시(/)가 없어야 함
+
+// CORS 이슈 대응을 위한 설정
+export const API_CONFIG = {
+  USE_PROXY: false, // 프록시 사용 여부
+  PROXY_URL: "https://cors-anywhere.herokuapp.com/", // CORS 프록시 URL
+  MAX_RETRIES: 3, // 최대 재시도 횟수
+  TIMEOUT: 10000, // API 요청 타임아웃 (밀리초)
+  FALLBACK_URL: "https://epicode.co.kr", // 대체 도메인 (기본 URL이 동작하지 않을 경우)
+};
+
+// API 호출 유틸리티 함수
+export const apiCall = async (
+  endpoint: string,
+  options: RequestInit = {},
+  retryCount = 0
+) => {
+  try {
+    // 기본 헤더 설정
+    const headers = {
+      "Content-Type": "application/json",
+      ...options.headers,
+    };
+
+    // 인증 토큰 추가 (있는 경우)
+    try {
+      const token = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+      if (token) {
+        // 토큰 형식 확인
+        if (isValidJWTFormat(token)) {
+          headers["Authorization"] = `Bearer ${token}`;
+        } else {
+          console.warn("유효하지 않은 형식의 토큰이 로컬 스토리지에 있습니다.");
+          // 토큰을 제거하고 로그인 페이지로 리디렉션
+          localStorage.removeItem(LS_KEYS.AUTH_TOKEN);
+          throw new Error(
+            "인증 토큰이 유효하지 않습니다. 다시 로그인해주세요."
+          );
+        }
+      }
+    } catch (tokenError) {
+      console.error("토큰 처리 중 오류:", tokenError);
+      // 토큰 오류는 API 호출에 영향을 주지 않지만, 로그인이 필요한 API는 실패할 것임
+    }
+
+    // endpoint가 슬래시로 시작하는지 확인
+    const formattedEndpoint = endpoint.startsWith("/")
+      ? endpoint
+      : `/${endpoint}`;
+
+    // API 호출
+    let url = `${API_BASE_URL}${formattedEndpoint}`;
+    // CORS 프록시 사용 (필요한 경우)
+    if (API_CONFIG.USE_PROXY) {
+      url = `${API_CONFIG.PROXY_URL}${url}`;
+    }
+
+    console.log(`API call to: ${url}`, {
+      method: options.method || "GET",
+      retry:
+        retryCount > 0
+          ? `시도 ${retryCount + 1}/${API_CONFIG.MAX_RETRIES + 1}`
+          : "첫 시도",
+    });
+
+    // 타임아웃 설정
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_CONFIG.TIMEOUT);
+
+    const fetchOptions = {
+      ...options,
+      headers,
+      signal: controller.signal,
+    };
+
+    const response = await fetch(url, fetchOptions);
+    clearTimeout(timeoutId);
+
+    // HTML 응답 체크 (404 또는 500 에러시 HTML이 반환될 수 있음)
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("text/html")) {
+      console.error(
+        `서버가 HTML을 반환했습니다. 상태 코드: ${response.status}`
+      );
+      const htmlContent = await response.text();
+      console.error("HTML 응답 내용:", htmlContent.substring(0, 200) + "...");
+
+      // 404 오류의 경우 재시도 (다른 URL 형식으로)
+      if (response.status === 404 && retryCount < API_CONFIG.MAX_RETRIES) {
+        // URL 변형 시도 목록
+        const urlVariations = [
+          // 첫 번째 시도: 슬래시 없는 버전
+          endpoint.startsWith("/") ? endpoint.substring(1) : endpoint,
+
+          // 두 번째 시도: API 경로 변형
+          endpoint.includes("/api/")
+            ? endpoint.replace("/api/", "/")
+            : `api${endpoint}`,
+
+          // 세 번째 시도: 전체 URL 형식 (HTTPS)
+          `https://crewezy.epicode.co.kr${formattedEndpoint}`,
+
+          // 네 번째 시도: HTTP로 시도
+          `http://crewezy.epicode.co.kr${formattedEndpoint}`,
+
+          // 다섯 번째 시도: epicode.co.kr 도메인으로 시도
+          `https://epicode.co.kr${formattedEndpoint}`,
+        ];
+
+        // 이전 시도와 다른 URL 선택
+        const variationIndex = retryCount % urlVariations.length;
+        const nextEndpoint = urlVariations[variationIndex];
+
+        console.log(
+          `재시도 중 (${retryCount + 1}/${
+            API_CONFIG.MAX_RETRIES
+          }): ${nextEndpoint}`
+        );
+        return apiCall(nextEndpoint, options, retryCount + 1);
+      }
+
+      throw new Error(
+        `서버 오류: ${response.status} - API 엔드포인트가 잘못되었습니다.`
+      );
+    }
+
+    // 응답이 JSON이 아닌 경우 처리
+    if (!contentType || !contentType.includes("application/json")) {
+      const text = await response.text();
+      console.error("서버 응답이 JSON이 아님:", text.substring(0, 200));
+      throw new Error("서버에서 유효하지 않은 응답 형식을 반환했습니다.");
+    }
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `API 요청 실패: ${response.status}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error(`API 호출 오류 (${endpoint}):`, error);
+
+    // 오류 유형별 처리
+    if (error instanceof SyntaxError) {
+      console.error("JSON 파싱 오류 - 서버에서 HTML이 반환되었을 수 있습니다.");
+    } else if (
+      error instanceof TypeError &&
+      error.message.includes("Failed to fetch")
+    ) {
+      // CORS 또는 네트워크 오류
+      console.error("네트워크 오류 또는 CORS 문제가 발생했습니다.");
+
+      // 재시도 (다른 URL 형식으로)
+      if (retryCount < API_CONFIG.MAX_RETRIES) {
+        console.log(
+          `API 호출 재시도 중 (${retryCount + 1}/${API_CONFIG.MAX_RETRIES})...`
+        );
+
+        // URL 변형 시도
+        const urlVariations = [
+          // 첫 번째 시도: HTTP로 시도
+          endpoint.includes("https://")
+            ? endpoint.replace("https://", "http://")
+            : endpoint,
+
+          // 두 번째 시도: 다른 도메인 형식 시도
+          `https://epicode.co.kr/api/branch${
+            endpoint.includes("/branch") ? "" : "/branch"
+          }${
+            endpoint.includes("/create-branch") || endpoint.includes("/workers")
+              ? ""
+              : endpoint
+          }`,
+        ];
+
+        const variationIndex = retryCount % urlVariations.length;
+        const nextEndpoint = urlVariations[variationIndex];
+
+        return apiCall(nextEndpoint, options, retryCount + 1);
+      }
+
+      throw new Error(
+        "서버 연결 실패: 네트워크 연결을 확인하거나 CORS 설정이 필요할 수 있습니다."
+      );
+    } else if (error instanceof DOMException && error.name === "AbortError") {
+      throw new Error("API 요청 시간 초과");
+    }
+
+    throw error;
+  }
+};
+
+// Branch 생성 API
+export interface BranchCreateRequest {
+  id?: number;
+  name: string;
+  adress: string;
+  dial_numbers: string;
+  basic_cost: string;
+  weekly_allowance: boolean;
+  images?: string;
+  contents?: string;
+}
+
+// Branch 생성
+export const createBranch = async (data: BranchCreateRequest): Promise<any> => {
+  try {
+    // API 요청 전에 정확한 형식으로 변환
+    const requestData = {
+      id: 0,
+      name: data.name,
+      adress: data.adress,
+      dial_numbers: data.dial_numbers,
+      basic_cost: data.basic_cost,
+      weekly_allowance: data.weekly_allowance === true,
+      images: data.images || "",
+      contents: data.contents || "",
+    };
+
+    console.log("Sending branch creation request:", requestData);
+    const url = `${API_BASE_URL}/api/branch/create-branch`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+    console.log("Auth token 확인됨");
+
+    // 로그인/회원가입과 동일한 URL 구조 사용
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorData;
+
+      try {
+        errorData = JSON.parse(errorText);
+      } catch (e) {
+        // JSON이 아니면 텍스트로 처리
+        errorData = { message: errorText || "서버 오류" };
+      }
+
+      console.error("API error response:", errorData);
+
+      // 상태 코드에 따른 오류 메시지 처리
+      let errorMessage;
+
+      switch (response.status) {
+        case 400:
+          // 입력 데이터 오류
+          if (errorData.message?.includes("중복")) {
+            errorMessage =
+              "동일한 이름의 지점이 이미 등록되어 있습니다. 다른 이름으로 시도해주세요.";
+          } else if (errorData.message?.includes("유효하지 않은")) {
+            errorMessage =
+              "유효하지 않은 데이터입니다. 입력 정보를 다시 확인해주세요.";
+          } else {
+            errorMessage = errorData.message || "입력 정보에 오류가 있습니다.";
+          }
+          break;
+        case 401:
+          errorMessage = "인증이 필요합니다. 다시 로그인해주세요.";
+          // 토큰 관련 디버깅 정보 추가
+          console.error(
+            "Auth 401 error - Token:",
+            authToken?.substring(0, 10) + "..."
+          );
+          break;
+        case 403:
+          errorMessage = "지점 생성 권한이 없습니다.";
+          break;
+        case 404:
+          errorMessage =
+            "API 경로를 찾을 수 없습니다. 서비스 담당자에게 문의해주세요.";
+          break;
+        case 409:
+          errorMessage =
+            "동일한 이름의 지점이 이미 등록되어 있습니다. 다른 이름으로 시도해주세요.";
+          break;
+        case 500:
+          errorMessage =
+            "서버 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+          break;
+        default:
+          errorMessage =
+            errorData.message || `지점 생성 실패 (${response.status})`;
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    // 빈 응답 처리
+    const responseText = await response.text();
+    let responseData = {};
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("API success response:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+        // 성공 응답을 가정하고 최소한의 데이터 제공
+        responseData = {
+          success: true,
+          message:
+            "지점이 생성되었지만 서버가 상세 정보를 반환하지 않았습니다.",
+        };
+      }
+    } else {
+      console.log("서버가 빈 응답을 반환했지만 상태 코드는 성공(200)입니다.");
+      // 빈 응답이지만 성공으로 처리
+      responseData = {
+        success: true,
+        message: "지점이 생성되었습니다. (빈 응답)",
+      };
+    }
+
+    return responseData;
+  } catch (error) {
+    console.error("Branch creation error:", error);
+    throw error;
+  }
+};
+
+// Branch Worker 생성 API
+export interface BranchWorkerRequest {
+  branchId: number;
+  email: string;
+  name: string;
+  phoneNums: string;
+  roles: string;
+  status: string;
+  cost: number;
+}
+
+// Branch Worker 생성
+export const createBranchWorker = async (
+  data: BranchWorkerRequest
+): Promise<any> => {
+  try {
+    // API 요청 전에 정확한 형식으로 변환
+    const requestData = {
+      branchId: data.branchId,
+      email: data.email,
+      name: data.name,
+      phoneNums: data.phoneNums,
+      roles: data.roles,
+      status: data.status,
+      cost: data.cost,
+    };
+
+    console.log("Sending worker creation request:", requestData);
+    const url = `${API_BASE_URL}/api/branch/workers`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+
+    // 로그인/회원가입과 동일한 URL 구조 사용
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "서버 오류" }));
+      console.error("API error response:", errorData);
+      throw new Error(
+        errorData.message || `근무자 등록 실패 (${response.status})`
+      );
+    }
+
+    // 빈 응답 처리
+    const responseText = await response.text();
+    let responseData = {};
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("API success response:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+        // 성공 응답을 가정하고 최소한의 데이터 제공
+        responseData = {
+          success: true,
+          message:
+            "근무자가 등록되었지만 서버가 상세 정보를 반환하지 않았습니다.",
+        };
+      }
+    } else {
+      console.log("서버가 빈 응답을 반환했지만 상태 코드는 성공(200)입니다.");
+      // 빈 응답이지만 성공으로 처리
+      responseData = {
+        success: true,
+        message: "근무자가 등록되었습니다. (빈 응답)",
+      };
+    }
+
+    return responseData;
+  } catch (error) {
+    console.error("Branch worker creation error:", error);
+    throw error;
+  }
+};
+
+// Branch Workers 조회 API
+interface BranchWorker {
+  name: string;
+  email: string;
+  phoneNums: string;
+  roles: string;
+  status: string;
+  cost: number;
+}
+
+// Branch Workers 조회
+export const getBranchWorkers = async (
+  branchId: number | string
+): Promise<BranchWorker[]> => {
+  try {
+    console.log(`Fetching workers for branch ID: ${branchId}`);
+    const url = `${API_BASE_URL}/api/branch/${branchId}/workers`;
+    console.log("Request URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+
+    // GET 요청 생성
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    console.log("Response status:", response.status);
+
+    if (!response.ok) {
+      const errorData = await response
+        .json()
+        .catch(() => ({ message: "서버 오류" }));
+      console.error("API error response:", errorData);
+      throw new Error(
+        errorData.message || `근무자 조회 실패 (${response.status})`
+      );
+    }
+
+    // 응답 처리
+    const responseText = await response.text();
+    let responseData: BranchWorker[] = [];
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("Workers fetched successfully:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+        // 빈 배열 반환
+        responseData = [];
+      }
+    }
+
+    return responseData;
+  } catch (error) {
+    console.error("Branch workers fetch error:", error);
+    throw error;
+  }
+};
+
+// API 서버 연결 테스트
+export const testAPIConnection = async (): Promise<{
+  success: boolean;
+  message: string;
+}> => {
+  try {
+    console.log(`Testing API connection to ${API_BASE_URL}`);
+
+    // GET 요청으로 API 서버 접근성 테스트
+    const url = API_BASE_URL;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3초 타임아웃
+
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        cache: "no-cache",
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      return {
+        success: true, // 어떤 응답이든 서버가 살아있다는 의미
+        message: `API 서버 연결 성공 (응답 코드: ${response.status})`,
+      };
+    } catch (primaryError) {
+      console.error("기본 URL 연결 실패, 대체 URL 시도:", primaryError);
+
+      // 대체 URL 시도
+      if (API_CONFIG.FALLBACK_URL) {
+        try {
+          console.log(`Trying fallback URL ${API_CONFIG.FALLBACK_URL}`);
+          const fallbackResponse = await fetch(API_CONFIG.FALLBACK_URL, {
+            method: "GET",
+            cache: "no-cache",
+            signal: AbortSignal.timeout(3000),
+          });
+
+          return {
+            success: true,
+            message: `기본 API 서버 접속 실패, 대체 서버 연결 성공 (응답 코드: ${fallbackResponse.status})`,
+          };
+        } catch (fallbackError) {
+          console.error("대체 URL도 실패:", fallbackError);
+          throw primaryError; // 원래 오류로 돌아가서 처리
+        }
+      } else {
+        throw primaryError;
+      }
+    }
+  } catch (error) {
+    console.error("API 서버 연결 테스트 실패:", error);
+
+    let errorMessage = "API 서버에 연결할 수 없습니다.";
+    if (error instanceof DOMException && error.name === "AbortError") {
+      errorMessage = "API 서버 응답 시간 초과: 서버가 응답하지 않습니다.";
+    } else if (
+      error instanceof TypeError &&
+      error.message.includes("Failed to fetch")
+    ) {
+      errorMessage =
+        "CORS 오류 또는 네트워크 연결 문제: API 서버에 접근할 수 없습니다.";
+    }
+
+    return {
+      success: false,
+      message: errorMessage,
+    };
+  }
+};
+
+// JWT 토큰 가져오기 및 검증하는 유틸리티 함수
+export const getAuthToken = (): string => {
+  const authToken = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
+
+  if (!authToken || !isValidJWTFormat(authToken)) {
+    console.error("Invalid JWT token format:", authToken);
+    throw new Error("인증 토큰이 유효하지 않습니다. 다시 로그인해주세요.");
+  }
+
+  return authToken;
 };

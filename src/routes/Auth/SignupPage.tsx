@@ -88,7 +88,7 @@ const SignupPage: React.FC = () => {
       const response = await authService.signup(formData);
 
       // 회원가입 성공 메시지
-      setSnackbarMessage("회원가입이 완료되었습니다. 로그인해주세요.");
+      setSnackbarMessage("회원가입이 완료되었습니다.");
       setSnackbarSeverity("success");
       setSnackbarOpen(true);
 
@@ -106,9 +106,9 @@ const SignupPage: React.FC = () => {
       // 토큰이 유효한 경우 로그인 처리
       login(response.token, response.user);
 
-      // 잠시 후 로그인 페이지로 이동
+      // 지점 설정이 필요하면 설정 마법사로 이동
       setTimeout(() => {
-        navigate("/login");
+        navigate("/setup/wizard");
       }, 1500);
     } catch (error: any) {
       console.error("Signup error:", error);

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -13,6 +13,15 @@ import {
   Divider,
   Tooltip,
   Icon,
+  CircularProgress,
+  Snackbar,
+  Alert,
+  FormControl,
+  FormLabel,
+  RadioGroup,
+  FormControlLabel,
+  Radio,
+  Switch,
 } from "@mui/material";
 import { AdapterDateFns } from "@mui/x-date-pickers/AdapterDateFns";
 import { LocalizationProvider, TimePicker } from "@mui/x-date-pickers";
@@ -20,6 +29,12 @@ import { Store } from "../../../lib/types";
 import { isValid, parse, format } from "date-fns";
 import HelpOutlineIcon from "@mui/icons-material/HelpOutline";
 import StorefrontIcon from "@mui/icons-material/Storefront";
+import {
+  BranchCreateRequest,
+  createBranch,
+  testAPIConnection,
+  API_BASE_URL,
+} from "../../../services/api";
 
 interface WizardStepStoreInfoProps {
   data: Partial<Store>;
@@ -32,8 +47,32 @@ function WizardStepStoreInfo({
   onUpdate,
   onNext,
 }: WizardStepStoreInfoProps) {
-  const [storeData, setStoreData] = useState<Partial<Store>>(data || {});
+  const [storeData, setStoreData] = useState<
+    Partial<Store> & { weeklyAllowanceEnabled?: boolean }
+  >({
+    ...data,
+    weeklyAllowanceEnabled: data.weeklyHolidayHoursThreshold ? true : false,
+  });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [apiStatus, setApiStatus] = useState<{
+    checked: boolean;
+    ok: boolean;
+    message: string;
+  }>({
+    checked: false,
+    ok: false,
+    message: "",
+  });
+  const [snackbar, setSnackbar] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error" | "info" | "warning";
+  }>({
+    open: false,
+    message: "",
+    severity: "info",
+  });
 
   // 영업 시간 선택을 위한 Date 객체
   const [openTime, setOpenTime] = useState<Date | null>(
@@ -42,6 +81,29 @@ function WizardStepStoreInfo({
   const [closeTime, setCloseTime] = useState<Date | null>(
     parse(data.closingHour || "22:00", "HH:mm", new Date())
   );
+
+  // API 서버 연결 테스트
+  useEffect(() => {
+    const checkAPIConnection = async () => {
+      const result = await testAPIConnection();
+      setApiStatus({
+        checked: true,
+        ok: result.success,
+        message: result.message,
+      });
+
+      if (!result.success) {
+        console.warn("API 서버 연결 문제:", result.message);
+        setSnackbar({
+          open: true,
+          message: `API 서버 연결 문제가 감지되었습니다: ${result.message}`,
+          severity: "warning",
+        });
+      }
+    };
+
+    checkAPIConnection();
+  }, []);
 
   // 입력값 변경 핸들러
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -82,8 +144,20 @@ function WizardStepStoreInfo({
     }
   };
 
-  // 유효성 검사 및 데이터 전송
-  const handleSubmit = () => {
+  // 주휴수당 토글 핸들러
+  const handleWeeklyAllowanceToggle = (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const checked = event.target.checked;
+    setStoreData((prev) => ({
+      ...prev,
+      weeklyAllowanceEnabled: checked,
+      weeklyHolidayHoursThreshold: checked ? 15 : 0, // 활성화되면 기본값 15, 비활성화면 0
+    }));
+  };
+
+  // API를 사용하여 지점 생성 및 유효성 검사
+  const handleSubmit = async () => {
     const newErrors: Record<string, string> = {};
 
     if (!storeData.name?.trim()) {
@@ -113,13 +187,157 @@ function WizardStepStoreInfo({
       return;
     }
 
-    // 부모 컴포넌트로 데이터 전달
-    onUpdate(storeData);
-    onNext();
+    // API 서버 연결 상태 재확인
+    if (!apiStatus.checked || !apiStatus.ok) {
+      const connectionTest = await testAPIConnection();
+      if (!connectionTest.success) {
+        setSnackbar({
+          open: true,
+          message: `API 서버(${API_BASE_URL})에 연결할 수 없습니다. 올바른 URL인지 확인하세요: https://crewezy.epicode.co.kr`,
+          severity: "error",
+        });
+        return;
+      }
+    }
+
+    setLoading(true);
+
+    try {
+      // API로 전송할 데이터 포맷 변환
+      const branchRequest: BranchCreateRequest = {
+        id: 0, // 항상 0으로 설정
+        name: storeData.name || "",
+        adress: storeData.address || "", // 주의: API 스펙에 맞게 'adress'로 전송
+        dial_numbers: storeData.phoneNumber || "",
+        basic_cost: storeData.baseHourlyRate?.toString() || "9860",
+        weekly_allowance: storeData.weeklyAllowanceEnabled === true, // 주휴수당 여부(불리언)
+        images: "",
+        contents: `${storeData.openingHour || "08:00"} - ${
+          storeData.closingHour || "22:00"
+        }`,
+      };
+
+      console.log("지점 생성 요청 데이터:", branchRequest);
+
+      // 지점 생성 API 호출
+      const response = await createBranch(branchRequest);
+      console.log("Branch created successfully:", response);
+
+      // 성공 알림
+      setSnackbar({
+        open: true,
+        message: response.message || "지점이 성공적으로 생성되었습니다.",
+        severity: "success",
+      });
+
+      // API 응답에서 ID 처리
+      let branchId;
+      if (typeof response === "number") {
+        // 응답이 숫자인 경우 (ID 값)
+        branchId = response;
+      } else if (response && response.id) {
+        // 응답이 객체이고 id 필드가 있는 경우
+        branchId = response.id;
+      } else {
+        // 응답에 ID가 없는 경우 임시 ID 생성
+        branchId = Date.now();
+      }
+
+      // 업데이트된 데이터 생성
+      const updatedData = {
+        ...storeData,
+        branchId: branchId,
+      };
+      onUpdate(updatedData);
+
+      console.log("저장된 지점 ID:", branchId);
+
+      // 다음 단계로 이동
+      setTimeout(() => {
+        onNext();
+      }, 1000);
+    } catch (error) {
+      console.error("Branch creation failed:", error);
+
+      // 에러 메시지 처리
+      let errorMessage = "지점 생성 중 오류가 발생했습니다.";
+      let fieldError = null;
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+
+        // 특정 필드 관련 오류인 경우, 해당 필드 에러 표시
+        if (errorMessage.includes("동일한 이름의 지점")) {
+          fieldError = {
+            field: "name",
+            message:
+              "동일한 이름의 지점이 이미 존재합니다. 다른 이름을 입력해주세요.",
+          };
+          setErrors((prev) => ({
+            ...prev,
+            name: fieldError.message,
+          }));
+        }
+
+        // 특정 상황별 힌트 추가
+        if (errorMessage.includes("동일한 이름의 지점")) {
+          errorMessage += " 하나의 계정으로 여러 지점을 관리하실 수 있습니다.";
+        } else if (errorMessage.includes("API 경로를 찾을 수 없습니다")) {
+          errorMessage =
+            "API 서버 연결에 문제가 있습니다. 인터넷 연결을 확인하거나 잠시 후 다시 시도해주세요.";
+        }
+      }
+
+      // 에러 알림
+      setSnackbar({
+        open: true,
+        message: errorMessage,
+        severity: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSnackbarClose = () => {
+    setSnackbar({ ...snackbar, open: false });
   };
 
   return (
     <Box sx={{ py: 2 }}>
+      {!apiStatus.ok && apiStatus.checked && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={async () => {
+                const result = await testAPIConnection();
+                setApiStatus({
+                  checked: true,
+                  ok: result.success,
+                  message: result.message,
+                });
+                setSnackbar({
+                  open: true,
+                  message: result.success
+                    ? "서버 연결 확인 완료! 정상적으로 연결되었습니다."
+                    : `서버 연결 실패: ${result.message}`,
+                  severity: result.success ? "success" : "error",
+                });
+              }}
+            >
+              재시도
+            </Button>
+          }
+        >
+          API 서버({API_BASE_URL})에 연결할 수 없습니다. 지점 등록이 실패할 수
+          있습니다.
+        </Alert>
+      )}
+
       {/* 환영 메시지 카드 */}
       <Card
         elevation={0}
@@ -220,6 +438,7 @@ function WizardStepStoreInfo({
             fullWidth
             required
             variant="outlined"
+            placeholder="9860"
             InputProps={{
               startAdornment: (
                 <InputAdornment position="start">₩</InputAdornment>
@@ -227,7 +446,8 @@ function WizardStepStoreInfo({
             }}
             error={!!errors.baseHourlyRate}
             helperText={
-              errors.baseHourlyRate || "직원 등록 시 기본값으로 사용됩니다."
+              errors.baseHourlyRate ||
+              "직원 등록 시 기본값으로 사용됩니다. (최저시급: 9,860원)"
             }
           />
         </Grid>
@@ -295,23 +515,28 @@ function WizardStepStoreInfo({
           </LocalizationProvider>
           {errors.time && <FormHelperText error>{errors.time}</FormHelperText>}
         </Grid>
-        <Grid item xs={12} sm={6}>
-          <TextField
-            label="주휴수당 기준 시간 (주당)"
-            name="weeklyHolidayHoursThreshold"
-            type="number"
-            value={storeData.weeklyHolidayHoursThreshold || ""}
-            onChange={handleInputChange}
-            fullWidth
-            required
-            variant="outlined"
-            InputProps={{
-              endAdornment: (
-                <InputAdornment position="end">시간</InputAdornment>
-              ),
-            }}
-            helperText="주 15시간 이상 근무 시 주휴수당 지급 (일반적)"
-          />
+        <Grid item xs={12}>
+          <FormControl component="fieldset">
+            <FormControlLabel
+              control={
+                <Switch
+                  checked={storeData.weeklyAllowanceEnabled === true}
+                  onChange={handleWeeklyAllowanceToggle}
+                  color="primary"
+                />
+              }
+              label={
+                <Box sx={{ display: "flex", flexDirection: "column" }}>
+                  <Typography variant="body1">주휴수당 지급</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {storeData.weeklyAllowanceEnabled
+                      ? "주 15시간 이상 근무 시 주휴수당이 지급됩니다."
+                      : "주휴수당을 지급하지 않습니다."}
+                  </Typography>
+                </Box>
+              }
+            />
+          </FormControl>
         </Grid>
       </Grid>
 
@@ -321,10 +546,26 @@ function WizardStepStoreInfo({
           onClick={handleSubmit}
           size="large"
           sx={{ px: 4, py: 1 }}
+          disabled={loading}
         >
-          다음
+          {loading ? <CircularProgress size={24} /> : "다음"}
         </Button>
       </Box>
+
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={handleSnackbarClose}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={handleSnackbarClose}
+          severity={snackbar.severity}
+          variant="filled"
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

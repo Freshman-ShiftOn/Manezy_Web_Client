@@ -38,6 +38,7 @@ import {
   Badge,
   TableContainer,
   ChipProps,
+  Snackbar,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -55,7 +56,12 @@ import {
   FilterList as FilterListIcon,
   Close as CloseIcon,
 } from "@mui/icons-material";
-import { getEmployees, getShifts, getStoreInfo } from "../../services/api";
+import {
+  getEmployees,
+  getShifts,
+  getStoreInfo,
+  getBranchWorkers,
+} from "../../services/api";
 import { Employee, Shift, Store } from "../../lib/types";
 import {
   differenceInHours,
@@ -91,12 +97,20 @@ function EmployeePage() {
     null
   );
 
+  const [snackbar, setSnackbar] = useState({
+    open: false,
+    message: "",
+    severity: "success" as "success" | "error" | "info" | "warning",
+  });
+
+  const [apiWorkers, setApiWorkers] = useState<any[]>([]);
+  const [branchId, setBranchId] = useState<number | null>(null);
+
   // 데이터 로드
   useEffect(() => {
     const loadData = async () => {
+      setLoading(true);
       try {
-        setLoading(true);
-
         // API에서 데이터 가져오기
         const storeData = await getStoreInfo();
         const employeesData = await getEmployees();
@@ -106,7 +120,31 @@ function EmployeePage() {
         setEmployees(employeesData);
         setShifts(shiftsData);
 
-        setLoading(false);
+        // 로컬 스토리지에서 지점 ID 가져오기
+        if (storeData.branchId) {
+          setBranchId(storeData.branchId);
+
+          // API에서 근무자 목록 불러오기
+          try {
+            const workers = await getBranchWorkers(storeData.branchId);
+            setApiWorkers(workers);
+
+            // 성공 메시지 표시
+            setSnackbar({
+              open: true,
+              message: `API에서 ${workers.length}명의 근무자 정보를 불러왔습니다.`,
+              severity: "success",
+            });
+          } catch (apiError) {
+            console.error("API에서 근무자 목록 불러오기 실패:", apiError);
+            setSnackbar({
+              open: true,
+              message:
+                "API에서 근무자 목록을 불러오는데 실패했습니다. 로컬 데이터를 사용합니다.",
+              severity: "warning",
+            });
+          }
+        }
       } catch (err) {
         console.error("Error loading data:", err);
         setError("데이터를 불러오는 중 오류가 발생했습니다");
@@ -204,37 +242,53 @@ function EmployeePage() {
     setDialogOpen(true);
   };
 
-  // 알바생 추가
-  const handleAddEmployee = () => {
-    if (!newEmployee.name || !newEmployee.phoneNumber) {
-      alert("이름과 연락처는 필수 입력 항목입니다.");
-      return;
+  // 직원 추가/수정 핸들러
+  const handleAddEmployee = async () => {
+    try {
+      // 필수 필드 검증
+      if (!newEmployee.name || !newEmployee.phoneNumber) {
+        setSnackbar({
+          open: true,
+          message: "이름과 전화번호는 필수 입력 항목입니다.",
+          severity: "error",
+        });
+        return;
+      }
+
+      // 필요한 경우 ID 생성
+      let employeeToSave: Employee = {
+        id: newEmployee.id || Date.now().toString(),
+        name: newEmployee.name || "",
+        phoneNumber: newEmployee.phoneNumber || "",
+        email: newEmployee.email || "",
+        hourlyRate: newEmployee.hourlyRate || 9860,
+        role: newEmployee.role || "바리스타",
+        status: (newEmployee.status as any) || "active",
+        bankAccount: newEmployee.bankAccount || "",
+        birthDate: newEmployee.birthDate || "",
+      };
+
+      // 로컬 스토리지에 저장
+      const updatedEmployees = saveEmployee(employeeToSave, employees);
+      setEmployees(updatedEmployees);
+
+      setSnackbar({
+        open: true,
+        message: newEmployee.id
+          ? "직원 정보가 수정되었습니다."
+          : "새 직원이 추가되었습니다.",
+        severity: "success",
+      });
+
+      setDialogOpen(false);
+    } catch (err) {
+      console.error("직원 추가/수정 중 오류:", err);
+      setSnackbar({
+        open: true,
+        message: "직원 정보 저장 중 오류가 발생했습니다.",
+        severity: "error",
+      });
     }
-
-    const employee: Employee = {
-      id: `emp${Date.now()}`,
-      name: newEmployee.name || "",
-      phoneNumber: newEmployee.phoneNumber || "",
-      email: newEmployee.email || "",
-      hourlyRate: newEmployee.hourlyRate || 9620,
-      role: newEmployee.role || "알바생",
-      status:
-        (newEmployee.status as "active" | "inactive" | "pending") || "active",
-    };
-
-    const updatedEmployees = [...employees, employee];
-    setEmployees(updatedEmployees);
-    localStorage.setItem("manezy_employees", JSON.stringify(updatedEmployees));
-
-    setDialogOpen(false);
-    setNewEmployee({
-      name: "",
-      phoneNumber: "",
-      email: "",
-      hourlyRate: 9620,
-      role: "알바생",
-      status: "active",
-    });
   };
 
   // 알바생 상태에 따른 색상 반환 (반환 타입 명시)
@@ -257,7 +311,7 @@ function EmployeePage() {
       case "active":
         return "재직 중";
       case "inactive":
-        return "퇴직";
+        return "퇴직/휴직";
       case "pending":
         return "승인 대기";
       default:
@@ -380,6 +434,31 @@ function EmployeePage() {
     }
   };
 
+  // 직원 정보 저장 및 수정 함수 (로컬스토리지 사용)
+  const saveEmployee = (
+    employee: Employee,
+    employees: Employee[]
+  ): Employee[] => {
+    let updatedEmployees: Employee[];
+
+    // 기존 직원 수정인지 확인
+    const existingIndex = employees.findIndex((emp) => emp.id === employee.id);
+
+    if (existingIndex >= 0) {
+      // 기존 직원 수정
+      updatedEmployees = [...employees];
+      updatedEmployees[existingIndex] = employee;
+    } else {
+      // 새 직원 추가
+      updatedEmployees = [...employees, employee];
+    }
+
+    // 로컬 스토리지에 저장
+    localStorage.setItem("manezy_employees", JSON.stringify(updatedEmployees));
+
+    return updatedEmployees;
+  };
+
   if (loading) {
     return <Box p={3}>데이터를 불러오는 중...</Box>;
   }
@@ -413,7 +492,51 @@ function EmployeePage() {
         </Box>
       </Paper>
 
-      {/* 직원 테이블 (기본 정보 위주) */}
+      {/* API에서 가져온 근무자 목록 표시 */}
+      {apiWorkers.length > 0 && (
+        <>
+          <Typography variant="h6" gutterBottom>
+            API에서 가져온 근무자 목록 (지점 ID: {branchId})
+          </Typography>
+          <TableContainer component={Paper} sx={{ mb: 4 }}>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>이름</TableCell>
+                  <TableCell>역할</TableCell>
+                  <TableCell>이메일</TableCell>
+                  <TableCell>연락처</TableCell>
+                  <TableCell>시급</TableCell>
+                  <TableCell>상태</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {apiWorkers.map((worker, index) => (
+                  <TableRow key={index}>
+                    <TableCell>{worker.name}</TableCell>
+                    <TableCell>{worker.roles}</TableCell>
+                    <TableCell>{worker.email}</TableCell>
+                    <TableCell>{worker.phoneNums}</TableCell>
+                    <TableCell>{worker.cost.toLocaleString()}원</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={worker.status}
+                        color={getStatusColor(worker.status)}
+                        size="small"
+                      />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>
+      )}
+
+      {/* 로컬 직원 테이블 (기본 정보 위주) */}
+      <Typography variant="h6" gutterBottom>
+        로컬 데이터 직원 목록
+      </Typography>
       <TableContainer component={Paper}>
         <Table>
           <TableHead>
@@ -649,6 +772,17 @@ function EmployeePage() {
                   {selectedEmployee.hourlyRate.toLocaleString()}원
                 </Typography>
               </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>은행 계좌:</strong>{" "}
+                  {selectedEmployee.bankAccount || "-"}
+                </Typography>
+              </Grid>
+              <Grid item xs={12}>
+                <Typography>
+                  <strong>생년월일:</strong> {selectedEmployee.birthDate || "-"}
+                </Typography>
+              </Grid>
             </Grid>
           ) : (
             <Typography>선택된 직원이 없습니다.</Typography>
@@ -658,6 +792,21 @@ function EmployeePage() {
           <Button onClick={() => setDetailsOpen(false)}>닫기</Button>
         </DialogActions>
       </Dialog>
+
+      {/* 스낵바 */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

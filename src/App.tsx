@@ -8,7 +8,7 @@ import PayrollPage from "./routes/Payroll/PayrollPage";
 import StoreSettingsPage from "./routes/Settings/StoreSettingsPage";
 import LoginPage from "./routes/Auth/LoginPage";
 import SignupPage from "./routes/Auth/SignupPage";
-import { AuthProvider } from "./context/AuthContext";
+import { AuthProvider, useAuth } from "./context/AuthContext";
 import ProtectedRoute from "./components/Auth/ProtectedRoute";
 import AccountSettingsPage from "./routes/Settings/AccountSettingsPage";
 import {
@@ -48,6 +48,7 @@ const SetupCheck = () => {
   const [setupNeeded, setSetupNeeded] = useState(false);
   const [storeName, setStoreName] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   useEffect(() => {
     const checkSetup = async () => {
@@ -55,17 +56,51 @@ const SetupCheck = () => {
         // localStorage에서 직접 확인하여 API 호출 최소화
         const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
         const storeData = localStorage.getItem(LS_KEYS.STORE);
-        const needsSetup = !setupComplete || !storeData;
 
-        setSetupNeeded(needsSetup);
+        // 설정이 완료되었는지와 branchId가 존재하는지 모두 체크
+        let hasValidBranchId = false;
 
-        if (!needsSetup && storeData) {
+        if (storeData) {
           try {
             const storeInfo = JSON.parse(storeData);
             setStoreName(storeInfo?.name || "Your Store");
+            // branchId가 유효한지 확인 (null이나 undefined가 아닌지)
+            hasValidBranchId = !!storeInfo?.branchId;
+            console.log(
+              "StoreName:",
+              storeInfo?.name,
+              "BranchId:",
+              storeInfo?.branchId
+            );
           } catch (e) {
             console.error("Error parsing store data:", e);
           }
+        }
+
+        // 서버에서 제공한 branchIds가 있는지 확인
+        const hasBranchIdsFromServer = !!(
+          user?.branchIds && user.branchIds.length > 0
+        );
+        console.log(
+          "서버에서 제공한 branchIds 정보:",
+          hasBranchIdsFromServer ? user?.branchIds : "없음"
+        );
+
+        // 설정이 필요한 경우: 설정 완료 플래그가 없거나 지점 데이터가 없거나 branchId가 없는 경우
+        // 단, 서버에서 제공한 branchIds가 있으면 설정을 건너뛸 수 있음
+        const needsSetup =
+          !hasBranchIdsFromServer &&
+          (!setupComplete || !storeData || !hasValidBranchId);
+        setSetupNeeded(needsSetup);
+
+        if (needsSetup) {
+          console.log("지점 설정이 필요합니다. 마법사로 이동합니다.", {
+            serverBranchIds: hasBranchIdsFromServer,
+            setupComplete: !!setupComplete,
+            storeData: !!storeData,
+            hasValidBranchId,
+          });
+          navigate("/setup/wizard");
         }
       } catch (error) {
         console.error("Error checking setup:", error);
@@ -85,7 +120,7 @@ const SetupCheck = () => {
     }, 5000);
 
     return () => clearTimeout(timeoutId);
-  }, [loading]);
+  }, [loading, navigate, user]);
 
   const handleSetup = () => {
     navigate("/setup/wizard");
@@ -149,6 +184,8 @@ const SetupCheck = () => {
                     height: "100%",
                     display: "flex",
                     flexDirection: "column",
+                    boxShadow: "0px 2px 8px rgba(0, 0, 0, 0.1)",
+                    border: `2px solid ${appTheme.palette.primary.main}`,
                   }}
                 >
                   <CardContent sx={{ flexGrow: 1 }}>
@@ -172,8 +209,9 @@ const SetupCheck = () => {
                       variant="contained"
                       size="large"
                       onClick={handleSetup}
+                      startIcon={<StoreIcon />}
                     >
-                      시작하기
+                      매장 설정하기
                     </Button>
                   </CardActions>
                 </Card>
@@ -230,6 +268,7 @@ const SetupCheck = () => {
 const InitialRedirect = () => {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const { isAuthenticated, user } = useAuth();
 
   useEffect(() => {
     const checkSetup = async () => {
@@ -237,22 +276,62 @@ const InitialRedirect = () => {
         // localStorage에서 직접 확인하여 API 호출 최소화
         const setupComplete = localStorage.getItem(LS_KEYS.SETUP_COMPLETE);
         const storeData = localStorage.getItem(LS_KEYS.STORE);
-        const needsSetup = !setupComplete || !storeData;
 
-        // 설정 필요 여부에 따라 적절한 페이지로 리디렉션
-        if (needsSetup) {
-          console.log("초기 설정이 필요하므로 마법사로 이동합니다.");
-          navigate("/setup/wizard");
-        } else {
-          // 로그인 상태 확인
-          const authToken = localStorage.getItem(LS_KEYS.AUTH_TOKEN);
-          if (authToken) {
-            console.log("이미 로그인 상태이므로 대시보드로 이동합니다.");
-            navigate("/dashboard");
-          } else {
-            console.log("로그인이 필요합니다.");
-            navigate("/login");
+        // branchId가 있는지 확인
+        let hasValidBranchId = false;
+        if (storeData) {
+          try {
+            const storeInfo = JSON.parse(storeData);
+            hasValidBranchId = !!storeInfo?.branchId;
+            console.log("InitialRedirect - 지점 ID 확인:", storeInfo?.branchId);
+          } catch (e) {
+            console.error("Error parsing store data:", e);
           }
+        }
+
+        // 서버에서 제공한 branchIds가 있는지 확인
+        const hasBranchIdsFromServer = !!(
+          user?.branchIds && user.branchIds.length > 0
+        );
+        console.log(
+          "InitialRedirect - 서버 지점 정보:",
+          hasBranchIdsFromServer ? user?.branchIds : "없음"
+        );
+
+        // 로컬 스토리지 설정이 필요한지 확인 (서버에서 branchIds가 있으면 설정 불필요)
+        const needsSetup =
+          !hasBranchIdsFromServer &&
+          (!setupComplete || !storeData || !hasValidBranchId);
+
+        // 로그인 상태에 따라 적절한 페이지로 리디렉션
+        if (isAuthenticated) {
+          if (needsSetup) {
+            // 로그인은 했지만 매장 설정이 필요함
+            console.log(
+              "로그인 상태이지만 초기 설정이 필요하므로 마법사로 이동합니다.",
+              {
+                serverBranchIds: hasBranchIdsFromServer,
+                setupComplete: !!setupComplete,
+                storeData: !!storeData,
+                hasValidBranchId,
+              }
+            );
+            navigate("/setup/wizard");
+          } else {
+            // 로그인 상태이고 매장 설정도 완료됨 또는 서버에서 branchIds가 있음
+            console.log(
+              "로그인 상태이고 매장 설정 완료 또는 서버 지점 정보가 있어 대시보드로 이동합니다.",
+              {
+                fromServer: hasBranchIdsFromServer,
+                fromLocal: hasValidBranchId,
+              }
+            );
+            navigate("/dashboard");
+          }
+        } else {
+          // 로그인 필요
+          console.log("로그인이 필요합니다.");
+          navigate("/login");
         }
       } catch (error) {
         console.error("Error checking setup:", error);
@@ -274,7 +353,7 @@ const InitialRedirect = () => {
     }, 5000);
 
     return () => clearTimeout(timeoutId);
-  }, [navigate, loading]);
+  }, [navigate, loading, isAuthenticated, user]);
 
   if (loading) {
     return (

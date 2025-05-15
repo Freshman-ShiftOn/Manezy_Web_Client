@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -17,6 +17,7 @@ import {
   InputAdornment,
   Snackbar,
   Alert,
+  CircularProgress,
 } from "@mui/material";
 import {
   Add as AddIcon,
@@ -24,6 +25,12 @@ import {
   Edit as EditIcon,
 } from "@mui/icons-material";
 import { Employee } from "../../../lib/types";
+import {
+  BranchWorkerRequest,
+  createBranchWorker,
+  testAPIConnection,
+  API_BASE_URL,
+} from "../../../services/api";
 
 // 직원 타입 옵션
 const ROLE_OPTIONS = [
@@ -36,7 +43,10 @@ const ROLE_OPTIONS = [
 ];
 
 interface WizardStepEmployeesProps {
-  data: { employees: Partial<Employee>[] };
+  data: {
+    employees: Partial<Employee>[];
+    branchId?: number;
+  };
   baseHourlyRate: number;
   onUpdate: (data: { employees: Partial<Employee>[] }) => void;
   onNext: () => void;
@@ -57,17 +67,52 @@ function WizardStepEmployees({
   const [currentEmployee, setCurrentEmployee] = useState<Partial<Employee>>({
     name: "",
     phoneNumber: "",
+    email: "",
     role: "바리스타",
     hourlyRate: baseHourlyRate,
     status: "active",
   });
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [apiProcessing, setApiProcessing] = useState(false);
   const [snackbar, setSnackbar] = useState({
     open: false,
     message: "",
     severity: "success" as "success" | "error" | "info" | "warning",
   });
+  const [apiStatus, setApiStatus] = useState<{
+    checked: boolean;
+    ok: boolean;
+    message: string;
+  }>({
+    checked: false,
+    ok: false,
+    message: "",
+  });
+
+  // API 서버 연결 테스트
+  useEffect(() => {
+    const checkAPIConnection = async () => {
+      const result = await testAPIConnection();
+      setApiStatus({
+        checked: true,
+        ok: result.success,
+        message: result.message,
+      });
+
+      if (!result.success) {
+        console.warn("API 서버 연결 문제:", result.message);
+        setSnackbar({
+          open: true,
+          message: `API 서버 연결 문제가 감지되었습니다: ${result.message}`,
+          severity: "warning",
+        });
+      }
+    };
+
+    checkAPIConnection();
+  }, []);
 
   // 직원 추가/편집 대화상자 열기
   const handleOpenDialog = (index?: number) => {
@@ -81,6 +126,7 @@ function WizardStepEmployees({
         id: `emp-${Date.now()}`,
         name: "",
         phoneNumber: "",
+        email: "",
         role: "바리스타",
         hourlyRate: baseHourlyRate,
         status: "active",
@@ -133,31 +179,113 @@ function WizardStepEmployees({
   };
 
   // 직원 추가 또는 수정 완료
-  const handleSaveEmployee = () => {
+  const handleSaveEmployee = async () => {
     if (!validateEmployee()) return;
 
-    const updatedEmployees = [...employees];
-
-    if (editingIndex !== null) {
-      // 직원 정보 수정
-      updatedEmployees[editingIndex] = currentEmployee;
-    } else {
-      // 새 직원 추가
-      updatedEmployees.push(currentEmployee);
+    // API 서버 연결 확인
+    if (!apiStatus.checked || !apiStatus.ok) {
+      const connectionTest = await testAPIConnection();
+      if (!connectionTest.success) {
+        setSnackbar({
+          open: true,
+          message: `API 서버(${API_BASE_URL})에 연결할 수 없습니다. 올바른 URL인지 확인하세요: https://crewezy.epicode.co.kr`,
+          severity: "error",
+        });
+        return; // 연결 실패시 API 호출 중단
+      } else {
+        setApiStatus({
+          checked: true,
+          ok: true,
+          message: connectionTest.message,
+        });
+      }
     }
 
-    setEmployees(updatedEmployees);
-    onUpdate({ employees: updatedEmployees });
+    setLoading(true);
 
-    handleCloseDialog();
-    setSnackbar({
-      open: true,
-      message:
-        editingIndex !== null
-          ? "직원 정보가 수정되었습니다."
-          : "새 직원이 추가되었습니다.",
-      severity: "success",
-    });
+    try {
+      // 직원 정보를 API 형식으로 변환
+      const workerRequest: BranchWorkerRequest = {
+        branchId: data.branchId || 0, // 이전 단계에서 생성된 지점 ID
+        email: currentEmployee.email || `${currentEmployee.name}@example.com`, // 이메일이 없으면 임시 생성
+        name: currentEmployee.name || "",
+        phoneNums: currentEmployee.phoneNumber || "", // 주의: API 스펙에 맞게 phoneNums 사용
+        roles: currentEmployee.role || "알바생",
+        status: currentEmployee.status || "active",
+        cost: currentEmployee.hourlyRate || baseHourlyRate,
+      };
+
+      console.log("직원 등록 요청 데이터:", workerRequest);
+
+      // API 호출
+      const response = await createBranchWorker(workerRequest);
+      console.log("Worker registered successfully:", response);
+
+      // 임시 ID 생성 (응답에 ID가 없는 경우)
+      const tempId =
+        currentEmployee.id ||
+        `worker-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+
+      // 응답에서 받은 ID가 있으면 적용, 없으면 임시 ID 사용
+      const workerWithId = {
+        ...currentEmployee,
+        workerId: response && response.id ? response.id : tempId,
+      };
+
+      const updatedEmployees = [...employees];
+
+      if (editingIndex !== null) {
+        // 직원 정보 수정
+        updatedEmployees[editingIndex] = workerWithId;
+      } else {
+        // 새 직원 추가
+        updatedEmployees.push(workerWithId);
+      }
+
+      setEmployees(updatedEmployees);
+      onUpdate({ employees: updatedEmployees });
+
+      handleCloseDialog();
+      setSnackbar({
+        open: true,
+        message:
+          response.message ||
+          (editingIndex !== null
+            ? "직원 정보가 수정되었습니다."
+            : "새 직원이 추가되었습니다."),
+        severity: "success",
+      });
+    } catch (error) {
+      console.error("Worker registration failed:", error);
+
+      // 에러 메시지 생성
+      let errorMessage = "직원 등록 중 오류가 발생했습니다.";
+
+      if (error instanceof Error) {
+        if (error.message.includes("404")) {
+          errorMessage =
+            "API 경로를 찾을 수 없습니다 (404). 올바른 API URL인지 확인하세요: https://crewezy.epicode.co.kr/api/branch/workers";
+        } else if (error.message.includes("CORS")) {
+          errorMessage =
+            "CORS 오류: API 서버 접근 권한이 없습니다. 개발자에게 문의하세요.";
+        } else if (error.message.includes("서버 오류")) {
+          errorMessage = error.message;
+        } else if (error.message.includes("유효하지 않은 응답 형식")) {
+          errorMessage =
+            "서버에서 유효하지 않은 응답을 반환했습니다. API 서버를 확인해주세요.";
+        } else {
+          errorMessage = error.message;
+        }
+      }
+
+      setSnackbar({
+        open: true,
+        message: errorMessage,
+        severity: "error",
+      });
+    } finally {
+      setLoading(false);
+    }
   };
 
   // 직원 삭제
@@ -189,7 +317,7 @@ function WizardStepEmployees({
   };
 
   // 다음 단계로 이동 전 유효성 검사
-  const handleNext = () => {
+  const handleNext = async () => {
     if (employees.length === 0) {
       setSnackbar({
         open: true,
@@ -199,11 +327,123 @@ function WizardStepEmployees({
       return;
     }
 
-    onNext();
+    // API 서버 연결 확인
+    if (!apiStatus.checked || !apiStatus.ok) {
+      const connectionTest = await testAPIConnection();
+      if (!connectionTest.success) {
+        setSnackbar({
+          open: true,
+          message: `API 서버(${API_BASE_URL})에 연결할 수 없습니다. 올바른 URL인지 확인하세요: https://crewezy.epicode.co.kr`,
+          severity: "error",
+        });
+        return;
+      } else {
+        setApiStatus({
+          checked: true,
+          ok: true,
+          message: connectionTest.message,
+        });
+      }
+    }
+
+    setApiProcessing(true);
+
+    try {
+      // 아직 API로 등록되지 않은 직원들을 등록
+      const unregisteredEmployees = employees.filter((emp) => !emp.workerId);
+
+      // 미등록 직원을 위한 추가 등록 시도
+      if (unregisteredEmployees.length > 0) {
+        console.log(
+          `${unregisteredEmployees.length}명의 미등록 직원을 등록합니다.`
+        );
+
+        for (const employee of unregisteredEmployees) {
+          const workerRequest: BranchWorkerRequest = {
+            branchId: data.branchId || 0,
+            email: employee.email || `${employee.name}@example.com`,
+            name: employee.name || "",
+            phoneNums: employee.phoneNumber || "", // 주의: API 스펙에 맞게 phoneNums 사용
+            roles: employee.role || "알바생",
+            status: employee.status || "active",
+            cost: employee.hourlyRate || baseHourlyRate,
+          };
+
+          try {
+            console.log("미등록 직원 등록 요청:", workerRequest);
+            await createBranchWorker(workerRequest);
+          } catch (workerError) {
+            console.warn(
+              `직원 '${employee.name}' 등록 실패, 계속 진행합니다:`,
+              workerError
+            );
+            // 개별 직원 등록 실패는 무시하고 계속 진행
+          }
+        }
+      }
+
+      // 응답 성공 여부와 관계없이 다음 단계로 진행
+      onNext();
+    } catch (error) {
+      console.error("Failed to register remaining workers:", error);
+
+      let errorMessage = "일부 직원 등록에 실패했습니다. 다시 시도해주세요.";
+
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      // 에러가 발생해도 사용자에게 계속 진행할 옵션 제공
+      setSnackbar({
+        open: true,
+        message: `${errorMessage} 그래도 계속 진행하시겠습니까?`,
+        severity: "warning",
+      });
+
+      // 실패했더라도 5초 후 자동 진행
+      setTimeout(() => {
+        onNext();
+      }, 5000);
+    } finally {
+      setApiProcessing(false);
+    }
   };
 
   return (
     <Box sx={{ py: 2 }}>
+      {!apiStatus.ok && apiStatus.checked && (
+        <Alert
+          severity="warning"
+          sx={{ mb: 3 }}
+          action={
+            <Button
+              color="inherit"
+              size="small"
+              onClick={async () => {
+                const result = await testAPIConnection();
+                setApiStatus({
+                  checked: true,
+                  ok: result.success,
+                  message: result.message,
+                });
+                setSnackbar({
+                  open: true,
+                  message: result.success
+                    ? "서버 연결 확인 완료! 정상적으로 연결되었습니다."
+                    : `서버 연결 실패: ${result.message}`,
+                  severity: result.success ? "success" : "error",
+                });
+              }}
+            >
+              재시도
+            </Button>
+          }
+        >
+          API 서버({API_BASE_URL})에 연결할 수 없습니다. 직원 등록이 실패할 수
+          있습니다.
+        </Alert>
+      )}
+
       <Typography variant="h6" gutterBottom>
         직원 정보를 등록해주세요
       </Typography>
@@ -278,11 +518,15 @@ function WizardStepEmployees({
       )}
 
       <Box sx={{ mt: 4, display: "flex", justifyContent: "space-between" }}>
-        <Button variant="outlined" onClick={onBack}>
+        <Button variant="outlined" onClick={onBack} disabled={apiProcessing}>
           이전
         </Button>
-        <Button variant="contained" onClick={handleNext}>
-          다음
+        <Button
+          variant="contained"
+          onClick={handleNext}
+          disabled={apiProcessing}
+        >
+          {apiProcessing ? <CircularProgress size={24} /> : "다음"}
         </Button>
       </Box>
 
@@ -322,6 +566,18 @@ function WizardStepEmployees({
                 error={!!errors.phoneNumber}
                 helperText={errors.phoneNumber}
                 margin="normal"
+              />
+            </Grid>
+            <Grid item xs={12}>
+              <TextField
+                label="이메일"
+                name="email"
+                type="email"
+                value={currentEmployee.email || ""}
+                onChange={handleEmployeeInputChange}
+                fullWidth
+                margin="normal"
+                placeholder="example@email.com"
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -366,11 +622,19 @@ function WizardStepEmployees({
           </Grid>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseDialog} color="inherit">
+          <Button
+            onClick={handleCloseDialog}
+            color="inherit"
+            disabled={loading}
+          >
             취소
           </Button>
-          <Button onClick={handleSaveEmployee} variant="contained">
-            저장
+          <Button
+            onClick={handleSaveEmployee}
+            variant="contained"
+            disabled={loading}
+          >
+            {loading ? <CircularProgress size={24} /> : "저장"}
           </Button>
         </DialogActions>
       </Dialog>

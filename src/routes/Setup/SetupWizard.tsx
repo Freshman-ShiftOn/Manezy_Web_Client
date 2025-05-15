@@ -108,6 +108,7 @@ export default function SetupWizard() {
   };
 
   const handleStoreUpdate = (data: Partial<Store>) => {
+    // 브랜치 ID가 있으면 직원 등록을 위해 저장
     setStoreData(data);
     localStorage.setItem(LS_KEYS.STORE, JSON.stringify(data));
   };
@@ -147,7 +148,10 @@ export default function SetupWizard() {
       case 1:
         return (
           <WizardStepEmployees
-            data={{ employees: employees }}
+            data={{
+              employees: employees,
+              branchId: storeData.branchId,
+            }}
             baseHourlyRate={storeData.baseHourlyRate || 9860}
             onUpdate={handleEmployeesUpdate}
             onNext={handleNext}

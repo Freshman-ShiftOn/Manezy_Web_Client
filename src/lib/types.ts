@@ -8,6 +8,7 @@ export interface Store {
   openingHour: string; // '09:00'
   closingHour: string; // '22:00'
   weeklyHolidayHoursThreshold?: number; // 주휴수당 계산 기준 시간 (주당) - Optional 추가
+  branchId?: number; // API에서 반환되는 지점 ID
   // 추가 정보는 필요에 따라 확장
 }
 
@@ -24,6 +25,7 @@ export interface Employee {
   birthDate?: string; // 생년월일
   // 추가 정보는 필요에 따라 확장
   availableTimes?: EmployeeAvailability[]; // 근무 가능한 시간대
+  workerId?: number; // API에서 반환되는 근무자 ID
 }
 
 // 알바생 가능 근무시간 타입
