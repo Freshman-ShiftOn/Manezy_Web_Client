@@ -2383,3 +2383,216 @@ export const getSalaryTotal = async (
     throw error;
   }
 };
+
+// ====================== 캘린더 API ======================
+
+// 캘린더 생성 요청 인터페이스
+export interface CalendarCreateRequest {
+  branchId: number;
+  workerIds: number[];
+  startTime: string;
+  endTime: string;
+  workType: string[];
+  inputType: number;
+}
+
+// 캘린더 이벤트 조회 API 응답 인터페이스
+export interface CalendarEventResponse {
+  id: number; // 실제 API는 int ID를 반환
+  workerId: number;
+  workerName: string;
+  branchId: number;
+  workType: string[];
+  inputType: number;
+  repeatGroupId?: number; // Optional로 처리
+  startTime: string; // ISO Date string
+  endTime: string; // ISO Date string
+  lastUpdated: string; // ISO Date string
+}
+
+// 캘린더 일정 등록 API
+export const createCalendarEvent = async (
+  branchId: number | string,
+  data: {
+    workerIds: number[];
+    startTime: string;
+    endTime: string;
+    workType: string[];
+    inputType: number;
+  }
+): Promise<any> => {
+  try {
+    console.group("캘린더 일정 등록");
+    console.log(`브랜치 ID ${branchId}의 캘린더 일정 등록 요청:`, data);
+    console.log("원본 시작 시간:", data.startTime);
+    console.log("원본 종료 시간:", data.endTime);
+
+    // API 경로
+    const url = `${API_BASE_URL}/api/calendar/${branchId}/owner`;
+    console.log("API 요청 URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+    if (!authToken) {
+      throw new Error("인증 토큰이 없습니다. 다시 로그인해주세요.");
+    }
+
+    console.log(
+      "인증 토큰 확인됨 (첫 10자):",
+      authToken.substring(0, 10) + "..."
+    );
+
+    // 날짜 포맷 변환 로직 제거 - 모달에서 설정한 형식 그대로 사용
+
+    // 요청 데이터 생성
+    const requestData = {
+      branchId: Number(branchId),
+      ...data,
+      // 시간 형식 유지 (변환하지 않음)
+      startTime: data.startTime,
+      endTime: data.endTime,
+    };
+
+    console.log("요청 데이터:", requestData);
+
+    // POST 요청 생성
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+      body: JSON.stringify(requestData),
+    });
+
+    console.log("응답 상태 코드:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("API 오류 응답 원본:", errorText);
+
+      let errorData;
+      let errorMessage = `API 오류: ${response.status} ${response.statusText}`;
+
+      try {
+        errorData = JSON.parse(errorText);
+        console.error("API 오류 응답 파싱:", errorData);
+
+        if (errorData.message) {
+          errorMessage = errorData.message;
+        } else if (errorData.error) {
+          errorMessage = errorData.error;
+        }
+      } catch (parseError) {
+        errorData = { message: errorText || "서버 오류" };
+        errorMessage = errorText || `캘린더 등록 실패 (${response.status})`;
+      }
+
+      // 특정 상태 코드에 따른 메시지 처리
+      if (response.status === 401) {
+        errorMessage = "인증이 만료되었습니다. 다시 로그인해주세요.";
+        // 토큰 제거
+        localStorage.removeItem(LS_KEYS.AUTH_TOKEN);
+      } else if (response.status === 403) {
+        errorMessage = "캘린더 등록 권한이 없습니다.";
+      } else if (response.status === 404) {
+        errorMessage = "API 경로를 찾을 수 없습니다.";
+      } else if (response.status >= 500) {
+        errorMessage = "서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.";
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    // 응답 처리
+    const responseText = await response.text();
+    let responseData = {};
+
+    if (responseText && responseText.trim() !== "") {
+      try {
+        responseData = JSON.parse(responseText);
+        console.log("캘린더 일정 등록 성공:", responseData);
+      } catch (parseError) {
+        console.warn("응답을 JSON으로 파싱할 수 없습니다:", responseText);
+        responseData = {
+          success: true,
+          message: "캘린더 일정이 등록되었습니다",
+        };
+      }
+    } else {
+      responseData = { success: true, message: "캘린더 일정이 등록되었습니다" };
+    }
+
+    console.groupEnd();
+    return responseData;
+  } catch (error: any) {
+    console.error("캘린더 일정 등록 중 오류 발생:", error);
+    console.groupEnd();
+    throw error;
+  }
+};
+
+// 캘린더 일정 조회 API
+export const getCalendarEvents = async (
+  branchId: number | string,
+  start: string, // Changed from startDateTime to start
+  end: string // Changed from endDateTime to end
+): Promise<CalendarEventResponse[]> => {
+  try {
+    console.group("캘린더 일정 조회");
+    console.log(
+      `브랜치 ID ${branchId}의 캘린더 일정 조회 요청: ${start} ~ ${end}`
+    );
+
+    // API 경로 및 쿼리 파라미터
+    // 서버 API가 startDate, endDate을 요구하므로 파라미터 이름 변경
+    const url = `${API_BASE_URL}/api/calendar/${branchId}/range?startDate=${encodeURIComponent(
+      start
+    )}&endDate=${encodeURIComponent(end)}`;
+    console.log("API 요청 URL:", url);
+
+    // JWT 토큰 가져오기
+    const authToken = getAuthToken();
+    if (!authToken) {
+      throw new Error("인증 토큰이 없습니다. 다시 로그인해주세요.");
+    }
+
+    // GET 요청 생성
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authToken}`,
+      },
+    });
+
+    console.log("응답 상태 코드:", response.status);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("API 오류 응답 원본:", errorText);
+      let errorMessage = `API 오류: ${response.status}`;
+      try {
+        const errorData = JSON.parse(errorText);
+        errorMessage = errorData.message || errorData.error || errorMessage;
+      } catch (parseError) {
+        /* 원본 텍스트 사용 */
+      }
+
+      if (response.status === 401) {
+        errorMessage = "인증이 만료되었습니다. 다시 로그인해주세요.";
+        localStorage.removeItem(LS_KEYS.AUTH_TOKEN);
+      }
+      throw new Error(errorMessage);
+    }
+
+    const responseData = await response.json();
+    console.log("캘린더 일정 조회 성공:", responseData);
+    console.groupEnd();
+    return responseData as CalendarEventResponse[];
+  } catch (error: any) {
+    console.error("캘린더 일정 조회 중 오류 발생:", error);
+    console.groupEnd();
+    throw error;
+  }
+};

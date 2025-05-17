@@ -98,9 +98,12 @@ import {
   getStoreInfo,
   getShifts,
   saveShift,
-  deleteShift, // 삭제 API 추가
+  deleteShift,
+  createCalendarEvent,
+  getBranchWorkers,
+  getCalendarEvents,
 } from "../../services/api";
-import { Employee, Store, Shift } from "../../lib/types";
+import { Employee, Store, Shift, CalendarEventResponse } from "../../lib/types";
 import { useNavigate } from "react-router-dom";
 import {
   format,
@@ -111,8 +114,13 @@ import {
   endOfWeek,
   differenceInDays,
   addHours,
+  parseISO,
+  startOfDay,
+  endOfDay,
 } from "date-fns";
 import { alpha } from "@mui/material/styles";
+import { useBranch } from "../../context/BranchContext";
+import throttle from "lodash/throttle";
 
 // 사용자 정의 CSS 스타일 (시간 가시성 개선)
 const schedulerStyles = {
@@ -237,6 +245,7 @@ const SchedulePage: React.FC = () => {
   const theme = useTheme();
   const calendarRef = useRef<any>(null);
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const { selectedBranchId } = useBranch();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -245,7 +254,7 @@ const SchedulePage: React.FC = () => {
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [filteredEmployeeIds, setFilteredEmployeeIds] = useState<string[]>([]);
-  const [showSidePanel, setShowSidePanel] = useState(false); // 초기값을 항상 false로 설정
+  const [showSidePanel, setShowSidePanel] = useState(false);
   const [showUnassignedOnly, setShowUnassignedOnly] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(
     null
@@ -263,47 +272,303 @@ const SchedulePage: React.FC = () => {
   const [snackbarSeverity, setSnackbarSeverity] = useState<
     "success" | "error" | "info" | "warning"
   >("success");
+  const [currentCalendarDate, setCurrentCalendarDate] = useState<Date>(
+    new Date()
+  );
+  const [lastLoadedBranchId, setLastLoadedBranchId] = useState<string | null>(
+    null
+  );
+  const [lastLoadedDateString, setLastLoadedDateString] = useState<string>("");
 
-  // --- Helper Functions ---
-  const getEmployeeColor = useCallback(
-    (employeeId: string | undefined): string => {
-      if (!employeeId) return "#888888";
-      const index = employees.findIndex((emp) => emp.id === employeeId);
-      return EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length] || "#888888";
+  // Store date format as ref to avoid recalculations
+  const formatDateForAPI = useCallback((date: Date) => {
+    return format(date, "yyyy-MM-dd");
+  }, []);
+
+  // KEEP ONLY THIS VERSION - the standalone function that takes empList as parameter
+  const getEmployeeColor = (
+    employeeId: string | undefined,
+    empList: Employee[]
+  ): string => {
+    if (!employeeId) return "#888888";
+    const index = empList.findIndex((emp) => emp.id === employeeId);
+    return EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length] || "#888888";
+  };
+
+  // *** Moved process logic directly into loadData to avoid circular dependencies ***
+  const loadData = useCallback(
+    async (forceReload: boolean = false) => {
+      if (!selectedBranchId) {
+        setError("브랜치가 선택되지 않았습니다. 먼저 브랜치를 선택해주세요.");
+        setLoading(false);
+        setEvents([]);
+        setEmployees([]);
+        return;
+      }
+
+      // Calculate current date range for querying
+      const weekStartISO = startOfWeek(currentCalendarDate, {
+        weekStartsOn: 1,
+      });
+      const weekEndISO = endOfWeek(currentCalendarDate, { weekStartsOn: 1 });
+      const queryStartDate = formatDateForAPI(startOfDay(weekStartISO));
+      const queryEndDate = formatDateForAPI(endOfDay(weekEndISO));
+
+      // Create a unique string representing this data load to prevent unnecessary reloads
+      const loadKey = `${selectedBranchId}-${queryStartDate}-${queryEndDate}`;
+
+      // Skip duplicate loads unless forced
+      if (
+        !forceReload &&
+        loadKey === lastLoadedDateString &&
+        selectedBranchId === lastLoadedBranchId
+      ) {
+        console.log("Skipping duplicate data load:", loadKey);
+        return;
+      }
+
+      console.log(
+        `Loading data for branch: ${selectedBranchId}, range: ${queryStartDate} to ${queryEndDate}`
+      );
+      setLoading(true);
+      setError(null);
+
+      try {
+        // Store info load
+        const storeData = await getStoreInfo();
+        setStore(storeData);
+
+        // Employee data load
+        let freshEmployees: Employee[] = [];
+        try {
+          const branchWorkersData = await getBranchWorkers(selectedBranchId);
+          freshEmployees = branchWorkersData.map((worker) => ({
+            id:
+              worker.userId ||
+              `temp-worker-${Math.random().toString(36).substring(2, 9)}`,
+            name: worker.name,
+            phoneNumber: worker.phoneNums || "",
+            email: worker.email || "",
+            hourlyRate:
+              typeof worker.cost === "string"
+                ? parseInt(worker.cost, 10)
+                : worker.cost || 9860,
+            role: worker.roles || "",
+            status: (worker.status === "재직중" || worker.status === "active"
+              ? "active"
+              : "inactive") as "active" | "inactive" | "pending",
+            workerId: worker.userId ? Number(worker.userId) : undefined,
+          }));
+        } catch (branchError) {
+          console.error("Error loading branch workers:", branchError);
+          freshEmployees = (await getEmployees()) || [];
+        }
+        setEmployees(freshEmployees);
+        setFilteredEmployeeIds(freshEmployees.map((e) => e.id));
+
+        // Calendar data load
+        console.log(
+          `Fetching calendar events for YYYY-MM-DD range: ${queryStartDate} to ${queryEndDate}`
+        );
+        const calendarApiEvents: CalendarEventResponse[] =
+          await getCalendarEvents(
+            selectedBranchId,
+            queryStartDate,
+            queryEndDate
+          );
+
+        // Add detailed debugging
+        console.log(
+          "RAW API calendar events:",
+          JSON.stringify(calendarApiEvents, null, 2)
+        );
+
+        // Ensure proper date formatting for FullCalendar
+        const mappedShifts: Shift[] = calendarApiEvents.map((apiEvent) => {
+          // Make sure we have valid date strings for start/end times
+          let startTime = apiEvent.startTime;
+          let endTime = apiEvent.endTime;
+
+          // Keep original date strings - don't convert to ISO format with Z
+          // This preserves the intended date/time without timezone shifting
+
+          const mappedShift: Shift = {
+            id: apiEvent.id.toString(),
+            storeId: apiEvent.branchId.toString(),
+            start: startTime,
+            end: endTime,
+            employeeIds: apiEvent.workerId
+              ? [apiEvent.workerId.toString()]
+              : [],
+            shiftType:
+              apiEvent.workType && apiEvent.workType.length > 0
+                ? (apiEvent.workType[0] as "open" | "middle" | "close")
+                : "middle",
+            title: apiEvent.workerName || `일정 #${apiEvent.id}`,
+            isRecurring: !!apiEvent.repeatGroupId,
+            requiredStaff: 1,
+            note: `Input Type: ${apiEvent.inputType}`,
+          };
+
+          return mappedShift;
+        });
+
+        console.log("Mapped shifts:", mappedShifts);
+
+        setShifts(mappedShifts);
+
+        // *** Process shifts to events directly here (logic moved from processShiftsToEvents) ***
+        if (!freshEmployees?.length && !mappedShifts?.length) {
+          setEvents([]);
+        } else {
+          const mappedEvents = mappedShifts.map((shift): CalendarEvent => {
+            const assignedEmployeesThisShift = freshEmployees.filter((emp) =>
+              shift.employeeIds?.includes(emp.id)
+            );
+            const employeeNames = assignedEmployeesThisShift.map(
+              (emp) => emp.name
+            );
+
+            let title = shift.title || shift.shiftType || "근무";
+            if (
+              assignedEmployeesThisShift.length > 0 &&
+              assignedEmployeesThisShift[0]
+            ) {
+              title = employeeNames[0];
+              if (employeeNames.length > 1) {
+                title += ` 외 ${employeeNames.length - 1}명`;
+              }
+            } else if (shift.requiredStaff && shift.requiredStaff > 0) {
+              title = `미배정 (${shift.requiredStaff}명 필요)`;
+            }
+
+            const eventColor =
+              assignedEmployeesThisShift.length > 0 &&
+              assignedEmployeesThisShift[0]
+                ? getEmployeeColor(
+                    assignedEmployeesThisShift[0].id,
+                    freshEmployees
+                  )
+                : "#AAAAAA";
+
+            // Make sure we validate the date format to avoid FullCalendar issues
+            const startDate = shift.start ? new Date(shift.start) : new Date();
+            const endDate = shift.end
+              ? new Date(shift.end)
+              : new Date(startDate.getTime() + 60 * 60 * 1000);
+
+            const calendarEvent: CalendarEvent = {
+              id: shift.id.toString(),
+              title: title,
+              start: shift.start,
+              end: shift.end,
+              backgroundColor: eventColor,
+              borderColor: eventColor,
+              textColor: "#ffffff",
+              extendedProps: {
+                employeeIds: shift.employeeIds || [],
+                employeeNames: employeeNames,
+                note: shift.note,
+                shiftType: shift.shiftType || "middle",
+                requiredStaff: shift.requiredStaff || 1,
+                isRecurring: shift.isRecurring,
+              },
+            };
+
+            return calendarEvent;
+          });
+
+          console.log("Final calendar events:", mappedEvents);
+          setEvents(mappedEvents);
+        }
+
+        // Record that we successfully loaded this data
+        setLastLoadedBranchId(selectedBranchId);
+        setLastLoadedDateString(loadKey);
+      } catch (err) {
+        console.error("loadData: Error loading data:", err);
+        setError("데이터 로딩 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
+        setEvents([]);
+      } finally {
+        setLoading(false);
+        console.log("loadData: Finished");
+      }
     },
-    [employees]
+    [selectedBranchId, formatDateForAPI]
+  ); // *** REMOVED currentCalendarDate dependency
+
+  // Initial data load
+  useEffect(() => {
+    loadData(true); // Force initial load
+  }, [loadData]);
+
+  // Update when calendar date changes, but throttled to prevent excessive API calls
+  useEffect(() => {
+    loadData(false); // Don't force reload for date changes
+  }, [currentCalendarDate, loadData]);
+
+  // Throttled handler for calendar navigation to prevent too many state updates
+  const handleDatesSet = useCallback(
+    throttle((arg: any) => {
+      if (arg.view && arg.view.currentStart) {
+        const newDate = new Date(arg.view.currentStart);
+
+        // Check if date truly changed to a different day before setting state
+        if (
+          newDate.getFullYear() !== currentCalendarDate.getFullYear() ||
+          newDate.getMonth() !== currentCalendarDate.getMonth() ||
+          newDate.getDate() !== currentCalendarDate.getDate()
+        ) {
+          console.log("Calendar dates changed to:", newDate);
+          setCurrentCalendarDate(newDate);
+        }
+      }
+    }, 300),
+    [currentCalendarDate]
   );
 
   const processShiftsToEvents = useCallback(
-    (shiftsData: Shift[], employeesData: Employee[]) => {
-      if (!employeesData?.length) {
+    (shiftsData: Shift[], currentEmployeesArg: Employee[]) => {
+      if (!currentEmployeesArg?.length && !shiftsData?.length) {
         setEvents([]);
         return;
       }
-      const colorMap = new Map<string, string>();
-      employeesData.forEach((emp) =>
-        colorMap.set(emp.id, getEmployeeColor(emp.id))
-      );
+
+      const getColorForProcessedEmployee = (
+        empId: string | undefined
+      ): string => {
+        if (!empId) return "#AAAAAA";
+        const index = currentEmployeesArg.findIndex((e) => e.id === empId);
+        if (index === -1) return "#AAAAAA";
+        return EMPLOYEE_COLORS[index % EMPLOYEE_COLORS.length] || "#AAAAAA";
+      };
 
       const mappedEvents = shiftsData.map((shift): CalendarEvent => {
-        const assignedEmployees = employeesData.filter((emp) =>
+        const assignedEmployeesThisShift = currentEmployeesArg.filter((emp) =>
           shift.employeeIds?.includes(emp.id)
         );
-        const employeeNames = assignedEmployees.map((emp) => emp.name);
+        const employeeNames = assignedEmployeesThisShift.map((emp) => emp.name);
 
-        let title = shift.shiftType || "근무";
-        if (assignedEmployees.length > 0) {
+        let title = shift.title || shift.shiftType || "근무";
+        if (
+          assignedEmployeesThisShift.length > 0 &&
+          assignedEmployeesThisShift[0]
+        ) {
           title = employeeNames[0];
-          if (employeeNames.length > 1)
+          if (employeeNames.length > 1) {
             title += ` 외 ${employeeNames.length - 1}명`;
+          }
+        } else if (shift.requiredStaff && shift.requiredStaff > 0) {
+          title = `미배정 (${shift.requiredStaff}명 필요)`;
         }
+
         const eventColor =
-          assignedEmployees.length > 0
-            ? colorMap.get(assignedEmployees[0].id)
+          assignedEmployeesThisShift.length > 0 && assignedEmployeesThisShift[0]
+            ? getColorForProcessedEmployee(assignedEmployeesThisShift[0].id)
             : "#AAAAAA";
 
         return {
-          id: shift.id,
+          id: shift.id.toString(),
           title: title,
           start: shift.start,
           end: shift.end,
@@ -316,12 +581,13 @@ const SchedulePage: React.FC = () => {
             note: shift.note,
             shiftType: shift.shiftType || "middle",
             requiredStaff: shift.requiredStaff || 1,
+            isRecurring: shift.isRecurring,
           },
         };
       });
       setEvents(mappedEvents);
     },
-    [employees, getEmployeeColor]
+    []
   );
 
   const renderEventContent = (eventInfo: EventContentArg): React.ReactNode => {
@@ -502,7 +768,7 @@ const SchedulePage: React.FC = () => {
                       width: "6px",
                       height: "6px",
                       borderRadius: "50%",
-                      bgcolor: getEmployeeColor(empId),
+                      bgcolor: getEmployeeColor(empId, employees),
                       display: "inline-block",
                       flexShrink: 0,
                     }}
@@ -523,48 +789,6 @@ const SchedulePage: React.FC = () => {
       </Box>
     );
   };
-
-  // --- Data Loading ---
-  useEffect(() => {
-    let isMounted = true;
-    const loadData = async () => {
-      console.log("loadData: Attempting...");
-      try {
-        setLoading(true);
-        const [employeesData, shiftsData, storeData] = await Promise.all([
-          getEmployees(),
-          getShifts(),
-          getStoreInfo(),
-        ]);
-        if (isMounted) {
-          console.log(
-            "loadData: Fetched employees:",
-            employeesData?.length,
-            "shifts:",
-            shiftsData?.length
-          );
-          setEmployees(employeesData || []);
-          setShifts(shiftsData || []);
-          setStore(storeData);
-          setFilteredEmployeeIds(employeesData?.map((e) => e.id) || []);
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error("loadData: Error loading data:", err);
-          setError("데이터 로딩 중 오류가 발생했습니다. 콘솔을 확인해주세요.");
-        }
-      } finally {
-        if (isMounted) {
-          setLoading(false);
-          console.log("loadData: Finished");
-        }
-      }
-    };
-    loadData();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   // --- Event Handlers ---
   const handleEmployeeFilter = (employeeId: string) => {
@@ -597,53 +821,122 @@ const SchedulePage: React.FC = () => {
     setSelectedEvent(null);
   };
 
+  const handleAddNewShift = () => {
+    // 현재 날짜와 시간으로 기본값 설정
+    const now = new Date();
+    const start = new Date(now);
+    start.setHours(9, 0, 0, 0); // 오전 9시로 설정
+    const end = new Date(now);
+    end.setHours(13, 0, 0, 0); // 오후 1시로 설정
+
+    setSelectedEvent({
+      id: uuidv4(),
+      title: "새 근무",
+      start: start.toISOString(),
+      end: end.toISOString(),
+      backgroundColor: "#4285F4",
+      borderColor: "#4285F4",
+      textColor: "#FFFFFF",
+      extendedProps: {
+        employeeIds: [],
+        shiftType: "middle",
+        requiredStaff: 1,
+      },
+    });
+    setIsNewEvent(true);
+    setIsDialogOpen(true);
+  };
+
   const handleSaveShift = async (updatedEventData: CalendarEvent) => {
-    console.log("handleSaveShift: Received event data:", updatedEventData);
-    setIsDialogOpen(false);
-
     try {
-      const shiftToSave: Partial<Shift> = {
-        id: updatedEventData.id,
-        start: updatedEventData.start,
-        end: updatedEventData.end,
-        employeeIds: updatedEventData.extendedProps?.employeeIds || [],
-        requiredStaff: updatedEventData.extendedProps?.requiredStaff,
-        shiftType: updatedEventData.extendedProps?.shiftType,
-        note: updatedEventData.extendedProps?.note,
-        storeId: store?.id || "s1",
-        title: updatedEventData.title,
-        isRecurring: false,
-      };
+      setLoading(true);
+      console.log("Saving shift...", updatedEventData);
 
-      console.log("handleSaveShift: Calling saveShift API with:", shiftToSave);
-      const savedShift = { ...shiftToSave } as Shift;
+      // Find if this is a new shift or an existing one
+      const existingEvent = events.find((e) => e.id === updatedEventData.id);
+      const isNew = !existingEvent;
 
-      setShifts((prevShifts) => {
-        const index = prevShifts.findIndex((s) => s.id === savedShift.id);
-        if (index !== -1) {
-          const newShifts = [...prevShifts];
-          newShifts[index] = savedShift;
-          return newShifts;
+      console.log("Saving single shift event:", updatedEventData.extendedProps);
+      console.log("일정 시작 시간 (변환 전):", updatedEventData.start);
+      console.log("일정 종료 시간 (변환 전):", updatedEventData.end);
+
+      if (isNew) {
+        // New shift - Send to the /api/calendar/{branchId}/owner endpoint
+        if (selectedBranchId) {
+          // Format worker IDs (must be numbers for API)
+          const workerIds = updatedEventData.extendedProps.employeeIds.map(
+            (id: string) => Number(id)
+          );
+
+          // 시간 문자열을 그대로 사용 (이미 ShiftDialog에서 올바른 형식으로 변환됨)
+          const calendarRequest = {
+            workerIds: workerIds,
+            startTime: updatedEventData.start,
+            endTime: updatedEventData.end,
+            workType: [updatedEventData.extendedProps.shiftType || "middle"],
+            inputType: 0, // Default value
+          };
+
+          console.log("Sending calendar creation request:", calendarRequest);
+
+          // Call the API to create the calendar event
+          await createCalendarEvent(selectedBranchId, calendarRequest);
+
+          // Reload data to get the newly created shift
+          await loadData(true);
+
+          setSnackbarMessage("새 근무가 성공적으로 추가되었습니다.");
+          setSnackbarSeverity("success");
+          setSnackbarOpen(true);
         } else {
-          return [...prevShifts, savedShift];
+          throw new Error("브랜치를 선택해주세요.");
         }
-      });
+      } else {
+        // For existing shifts, continue using the existing saveShift method
+        if (store) {
+          const shiftData: Shift = {
+            id: updatedEventData.id,
+            storeId: store.id,
+            start: updatedEventData.start,
+            end: updatedEventData.end,
+            isRecurring: false,
+            employeeIds: updatedEventData.extendedProps.employeeIds,
+            shiftType: updatedEventData.extendedProps.shiftType,
+            title: updatedEventData.title,
+            requiredStaff: updatedEventData.extendedProps.requiredStaff,
+          };
 
-      const updatedShiftsForEvents = isNewEvent
-        ? [...shifts, savedShift]
-        : shifts.map((s) => (s.id === savedShift.id ? savedShift : s));
+          await saveShift(shiftData);
 
-      processShiftsToEvents(updatedShiftsForEvents, employees);
+          // Update local state
+          const updatedShifts = shifts.map((s) =>
+            s.id === shiftData.id ? shiftData : s
+          );
+          setShifts(updatedShifts);
 
-      console.log("handleSaveShift: Local state updated.");
-      setSnackbarMessage("근무 일정이 저장되었습니다.");
-      setSnackbarSeverity("success");
-      setSnackbarOpen(true);
+          // Process shifts to create calendar events
+          // Instead of using processShiftsToEvents which is now integrated into loadData,
+          // we'll reload all data
+          await loadData(true);
+
+          setSnackbarMessage("근무가 수정되었습니다.");
+          setSnackbarSeverity("success");
+          setSnackbarOpen(true);
+        }
+      }
+
+      setIsDialogOpen(false);
     } catch (error) {
-      console.error("Error saving shift:", error);
-      setSnackbarMessage("근무 일정 저장 중 오류가 발생했습니다.");
+      console.error("Failed to save shift:", error);
+      setSnackbarMessage(
+        error instanceof Error
+          ? error.message
+          : "근무 저장 중 오류가 발생했습니다."
+      );
       setSnackbarSeverity("error");
       setSnackbarOpen(true);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -666,39 +959,44 @@ const SchedulePage: React.FC = () => {
     setSnackbarOpen(true);
   }, [shifts]);
 
-  const handleViewChange = (newViewType: string) => {
-    if (newViewType === "timeGridWeek" || newViewType === "dayGridMonth") {
-      if (calendarRef.current) {
-        calendarRef.current.getApi().changeView(newViewType);
-      }
+  const handleViewChange = (newViewType: "timeGridWeek" | "dayGridMonth") => {
+    if (calendarRef.current) {
+      console.log("캘린더 뷰 변경:", newViewType);
+      const calendarApi = calendarRef.current.getApi();
+      calendarApi.changeView(newViewType);
+      setViewType(newViewType); // 상태 업데이트
     }
   };
 
   const handleDateSelect = (selectInfo: any) => {
-    const startDate = new Date(selectInfo.startStr);
-    const endDate = new Date(selectInfo.endStr);
-    // ... (기존 시간 유효성 검사 등)
+    // 선택된 날짜 범위에서 이벤트 생성
+    const startDate = selectInfo.start;
+    const endDate = selectInfo.end;
 
-    // 시작 시간 기준으로 자동 shiftType 결정
-    const startHour = startDate.getHours();
-    let autoShiftType: "open" | "middle" | "close" = "middle"; // 기본값 미들
-    if (startHour < 12) autoShiftType = "open";
-    else if (startHour >= 17) autoShiftType = "close";
+    // Format dates for API compatibility (YYYY-MM-DDTHH:MM:SS)
+    const formatDateForCalendar = (date: Date) => {
+      return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+
+    // 새 이벤트 ID
+    const eventId = uuidv4();
 
     const newEvent: CalendarEvent = {
-      id: uuidv4(),
+      id: eventId,
       title: "새 근무",
-      start: startDate.toISOString(),
-      end: endDate.toISOString(),
-      backgroundColor: "#CCCCCC",
-      borderColor: "#CCCCCC",
-      textColor: "#000000",
+      start: formatDateForCalendar(startDate),
+      end: formatDateForCalendar(endDate),
+      backgroundColor: "#4285F4",
+      borderColor: "#4285F4",
+      textColor: "#FFFFFF",
       extendedProps: {
         employeeIds: [],
+        shiftType: "middle",
         requiredStaff: 1,
-        shiftType: autoShiftType, // 자동 결정된 타입 사용
       },
     };
+
+    // 이벤트 상태 업데이트
     setSelectedEvent(newEvent);
     setIsNewEvent(true);
     setIsDialogOpen(true);
@@ -706,11 +1004,21 @@ const SchedulePage: React.FC = () => {
 
   const handleEventClick = (clickInfo: any) => {
     console.log("Event clicked:", clickInfo.event);
+
+    // 원래 이벤트의 시간을 가져옵니다
+    const startDate = new Date(clickInfo.event.start);
+    const endDate = new Date(clickInfo.event.end);
+
+    // 날짜 포맷 함수
+    const formatDateForCalendar = (date: Date) => {
+      return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+
     const clickedEvent: CalendarEvent = {
       id: clickInfo.event.id,
       title: clickInfo.event.title,
-      start: clickInfo.event.startStr,
-      end: clickInfo.event.endStr,
+      start: formatDateForCalendar(startDate),
+      end: formatDateForCalendar(endDate),
       backgroundColor: clickInfo.event.backgroundColor,
       borderColor: clickInfo.event.borderColor,
       textColor: clickInfo.event.textColor,
@@ -723,11 +1031,20 @@ const SchedulePage: React.FC = () => {
 
   const handleEventDrop = (dropInfo: any) => {
     console.log("Event dropped:", dropInfo);
+
+    // 날짜 변환 및 포맷팅
+    const startDate = new Date(dropInfo.event.start);
+    const endDate = new Date(dropInfo.event.end);
+
+    const formatDateForCalendar = (date: Date) => {
+      return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+
     const updatedEvent: CalendarEvent = {
       id: dropInfo.event.id,
       title: dropInfo.event.title,
-      start: dropInfo.event.startStr,
-      end: dropInfo.event.endStr,
+      start: formatDateForCalendar(startDate),
+      end: formatDateForCalendar(endDate),
       backgroundColor: dropInfo.event.backgroundColor,
       borderColor: dropInfo.event.borderColor,
       textColor: dropInfo.event.textColor,
@@ -738,11 +1055,20 @@ const SchedulePage: React.FC = () => {
 
   const handleEventResize = (resizeInfo: any) => {
     console.log("Event resized:", resizeInfo);
+
+    // 날짜 변환 및 포맷팅
+    const startDate = new Date(resizeInfo.event.start);
+    const endDate = new Date(resizeInfo.event.end);
+
+    const formatDateForCalendar = (date: Date) => {
+      return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+
     const updatedEvent: CalendarEvent = {
       id: resizeInfo.event.id,
       title: resizeInfo.event.title,
-      start: resizeInfo.event.startStr,
-      end: resizeInfo.event.endStr,
+      start: formatDateForCalendar(startDate),
+      end: formatDateForCalendar(endDate),
       backgroundColor: resizeInfo.event.backgroundColor,
       borderColor: resizeInfo.event.borderColor,
       textColor: resizeInfo.event.textColor,
@@ -817,8 +1143,8 @@ const SchedulePage: React.FC = () => {
       };
       // 색상 업데이트 (첫 번째 직원 기준)
       if (updatedEvent.extendedProps.employeeIds.length === 1) {
-        updatedEvent.backgroundColor = getEmployeeColor(employeeId);
-        updatedEvent.borderColor = getEmployeeColor(employeeId);
+        updatedEvent.backgroundColor = getEmployeeColor(employeeId, employees);
+        updatedEvent.borderColor = getEmployeeColor(employeeId, employees);
       }
 
       handleSaveShift(updatedEvent); // 저장 로직 호출
@@ -829,6 +1155,11 @@ const SchedulePage: React.FC = () => {
       // 드롭된 시간을 기준으로 기본 근무 시간 설정 (예: 2시간)
       const endDate = addHours(startDate, 2);
 
+      // Format dates for API compatibility
+      const formatDateForCalendar = (date: Date) => {
+        return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+      };
+
       // *** 시간 기준으로 자동 shiftType 결정 (handleDateSelect와 동일 로직) ***
       const startHour = startDate.getHours();
       let autoShiftType: "open" | "middle" | "close" = "middle";
@@ -838,10 +1169,10 @@ const SchedulePage: React.FC = () => {
       const newEvent: CalendarEvent = {
         id: uuidv4(),
         title: employees.find((e) => e.id === employeeId)?.name || "새 근무",
-        start: startDate.toISOString(),
-        end: endDate.toISOString(),
-        backgroundColor: getEmployeeColor(employeeId),
-        borderColor: getEmployeeColor(employeeId),
+        start: formatDateForCalendar(startDate),
+        end: formatDateForCalendar(endDate),
+        backgroundColor: getEmployeeColor(employeeId, employees),
+        borderColor: getEmployeeColor(employeeId, employees),
         textColor: "#ffffff",
         extendedProps: {
           employeeIds: [employeeId],
@@ -1013,7 +1344,7 @@ const SchedulePage: React.FC = () => {
                       width: 10,
                       height: 10,
                       borderRadius: "50%",
-                      bgcolor: getEmployeeColor(employee.id),
+                      bgcolor: getEmployeeColor(employee.id, employees),
                     }}
                   />
                 </ListItemIcon>
@@ -1090,14 +1421,24 @@ const SchedulePage: React.FC = () => {
             <Button
               size="small"
               variant={viewType === "timeGridWeek" ? "contained" : "outlined"}
+              color="primary"
               onClick={() => handleViewChange("timeGridWeek")}
+              sx={{
+                minWidth: "80px",
+                fontWeight: viewType === "timeGridWeek" ? 600 : 400,
+              }}
             >
               주간
             </Button>
             <Button
               size="small"
               variant={viewType === "dayGridMonth" ? "contained" : "outlined"}
+              color="primary"
               onClick={() => handleViewChange("dayGridMonth")}
+              sx={{
+                minWidth: "80px",
+                fontWeight: viewType === "dayGridMonth" ? 600 : 400,
+              }}
             >
               월간
             </Button>
@@ -1167,6 +1508,21 @@ const SchedulePage: React.FC = () => {
               flexGrow: 1,
               overflow: "auto",
             },
+            "& .fc-dayGridMonth-view .fc-daygrid-day-frame": {
+              minHeight: "80px",
+              padding: "3px",
+            },
+            "& .fc-dayGridMonth-view .fc-daygrid-day-top": {
+              justifyContent: "center",
+              padding: "4px 0",
+            },
+            "& .fc-dayGridMonth-view .fc-daygrid-day-number": {
+              fontSize: "0.85rem",
+              fontWeight: 500,
+            },
+            "& .fc-dayGridMonth-view .fc-daygrid-event-harness": {
+              margin: "1px 0",
+            },
             [`& .fc-timegrid-event-harness > .fc-timegrid-event.fc-event-mirror .fc-event-main,
               & .fc-daygrid-event.fc-event-mirror .fc-event-main`]: {
               fontSize: 0,
@@ -1203,6 +1559,7 @@ const SchedulePage: React.FC = () => {
                   center: "title",
                   right: "",
                 }}
+                datesSet={handleDatesSet}
                 height="100%"
                 allDaySlot={false}
                 slotDuration="00:30:00"
@@ -1241,7 +1598,8 @@ const SchedulePage: React.FC = () => {
                   else if (employeeIds.length < requiredStaff)
                     classes.push("understaffed-shift");
                   else classes.push("fully-staffed-shift");
-                  const currentView = viewType;
+                  const currentView =
+                    calendarRef.current?.getApi()?.view?.type || viewType;
                   if (currentView === "timeGridWeek")
                     classes.push("week-view-event");
                   else classes.push("month-view-event");

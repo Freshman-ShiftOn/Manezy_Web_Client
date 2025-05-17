@@ -185,3 +185,17 @@ export interface SetupWizardState {
   };
   initialSchedules: Partial<Shift>[];
 }
+
+// API 응답에서 사용될 캘린더 이벤트 타입 (services/api.ts와 동기화)
+export interface CalendarEventResponse {
+  id: number;
+  workerId: number;
+  workerName: string;
+  branchId: number;
+  workType: string[];
+  inputType: number;
+  repeatGroupId?: number;
+  startTime: string; // ISO Date string
+  endTime: string; // ISO Date string
+  lastUpdated: string; // ISO Date string
+}

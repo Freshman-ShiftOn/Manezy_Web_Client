@@ -102,6 +102,11 @@ function ShiftDialog({
   onDelete,
 }: ShiftDialogProps) {
   const theme = useTheme();
+  // 이벤트 날짜 정보 저장을 위한 상태 추가
+  const [eventDate, setEventDate] = useState<Date>(
+    eventData.start ? parseISO(eventData.start) : new Date()
+  );
+
   const [startTime, setStartTime] = useState<Date | null>(
     eventData.start ? parseISO(eventData.start) : null
   );
@@ -136,6 +141,34 @@ function ShiftDialog({
     // if (shiftType) { ... }
   }, [shiftType, isNew]);
 
+  // 시간 선택 핸들러 수정
+  const handleStartTimeChange = (newTime: Date | null) => {
+    if (newTime) {
+      // 기존 날짜 정보 유지, 시간만 변경
+      const newStartTime = new Date(eventDate);
+      newStartTime.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
+      setStartTime(newStartTime);
+      console.log(
+        "새 시작 시간:",
+        format(newStartTime, "yyyy-MM-dd'T'HH:mm:ss")
+      );
+    } else {
+      setStartTime(null);
+    }
+  };
+
+  const handleEndTimeChange = (newTime: Date | null) => {
+    if (newTime) {
+      // 기존 날짜 정보 유지, 시간만 변경
+      const newEndTime = new Date(eventDate);
+      newEndTime.setHours(newTime.getHours(), newTime.getMinutes(), 0, 0);
+      setEndTime(newEndTime);
+      console.log("새 종료 시간:", format(newEndTime, "yyyy-MM-dd'T'HH:mm:ss"));
+    } else {
+      setEndTime(null);
+    }
+  };
+
   const handleSave = () => {
     const newErrors: typeof errors = {};
     if (!startTime || !endTime) {
@@ -155,10 +188,19 @@ function ShiftDialog({
     const typeInfo = SHIFT_TYPES.find((t) => t.value === shiftType);
     const eventColor = typeInfo?.color || eventData.color || "#AAAAAA";
 
+    // 날짜 포맷 함수 - API에서 기대하는 형식대로 반환합니다
+    const formatDateForAPI = (date: Date) => {
+      return format(date, "yyyy-MM-dd'T'HH:mm:ss");
+    };
+
+    // 날짜와 시간이 올바르게 결합되었는지 확인
+    console.log("저장될 시작 시간:", formatDateForAPI(startTime!));
+    console.log("저장될 종료 시간:", formatDateForAPI(endTime!));
+
     const updatedEvent: ShiftEvent = {
       ...eventData,
-      start: startTime!.toISOString(),
-      end: endTime!.toISOString(),
+      start: formatDateForAPI(startTime!),
+      end: formatDateForAPI(endTime!),
       color: eventColor,
       backgroundColor: eventColor,
       borderColor: eventColor,
@@ -372,7 +414,7 @@ function ShiftDialog({
               <TimePicker
                 label="시작 시간"
                 value={startTime}
-                onChange={setStartTime}
+                onChange={handleStartTimeChange}
                 slotProps={{
                   textField: {
                     fullWidth: true,
@@ -389,7 +431,7 @@ function ShiftDialog({
               <TimePicker
                 label="종료 시간"
                 value={endTime}
-                onChange={setEndTime}
+                onChange={handleEndTimeChange}
                 slotProps={{
                   textField: {
                     fullWidth: true,
@@ -424,6 +466,9 @@ function ShiftDialog({
           </Grid>
 
           <Grid item xs={12}>
+            <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 500 }}>
+              담당 직원
+            </Typography>
             <FormControl fullWidth error={!!errors.employees} size="small">
               <InputLabel id="employee-select-label">담당 직원</InputLabel>
               <Select
@@ -460,23 +505,74 @@ function ShiftDialog({
                 MenuProps={{
                   PaperProps: {
                     style: {
-                      maxHeight: 224,
+                      maxHeight: 300,
+                      width: 250,
                     },
                   },
                 }}
               >
                 {employees.map((employee) => (
-                  <MenuItem key={employee.id} value={employee.id}>
-                    <Checkbox
-                      checked={selectedEmployeeIds.indexOf(employee.id) > -1}
-                    />
-                    <ListItemText primary={employee.name} />
+                  <MenuItem
+                    key={employee.id}
+                    value={employee.id}
+                    sx={{
+                      py: 1,
+                      borderBottom: "1px solid rgba(0,0,0,0.05)",
+                      "&:last-child": {
+                        borderBottom: "none",
+                      },
+                    }}
+                  >
+                    <Box
+                      sx={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        width: "100%",
+                      }}
+                    >
+                      <Checkbox
+                        checked={selectedEmployeeIds.indexOf(employee.id) > -1}
+                        color="primary"
+                        size="small"
+                        sx={{ pt: 0, mt: "2px" }}
+                      />
+                      <Box
+                        sx={{ display: "flex", flexDirection: "column", ml: 1 }}
+                      >
+                        <ListItemText
+                          primary={employee.name}
+                          primaryTypographyProps={{
+                            variant: "body2",
+                            fontWeight: 500,
+                            sx: { lineHeight: 1.2 },
+                          }}
+                          sx={{ m: 0 }}
+                        />
+                        {employee.role && (
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            sx={{
+                              display: "block",
+                              mt: 0.5,
+                              fontSize: "0.7rem",
+                              lineHeight: 1.2,
+                            }}
+                          >
+                            {employee.role}
+                          </Typography>
+                        )}
+                      </Box>
+                    </Box>
                   </MenuItem>
                 ))}
               </Select>
               {errors.employees && (
                 <FormHelperText>{errors.employees}</FormHelperText>
               )}
+              <FormHelperText>
+                직원을 체크하여 선택하세요. 여러 명 선택 가능합니다.
+              </FormHelperText>
             </FormControl>
           </Grid>
           <Grid item xs={12}>
