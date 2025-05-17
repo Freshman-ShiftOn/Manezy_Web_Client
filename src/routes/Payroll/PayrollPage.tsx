@@ -81,6 +81,8 @@ import {
   getSalariesSummary,
   getSalaryDetail,
   getSalaryTotal,
+  getCalendarEvents,
+  getBranchWorkers,
 } from "../../services/api";
 import { Employee, Shift, Store } from "../../lib/types";
 import {
@@ -353,35 +355,166 @@ function PayrollPage() {
       const startDateStr = format(startDate, "yyyy-MM-dd");
       const endDateStr = format(endDate, "yyyy-MM-dd");
 
+      console.log(
+        `급여 데이터 조회: 브랜치 ID ${selectedBranchId}, 기간 ${startDateStr} ~ ${endDateStr}`
+      );
+
       // API 호출
-      const [summaryData, totalData, employeesData, shiftsData, storeData] =
-        await Promise.all([
-          getSalariesSummary(selectedBranchId, startDateStr, endDateStr).catch(
-            (err) => {
-              console.error("급여 요약 목록 조회 실패:", err);
-              return [] as SalarySummary[];
-            }
-          ),
-          getSalaryTotal(selectedBranchId, startDateStr, endDateStr).catch(
-            (err) => {
-              console.error("급여 총계 조회 실패:", err);
-              return null;
-            }
-          ),
-          getEmployees(),
-          getShifts(),
-          getStoreInfo(),
-        ]);
+      const [summaryData, totalData, storeData] = await Promise.all([
+        getSalariesSummary(selectedBranchId, startDateStr, endDateStr).catch(
+          (err) => {
+            console.error(
+              `급여 요약 목록 조회 실패 [${startDateStr}~${endDateStr}]:`,
+              err
+            );
+            setSnackbar({
+              open: true,
+              message:
+                "급여 요약 데이터를 불러오지 못했습니다. 다시 시도해주세요.",
+              severity: "warning",
+            });
+            return [] as SalarySummary[];
+          }
+        ),
+        getSalaryTotal(selectedBranchId, startDateStr, endDateStr).catch(
+          (err) => {
+            console.error(
+              `급여 총계 조회 실패 [${startDateStr}~${endDateStr}]:`,
+              err
+            );
+            setSnackbar({
+              open: true,
+              message:
+                "급여 총계 데이터를 불러오지 못했습니다. 로컬 계산 결과가 대신 사용됩니다.",
+              severity: "warning",
+            });
+            return null;
+          }
+        ),
+        getStoreInfo().catch((err) => {
+          console.error("매장 정보 조회 실패:", err);
+          return null;
+        }),
+      ]);
+
+      // 브랜치 직원 목록 조회 - getBranchWorkers API 사용
+      let employeesData: Employee[] = [];
+      try {
+        const branchWorkers = await getBranchWorkers(selectedBranchId);
+        console.log(
+          `브랜치 ID ${selectedBranchId}의 직원 ${branchWorkers.length}명 조회 성공:`,
+          branchWorkers
+        );
+
+        // BranchWorker 형식을 Employee 형식으로 변환
+        employeesData = branchWorkers.map((worker) => ({
+          id: worker.userId || `temp-${Date.now()}`,
+          name: worker.name,
+          role: worker.roles || "",
+          hourlyRate:
+            typeof worker.cost === "string"
+              ? parseInt(worker.cost, 10)
+              : worker.cost || 9860,
+          email: worker.email || "",
+          phoneNumber: worker.phoneNums || "",
+          status:
+            worker.status === "재직중" || worker.status === "active"
+              ? "active"
+              : ("inactive" as "active" | "inactive" | "pending"),
+        }));
+
+        console.log("변환된 직원 데이터:", employeesData);
+      } catch (err) {
+        console.error(
+          `브랜치 ID ${selectedBranchId}의 직원 목록 조회 실패:`,
+          err
+        );
+        employeesData = [];
+
+        setSnackbar({
+          open: true,
+          message:
+            "직원 정보를 불러오지 못했습니다. 급여 계산에 영향이 있을 수 있습니다.",
+          severity: "warning",
+        });
+      }
+
+      // 캘린더 일정 직접 가져오기 (getShifts 대신 사용)
+      let shiftsData: Shift[] = [];
+      try {
+        // API 헬퍼 함수 사용하여 캘린더 이벤트 조회
+        const calendarEvents = await getCalendarEvents(
+          selectedBranchId,
+          startDateStr,
+          endDateStr
+        );
+
+        console.log("캘린더 일정 조회 결과:", calendarEvents);
+
+        // 캘린더 이벤트를 Shift 형식으로 변환
+        if (calendarEvents && calendarEvents.length > 0) {
+          shiftsData = calendarEvents.map((event: any) => {
+            // workerId가 반드시 문자열로 변환되도록 함
+            const workerId = event.workerId.toString();
+            console.log(
+              `캘린더 이벤트 변환: ID ${event.id}, 직원 ID ${workerId}, 이름 ${event.workerName}`
+            );
+
+            return {
+              id: event.id.toString(),
+              employeeIds: [workerId], // 명시적으로 직원 ID 문자열 저장
+              start: event.startTime,
+              end: event.endTime,
+              shiftType: event.workType[0] || "regular",
+              title: event.workerName,
+              note: "",
+              storeId: selectedBranchId,
+              isRecurring: false,
+              color:
+                event.workType[0] === "open"
+                  ? "#4CAF50"
+                  : event.workType[0] === "middle"
+                  ? "#2196F3"
+                  : event.workType[0] === "close"
+                  ? "#9C27B0"
+                  : "#757575",
+            };
+          });
+          console.log("변환된 근무 일정:", shiftsData);
+        }
+      } catch (err) {
+        console.error("캘린더 일정 조회 실패:", err);
+      }
+
+      console.log("급여 요약 API 응답:", summaryData);
+      console.log("급여 총계 API 응답:", totalData);
+      console.log("직원 목록:", employeesData);
 
       // 상태 업데이트
       setSalarySummaries(summaryData);
       setSalaryTotal(totalData);
       setEmployees(employeesData);
-      setShifts(shiftsData);
+      setShifts(shiftsData); // 변환된 근무 일정 저장
       setStoreInfo(storeData);
+
+      // 직원 데이터 검증
+      if (!employeesData || employeesData.length === 0) {
+        console.error(
+          "직원 데이터가 없습니다. 급여 계산을 진행할 수 없습니다."
+        );
+        setSnackbar({
+          open: true,
+          message:
+            "직원 정보를 불러올 수 없습니다. 네트워크 연결을 확인해주세요.",
+          severity: "error",
+        });
+      }
 
       // 기존 계산 로직을 사용하여 이전 코드와의 호환성 유지
       if (summaryData.length === 0) {
+        console.log(
+          "API에서 급여 요약 데이터가 없습니다. 로컬 계산을 사용합니다."
+        );
         generatePayrollData(
           employeesData,
           shiftsData,
@@ -391,6 +524,9 @@ function PayrollPage() {
           setTotalWorkedHours
         );
       } else {
+        console.log(
+          `API에서 ${summaryData.length}명의 직원 급여 데이터를 가져왔습니다.`
+        );
         // API 데이터를 기존 형식으로 변환
         const convertedPayrolls = summaryData.map((summary) => ({
           employeeId: summary.userId.toString(),
@@ -409,8 +545,17 @@ function PayrollPage() {
 
         // 요약 정보 업데이트
         if (totalData) {
+          console.log(
+            `총 예상 인건비: ${totalData.totalPay.toLocaleString()}원 (기본급: ${totalData.totalRegularPay.toLocaleString()}원, 주휴수당: ${totalData.totalHolidayPay.toLocaleString()}원)`
+          );
+          console.log(
+            `총 근무 시간: ${totalData.totalWorkHours} 시간, 총 직원 수: ${totalData.totalEmployees}명`
+          );
+
           setTotalEstimatedWage(totalData.totalPay);
           setTotalWorkedHours(totalData.totalWorkHours);
+        } else {
+          console.warn("totalData가 null입니다. 로컬 계산 결과를 사용합니다.");
         }
       }
 
@@ -419,6 +564,12 @@ function PayrollPage() {
       console.error("데이터 로드 중 오류:", err);
       setError("데이터를 불러오는 중 오류가 발생했습니다");
       setLoading(false);
+      setSnackbar({
+        open: true,
+        message:
+          "급여 데이터를 불러오는 데 실패했습니다. 네트워크 연결을 확인해주세요.",
+        severity: "error",
+      });
     }
   };
 
@@ -439,23 +590,86 @@ function PayrollPage() {
     let monthTotalWage = 0;
     let monthTotalHours = 0;
 
+    console.log(
+      `급여 계산 시작: ${employeesData.length}명의 직원, ${shiftsData.length}개의 근무 일정`
+    );
+    console.log("직원 데이터:", employeesData);
+
+    // 근무 일정의 employeeIds 배열 확인
+    shiftsData.forEach((shift) => {
+      console.log(
+        `근무 일정 ID ${shift.id}, 직원 IDs: [${shift.employeeIds.join(
+          ", "
+        )}], 시간: ${shift.start} ~ ${shift.end}`
+      );
+    });
+
+    if (shiftsData.length === 0) {
+      console.warn("근무 일정이 없어 급여 계산을 진행할 수 없습니다.");
+      setPayrolls([]);
+      setTotalWage(0);
+      setTotalHours(0);
+      return;
+    }
+
+    if (employeesData.length === 0) {
+      console.warn("직원 데이터가 없어 급여 계산을 진행할 수 없습니다.");
+      setPayrolls([]);
+      setTotalWage(0);
+      setTotalHours(0);
+      return;
+    }
+
+    // 직원 ID를 문자열로 변환하여 비교하는 헬퍼 함수
+    const isSameEmployee = (
+      employeeId: string | number,
+      workerId: string | number
+    ) => {
+      // 두 ID를 문자열로 변환하여 비교
+      const result = employeeId.toString() === workerId.toString();
+      console.log(
+        `직원 ID 비교: ${employeeId} vs ${workerId} => ${
+          result ? "일치" : "불일치"
+        }`
+      );
+      return result;
+    };
+
     const payrollData = employeesData.map((employee) => {
+      // 직원의 ID는 employee.id가 아닌 employee.userId인 것으로 보임
+      const employeeId = employee.id;
+      console.log(`직원 ${employee.name} (ID: ${employeeId}) 처리 중`);
+
       const employeeShiftsInPeriod = shiftsData.filter((shift) => {
         try {
           const shiftStart = parseISO(shift.start);
+          const isEmployeeMatch = shift.employeeIds.some((id) =>
+            isSameEmployee(employeeId, id)
+          );
+
+          if (isEmployeeMatch) {
+            console.log(
+              `매칭된 근무 일정 발견: 직원 ${employee.name}, 근무 ID ${shift.id}, 시간 ${shift.start} ~ ${shift.end}`
+            );
+          }
+
           return (
-            shift.employeeIds.includes(employee.id) &&
+            isEmployeeMatch &&
             isValid(shiftStart) && // Check if date is valid
             isWithinInterval(shiftStart, { start: periodStart, end: periodEnd })
           );
         } catch (e) {
           console.error(
-            `Error processing shift ${shift.id} for employee ${employee.id}:`,
+            `Error processing shift ${shift.id} for employee ${employeeId}:`,
             e
           );
           return false;
         }
       });
+
+      console.log(
+        `직원 ${employee.name}의 근무 일정: ${employeeShiftsInPeriod.length}개`
+      );
 
       let scheduledHours = 0;
       try {
@@ -473,7 +687,7 @@ function PayrollPage() {
 
       const actualHours = scheduledHours; // Assuming actual equals scheduled for now
       const basePay = Math.round(
-        actualHours * (employee.hourlyRate || storeData?.baseHourlyRate || 0)
+        actualHours * (employee.hourlyRate || storeData?.baseHourlyRate || 9000)
       );
       monthTotalHours += actualHours; // Accumulate total hours
       monthTotalWage += basePay; // Accumulate base pay
@@ -507,7 +721,7 @@ function PayrollPage() {
             const dailyAvgHours = weeklyHours / 5; // Assume 5 working days for simplicity
             holidayPay += Math.round(
               dailyAvgHours *
-                (employee.hourlyRate || storeData?.baseHourlyRate || 0)
+                (employee.hourlyRate || storeData?.baseHourlyRate || 9000)
             );
           }
         });
@@ -538,9 +752,9 @@ function PayrollPage() {
       shiftDetails.sort((a, b) => a.date.localeCompare(b.date));
 
       return {
-        employeeId: employee.id,
+        employeeId: employeeId,
         employeeName: employee.name,
-        hourlyRate: employee.hourlyRate,
+        hourlyRate: employee.hourlyRate || storeData?.baseHourlyRate || 9000,
         scheduledHours: scheduledHours,
         actualHours: actualHours,
         basePay: basePay,
@@ -550,6 +764,10 @@ function PayrollPage() {
         payday: calculatedPayday,
       };
     });
+
+    console.log(
+      `최종 급여 계산 결과: ${payrollData.length}명 직원, 총 ${monthTotalHours}시간, 총액 ${monthTotalWage}원`
+    );
 
     setPayrolls(payrollData);
     // Set the calculated totals
@@ -622,6 +840,10 @@ function PayrollPage() {
       const startDateStr = format(effectiveStartDate, "yyyy-MM-dd");
       const endDateStr = format(effectiveEndDate, "yyyy-MM-dd");
 
+      console.log(
+        `직원 급여 상세 조회: 브랜치 ID ${selectedBranchId}, 직원 ID ${userId}, 기간 ${startDateStr} ~ ${endDateStr}`
+      );
+
       // API 호출
       const detailData = await getSalaryDetail(
         selectedBranchId,
@@ -629,6 +851,8 @@ function PayrollPage() {
         startDateStr,
         endDateStr
       );
+
+      console.log("직원 급여 상세 응답:", detailData);
       setSelectedUserDetail(detailData);
 
       // 기존 형식으로 변환하여 호환성 유지
@@ -706,6 +930,15 @@ function PayrollPage() {
     <Box sx={{ p: { xs: 1, sm: 2, md: 3 } }}>
       <Typography variant="h4" gutterBottom sx={{ mb: 3, fontWeight: "bold" }}>
         급여 관리
+        {currentBranch && (
+          <Typography
+            component="span"
+            variant="subtitle1"
+            sx={{ ml: 2, color: "text.secondary" }}
+          >
+            {currentBranch.name}
+          </Typography>
+        )}
       </Typography>
 
       {/* Period Navigation and Settings */}
@@ -721,16 +954,32 @@ function PayrollPage() {
       >
         {/* 기간 탐색 버튼 */}
         <Box sx={{ display: "flex", alignItems: "center" }}>
-          <IconButton onClick={() => handlePeriodChange("prev")}>
+          <IconButton
+            onClick={() => handlePeriodChange("prev")}
+            sx={{ color: "primary.main" }}
+          >
             <KeyboardArrowLeftIcon />
           </IconButton>
           <Typography
             variant="h6"
-            sx={{ mx: 2, minWidth: "150px", textAlign: "center" }}
+            sx={{
+              mx: 2,
+              minWidth: "150px",
+              textAlign: "center",
+              bgcolor: alpha(theme.palette.primary.main, 0.05),
+              px: 2,
+              py: 0.5,
+              borderRadius: 1,
+              color: theme.palette.primary.main,
+              fontWeight: 500,
+            }}
           >
             {currentPeriodDisplay}
           </Typography>
-          <IconButton onClick={() => handlePeriodChange("next")}>
+          <IconButton
+            onClick={() => handlePeriodChange("next")}
+            sx={{ color: "primary.main" }}
+          >
             <KeyboardArrowRightIcon />
           </IconButton>
         </Box>
@@ -741,6 +990,7 @@ function PayrollPage() {
             variant="outlined"
             startIcon={<DateRangeIcon />}
             onClick={() => setPeriodConfigOpen(true)}
+            color="primary"
           >
             계산 기간 설정
           </Button>
@@ -748,6 +998,7 @@ function PayrollPage() {
             variant="outlined"
             startIcon={<CalendarMonthIcon />}
             onClick={() => setPaydayDialogOpen(true)}
+            color="primary"
           >
             지급일 설정 ({defaultPayday}일)
           </Button>
@@ -756,7 +1007,11 @@ function PayrollPage() {
 
       {/* --- Summary Card --- */}
       <Paper elevation={2} sx={{ p: 3, mb: 3, borderRadius: 3 }}>
-        <Typography variant="h6" gutterBottom sx={{ fontWeight: "medium" }}>
+        <Typography
+          variant="h6"
+          gutterBottom
+          sx={{ fontWeight: "medium", color: "primary.main" }}
+        >
           {currentPeriodDisplay} 급여 요약
         </Typography>
         <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -772,12 +1027,48 @@ function PayrollPage() {
                 <Typography variant="body2" color="text.secondary">
                   총 예상 인건비
                 </Typography>
-                <Typography sx={{ fontWeight: "bold" }}>
-                  ₩
-                  {(
-                    salaryTotal?.totalPay || totalEstimatedWage
-                  ).toLocaleString()}
-                </Typography>
+                {loading ? (
+                  <CircularProgress size={16} sx={{ ml: 1 }} />
+                ) : error ? (
+                  <Tooltip title="데이터 조회 오류">
+                    <Typography
+                      sx={{ color: "error.main", fontWeight: "bold" }}
+                    >
+                      오류 발생
+                    </Typography>
+                  </Tooltip>
+                ) : (
+                  <Typography
+                    sx={{
+                      fontWeight: "bold",
+                      fontSize: "1.2rem",
+                      color: "success.main",
+                    }}
+                  >
+                    ₩
+                    {(
+                      salaryTotal?.totalPay || totalEstimatedWage
+                    ).toLocaleString()}
+                  </Typography>
+                )}
+                {salaryTotal?.totalRegularPay &&
+                  salaryTotal?.totalHolidayPay && (
+                    <Tooltip
+                      title={`기본급: ₩${salaryTotal.totalRegularPay.toLocaleString()}, 주휴수당: ₩${salaryTotal.totalHolidayPay.toLocaleString()}`}
+                    >
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          cursor: "help",
+                          textDecoration: "underline",
+                          textDecorationStyle: "dotted",
+                        }}
+                      >
+                        (상세 내역 보기)
+                      </Typography>
+                    </Tooltip>
+                  )}
               </Box>
             </Box>
           </Grid>
@@ -790,11 +1081,29 @@ function PayrollPage() {
                 <Typography variant="body2" color="text.secondary">
                   총 근무 시간
                 </Typography>
-                <Typography sx={{ fontWeight: "bold" }}>
-                  {formatTotalHours(
-                    salaryTotal?.totalWorkHours || totalWorkedHours
-                  )}
-                </Typography>
+                {loading ? (
+                  <CircularProgress size={16} sx={{ ml: 1 }} />
+                ) : error ? (
+                  <Tooltip title="데이터 조회 오류">
+                    <Typography
+                      sx={{ color: "error.main", fontWeight: "bold" }}
+                    >
+                      오류 발생
+                    </Typography>
+                  </Tooltip>
+                ) : (
+                  <Typography
+                    sx={{
+                      fontWeight: "bold",
+                      fontSize: "1.1rem",
+                      color: "info.main",
+                    }}
+                  >
+                    {formatTotalHours(
+                      salaryTotal?.totalWorkHours || totalWorkedHours
+                    )}
+                  </Typography>
+                )}
               </Box>
             </Box>
           </Grid>
@@ -810,11 +1119,29 @@ function PayrollPage() {
                 <Typography variant="body2" color="text.secondary">
                   급여 대상 직원 수
                 </Typography>
-                <Typography sx={{ fontWeight: "bold" }}>
-                  {salaryTotal?.totalEmployees ||
-                    payrolls.filter((p) => p.finalPay > 0).length}
-                  명
-                </Typography>
+                {loading ? (
+                  <CircularProgress size={16} sx={{ ml: 1 }} />
+                ) : error ? (
+                  <Tooltip title="데이터 조회 오류">
+                    <Typography
+                      sx={{ color: "error.main", fontWeight: "bold" }}
+                    >
+                      오류 발생
+                    </Typography>
+                  </Tooltip>
+                ) : (
+                  <Typography
+                    sx={{
+                      fontWeight: "bold",
+                      fontSize: "1.1rem",
+                      color: "secondary.main",
+                    }}
+                  >
+                    {salaryTotal?.totalEmployees ||
+                      payrolls.filter((p) => p.finalPay > 0).length}
+                    명
+                  </Typography>
+                )}
               </Box>
             </Box>
           </Grid>
@@ -824,76 +1151,305 @@ function PayrollPage() {
       {/* Payroll Table */}
       <Paper
         elevation={0}
-        sx={{ border: "1px solid", borderColor: "divider", borderRadius: 2 }}
+        sx={{
+          border: "1px solid",
+          borderColor: "divider",
+          borderRadius: 2,
+          overflow: "hidden",
+        }}
       >
+        <Box
+          sx={{
+            p: 2,
+            display: "flex",
+            justifyContent: "space-between",
+            borderBottom: "1px solid",
+            borderColor: "divider",
+          }}
+        >
+          <Typography variant="subtitle1" fontWeight="medium">
+            직원 급여 목록
+          </Typography>
+          <Box sx={{ display: "flex", gap: 1, alignItems: "center" }}>
+            {salarySummaries.length > 0 ? (
+              <Chip
+                label={`${salarySummaries.length}명의 직원`}
+                size="small"
+                color="primary"
+                variant="outlined"
+                icon={<PeopleAltIcon fontSize="small" />}
+              />
+            ) : null}
+            {loading && <CircularProgress size={20} />}
+          </Box>
+        </Box>
         <TableContainer>
           <Table stickyHeader>
             <TableHead>
               <TableRow>
-                <TableCell>직원</TableCell>
-                <TableCell align="right">시급</TableCell>
-                <TableCell align="right">근무 시간</TableCell>
-                <TableCell align="right">근무 급여</TableCell>
-                <TableCell align="right">주휴수당</TableCell>
-                <TableCell align="right">최종 급여</TableCell>
-                <TableCell align="center">상세</TableCell>
+                <TableCell
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  직원
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  시급
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  근무 시간
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  근무 급여
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  주휴수당
+                </TableCell>
+                <TableCell
+                  align="right"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  최종 급여
+                </TableCell>
+                <TableCell
+                  align="center"
+                  sx={{
+                    fontWeight: "bold",
+                    backgroundColor: alpha(theme.palette.primary.main, 0.05),
+                  }}
+                >
+                  상세
+                </TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
               {loading ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center">
-                    <CircularProgress />
+                    <Box
+                      sx={{
+                        p: 3,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 1,
+                      }}
+                    >
+                      <CircularProgress />
+                      <Typography variant="body2" color="text.secondary">
+                        급여 데이터를 불러오는 중...
+                      </Typography>
+                    </Box>
                   </TableCell>
                 </TableRow>
               ) : error ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center">
-                    <Alert severity="error">{error}</Alert>
+                    <Alert severity="error" sx={{ m: 2 }}>
+                      {error}
+                      <Button
+                        size="small"
+                        sx={{ ml: 2 }}
+                        onClick={() =>
+                          loadData(effectiveStartDate, effectiveEndDate)
+                        }
+                      >
+                        다시 시도
+                      </Button>
+                    </Alert>
                   </TableCell>
                 </TableRow>
               ) : payrolls.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={7} align="center">
-                    <Typography variant="body2" color="text.secondary">
-                      데이터가 없습니다.
-                    </Typography>
+                    <Box
+                      sx={{
+                        p: 4,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        gap: 2,
+                      }}
+                    >
+                      <AccessTimeIcon
+                        sx={{ fontSize: 48, color: "text.disabled" }}
+                      />
+                      <Typography variant="body1" color="text.secondary">
+                        선택한 기간에 급여 데이터가 없습니다.
+                      </Typography>
+                      <Typography variant="body2" color="text.disabled">
+                        다른 날짜 범위를 선택하거나 직원들에게 근무 일정을
+                        배정해주세요.
+                      </Typography>
+                    </Box>
                   </TableCell>
                 </TableRow>
               ) : (
-                payrolls.map((payroll) => (
-                  <TableRow key={payroll.employeeId} hover>
-                    <TableCell>{payroll.employeeName}</TableCell>
-                    <TableCell align="right">
-                      {payroll.hourlyRate.toLocaleString()}원
+                <>
+                  {payrolls.map((payroll) => (
+                    <TableRow
+                      key={payroll.employeeId}
+                      hover
+                      sx={{
+                        "&:hover": {
+                          backgroundColor: alpha(
+                            theme.palette.primary.main,
+                            0.05
+                          ),
+                        },
+                      }}
+                    >
+                      <TableCell>
+                        <Box sx={{ display: "flex", alignItems: "center" }}>
+                          <Avatar
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              mr: 1.5,
+                              bgcolor:
+                                payroll.hourlyRate > 10000
+                                  ? "success.light"
+                                  : payroll.hourlyRate > 9800
+                                  ? "primary.light"
+                                  : "warning.light",
+                            }}
+                          >
+                            {payroll.employeeName.charAt(0)}
+                          </Avatar>
+                          <Box>
+                            <Typography sx={{ fontWeight: 500 }}>
+                              {payroll.employeeName}
+                            </Typography>
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      <TableCell align="right">
+                        {payroll.hourlyRate.toLocaleString()}원
+                      </TableCell>
+                      <TableCell align="right">
+                        {payroll.actualHours > 0 ? (
+                          <Chip
+                            label={`${payroll.actualHours.toLocaleString()}시간`}
+                            size="small"
+                            color={
+                              payroll.actualHours > 40 ? "success" : "default"
+                            }
+                            variant={
+                              payroll.actualHours > 0 ? "filled" : "outlined"
+                            }
+                            sx={{ minWidth: 70 }}
+                          />
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            -
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        {payroll.basePay > 0 ? (
+                          payroll.basePay.toLocaleString() + "원"
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            -
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        {payroll.holidayPay > 0 ? (
+                          <Tooltip title="주 15시간 이상 근무시 발생">
+                            <Typography>
+                              {payroll.holidayPay.toLocaleString()}원
+                            </Typography>
+                          </Tooltip>
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            -
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="right">
+                        {payroll.finalPay > 0 ? (
+                          <Typography fontWeight="bold" color="primary">
+                            {payroll.finalPay.toLocaleString()}원
+                          </Typography>
+                        ) : (
+                          <Typography variant="body2" color="text.disabled">
+                            0원
+                          </Typography>
+                        )}
+                      </TableCell>
+                      <TableCell align="center">
+                        <Tooltip title="근무 상세 정보">
+                          <IconButton
+                            size="small"
+                            color="primary"
+                            onClick={() =>
+                              handleViewDetails(payroll.employeeId)
+                            }
+                          >
+                            <KeyboardArrowRightIcon />
+                          </IconButton>
+                        </Tooltip>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow
+                    sx={{
+                      backgroundColor: alpha(theme.palette.primary.main, 0.03),
+                    }}
+                  >
+                    <TableCell colSpan={2} sx={{ fontWeight: "bold" }}>
+                      합계 ({payrolls.length}명)
                     </TableCell>
-                    <TableCell align="right">
-                      {payroll.actualHours.toLocaleString()}시간
+                    <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                      {formatTotalHours(
+                        salaryTotal?.totalWorkHours || totalWorkedHours
+                      )}
                     </TableCell>
-                    <TableCell align="right">
-                      {payroll.basePay.toLocaleString()}원
+                    <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                      {(salaryTotal?.totalRegularPay || 0).toLocaleString()}원
                     </TableCell>
-                    <TableCell align="right">
-                      {payroll.holidayPay.toLocaleString()}원
+                    <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                      {(salaryTotal?.totalHolidayPay || 0).toLocaleString()}원
                     </TableCell>
-                    <TableCell align="right">
-                      <Typography fontWeight="bold" color="primary">
-                        {payroll.finalPay.toLocaleString()}원
-                      </Typography>
+                    <TableCell
+                      align="right"
+                      sx={{ fontWeight: "bold", color: "primary.main" }}
+                    >
+                      {(salaryTotal?.totalPay || 0).toLocaleString()}원
                     </TableCell>
-                    <TableCell align="center">
-                      <Tooltip title="근무 상세 정보">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() => handleViewDetails(payroll.employeeId)}
-                        >
-                          <KeyboardArrowRightIcon />
-                        </IconButton>
-                      </Tooltip>
-                    </TableCell>
+                    <TableCell></TableCell>
                   </TableRow>
-                ))
+                </>
               )}
             </TableBody>
           </Table>
@@ -1048,9 +1604,26 @@ function PayrollPage() {
                   alignItems: "center",
                 }}
               >
-                <Typography variant="h6">
-                  {selectedEmployee.employeeName}님 근무 상세 내역
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center" }}>
+                  <Avatar
+                    sx={{
+                      bgcolor: "primary.main",
+                      mr: 1.5,
+                      width: 40,
+                      height: 40,
+                    }}
+                  >
+                    {selectedEmployee.employeeName.charAt(0)}
+                  </Avatar>
+                  <Box>
+                    <Typography variant="h6">
+                      {selectedEmployee.employeeName}님 급여 상세 내역
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      {currentPeriodDisplay} 기간
+                    </Typography>
+                  </Box>
+                </Box>
                 <IconButton
                   onClick={() => setDetailDialogOpen(false)}
                   size="small"
@@ -1061,8 +1634,12 @@ function PayrollPage() {
             </DialogTitle>
             <DialogContent>
               <Box sx={{ mb: 3 }}>
-                <Typography variant="subtitle1" gutterBottom>
-                  {currentPeriodDisplay} 근무 요약
+                <Typography
+                  variant="subtitle1"
+                  gutterBottom
+                  sx={{ color: "primary.main", fontWeight: "medium" }}
+                >
+                  급여 요약
                 </Typography>
 
                 <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -1071,6 +1648,8 @@ function PayrollPage() {
                       sx={{
                         p: 2,
                         bgcolor: alpha(theme.palette.primary.main, 0.05),
+                        borderRadius: 2,
+                        height: "100%",
                       }}
                     >
                       <Typography variant="body2" color="text.secondary">
@@ -1078,9 +1657,18 @@ function PayrollPage() {
                       </Typography>
                       <Typography
                         variant="h6"
-                        sx={{ mt: 1, fontWeight: "bold" }}
+                        sx={{
+                          mt: 1,
+                          fontWeight: "bold",
+                          display: "flex",
+                          alignItems: "center",
+                        }}
                       >
-                        {selectedEmployee.actualHours.toLocaleString()}시간
+                        <AccessTimeIcon
+                          sx={{ mr: 1, color: "info.main", fontSize: 20 }}
+                        />
+                        {(selectedEmployee?.actualHours || 0).toLocaleString()}
+                        시간
                       </Typography>
                     </Paper>
                   </Grid>
@@ -1090,6 +1678,8 @@ function PayrollPage() {
                       sx={{
                         p: 2,
                         bgcolor: alpha(theme.palette.primary.main, 0.05),
+                        borderRadius: 2,
+                        height: "100%",
                       }}
                     >
                       <Typography variant="body2" color="text.secondary">
@@ -1097,9 +1687,17 @@ function PayrollPage() {
                       </Typography>
                       <Typography
                         variant="h6"
-                        sx={{ mt: 1, fontWeight: "bold" }}
+                        sx={{
+                          mt: 1,
+                          fontWeight: "bold",
+                          display: "flex",
+                          alignItems: "center",
+                        }}
                       >
-                        {selectedEmployee.hourlyRate.toLocaleString()}원
+                        <MonetizationOnIcon
+                          sx={{ mr: 1, color: "warning.main", fontSize: 20 }}
+                        />
+                        {(selectedEmployee?.hourlyRate || 0).toLocaleString()}원
                       </Typography>
                     </Paper>
                   </Grid>
@@ -1109,6 +1707,8 @@ function PayrollPage() {
                       sx={{
                         p: 2,
                         bgcolor: alpha(theme.palette.primary.main, 0.05),
+                        borderRadius: 2,
+                        height: "100%",
                       }}
                     >
                       <Typography variant="body2" color="text.secondary">
@@ -1120,9 +1720,14 @@ function PayrollPage() {
                           mt: 1,
                           fontWeight: "bold",
                           color: theme.palette.primary.main,
+                          display: "flex",
+                          alignItems: "center",
                         }}
                       >
-                        {selectedEmployee.finalPay.toLocaleString()}원
+                        <PaymentIcon
+                          sx={{ mr: 1, color: "success.main", fontSize: 20 }}
+                        />
+                        {(selectedEmployee?.finalPay || 0).toLocaleString()}원
                       </Typography>
                     </Paper>
                   </Grid>
@@ -1131,20 +1736,119 @@ function PayrollPage() {
 
               <Divider sx={{ my: 2 }} />
 
-              <Typography variant="subtitle1" gutterBottom>
+              {/* 급여 계산 상세 - 먼저 표시 */}
+              <Typography
+                variant="subtitle1"
+                gutterBottom
+                sx={{ color: "primary.main", fontWeight: "medium" }}
+              >
+                급여 계산 상세
+              </Typography>
+
+              <TableContainer
+                sx={{
+                  mt: 2,
+                  mb: 3,
+                  border: "1px solid",
+                  borderColor: "divider",
+                  borderRadius: 2,
+                }}
+              >
+                <Table size="small">
+                  <TableHead>
+                    <TableRow
+                      sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}
+                    >
+                      <TableCell sx={{ fontWeight: "bold" }}>항목</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                        계산
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                        금액
+                      </TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    <TableRow>
+                      <TableCell>기본급</TableCell>
+                      <TableCell align="right">
+                        {selectedEmployee?.actualHours || 0} 시간 ×{" "}
+                        {(selectedEmployee?.hourlyRate || 0).toLocaleString()}{" "}
+                        원
+                      </TableCell>
+                      <TableCell align="right">
+                        {(selectedEmployee?.basePay || 0).toLocaleString()} 원
+                      </TableCell>
+                    </TableRow>
+                    <TableRow>
+                      <TableCell>주휴수당</TableCell>
+                      <TableCell align="right">
+                        주 {storeInfo?.weeklyHolidayHoursThreshold || 15}시간
+                        이상 근무 기준
+                      </TableCell>
+                      <TableCell align="right">
+                        {(selectedEmployee?.holidayPay || 0).toLocaleString()}{" "}
+                        원
+                      </TableCell>
+                    </TableRow>
+                    <TableRow
+                      sx={{ bgcolor: alpha(theme.palette.primary.main, 0.05) }}
+                    >
+                      <TableCell sx={{ fontWeight: "bold" }}>
+                        최종 급여
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: "bold" }}>
+                        기본급 + 주휴수당
+                      </TableCell>
+                      <TableCell
+                        align="right"
+                        sx={{
+                          fontWeight: "bold",
+                          color: theme.palette.primary.main,
+                        }}
+                      >
+                        {(selectedEmployee?.finalPay || 0).toLocaleString()} 원
+                      </TableCell>
+                    </TableRow>
+                  </TableBody>
+                </Table>
+              </TableContainer>
+
+              <Typography
+                variant="subtitle1"
+                gutterBottom
+                sx={{ color: "primary.main", fontWeight: "medium" }}
+              >
                 일별 근무 내역
               </Typography>
 
               {selectedEmployee.shifts.length > 0 ? (
-                <TableContainer sx={{ mt: 2 }}>
+                <TableContainer
+                  sx={{
+                    mt: 2,
+                    border: "1px solid",
+                    borderColor: "divider",
+                    borderRadius: 2,
+                  }}
+                >
                   <Table size="small">
                     <TableHead>
-                      <TableRow>
-                        <TableCell>날짜</TableCell>
-                        <TableCell>요일</TableCell>
-                        <TableCell>근무 시간</TableCell>
-                        <TableCell>근무 길이</TableCell>
-                        <TableCell>근무 유형</TableCell>
+                      <TableRow
+                        sx={{
+                          bgcolor: alpha(theme.palette.primary.main, 0.05),
+                        }}
+                      >
+                        <TableCell sx={{ fontWeight: "bold" }}>날짜</TableCell>
+                        <TableCell sx={{ fontWeight: "bold" }}>요일</TableCell>
+                        <TableCell sx={{ fontWeight: "bold" }}>
+                          근무 시간
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: "bold" }}>
+                          근무 길이
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: "bold" }}>
+                          근무 유형
+                        </TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
@@ -1198,62 +1902,15 @@ function PayrollPage() {
                   이 기간에 근무 내역이 없습니다.
                 </Alert>
               )}
-
-              <Divider sx={{ my: 2 }} />
-
-              <Typography variant="subtitle1" gutterBottom>
-                급여 계산 상세
-              </Typography>
-
-              <TableContainer sx={{ mt: 2 }}>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell>항목</TableCell>
-                      <TableCell align="right">계산</TableCell>
-                      <TableCell align="right">금액</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    <TableRow>
-                      <TableCell>기본급</TableCell>
-                      <TableCell align="right">
-                        {selectedEmployee.actualHours} 시간 ×{" "}
-                        {selectedEmployee.hourlyRate.toLocaleString()} 원
-                      </TableCell>
-                      <TableCell align="right">
-                        {selectedEmployee.basePay.toLocaleString()} 원
-                      </TableCell>
-                    </TableRow>
-                    <TableRow>
-                      <TableCell>주휴수당</TableCell>
-                      <TableCell align="right">
-                        주 {storeInfo?.weeklyHolidayHoursThreshold || 15}시간
-                        이상 근무 기준
-                      </TableCell>
-                      <TableCell align="right">
-                        {selectedEmployee.holidayPay.toLocaleString()} 원
-                      </TableCell>
-                    </TableRow>
-                    <TableRow sx={{ fontWeight: "bold" }}>
-                      <TableCell>최종 급여</TableCell>
-                      <TableCell align="right">기본급 + 주휴수당</TableCell>
-                      <TableCell
-                        align="right"
-                        sx={{
-                          fontWeight: "bold",
-                          color: theme.palette.primary.main,
-                        }}
-                      >
-                        {selectedEmployee.finalPay.toLocaleString()} 원
-                      </TableCell>
-                    </TableRow>
-                  </TableBody>
-                </Table>
-              </TableContainer>
             </DialogContent>
             <DialogActions>
-              <Button onClick={() => setDetailDialogOpen(false)}>닫기</Button>
+              <Button
+                onClick={() => setDetailDialogOpen(false)}
+                color="primary"
+                variant="outlined"
+              >
+                닫기
+              </Button>
             </DialogActions>
           </>
         )}
