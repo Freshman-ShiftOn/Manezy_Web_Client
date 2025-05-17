@@ -212,11 +212,9 @@ function Layout() {
     handleNotificationClose();
   };
 
-  // 스토어 변경 처리
+  // 브랜치 변경 핸들러
   const handleStoreChange = (storeId: string | number) => {
-    console.log(
-      `브랜치 변경 시도: ID ${storeId}, 이전 선택된 ID: ${selectedBranchId}`
-    );
+    console.log(`브랜치 변경: ${storeId} (타입: ${typeof storeId})`);
 
     // 이미 선택된 브랜치면 다시 선택하지 않음
     if (selectedBranchId === storeId) {
@@ -226,10 +224,12 @@ function Layout() {
     }
 
     // 브랜치 컨텍스트의 상태 업데이트
-    setSelectedBranchId(storeId);
+    setSelectedBranchId(String(storeId)); // 항상 문자열로 변환
 
     // 브랜치 목록에서 해당 브랜치 정보 찾기
-    const selectedBranch = branches.find((branch) => branch.id === storeId);
+    const selectedBranch = branches.find(
+      (branch) => String(branch.id) === String(storeId)
+    );
     console.log(
       `브랜치 ID ${storeId} 선택됨, 브랜치 정보:`,
       selectedBranch || "정보 없음"
